@@ -299,6 +299,20 @@ describe('anchorPixel / planMove —— 角落与漫游不进空洞', () => {
     }
   });
 
+  test('sideAllow：水平方向按「身体贴边」定位，而非盒子边缘', () => {
+    const side = 93.75; // = HIT_BOX.x0/640 × 300
+    const area = { x: 0, y: 0, width: 1710, height: 1068 };
+    const base = { marginX: 24, marginY: 20, size: 300, W: 0, H: 0, area, sideAllow: side };
+    // 右角：盒子左边 = 区宽 − size − marginX + side（盒子右缘比身体右缘多出 side，探出屏外）
+    assert.equal(anchorPixel({ ...base, corner: 'bottom-right' }).x, 1710 - 300 - 24 + side);
+    assert.equal(anchorPixel({ ...base, corner: 'top-right' }).x, 1710 - 300 - 24 + side);
+    // 左角：盒子左边 = marginX − side
+    assert.equal(anchorPixel({ ...base, corner: 'bottom-left' }).x, 24 - side);
+    assert.equal(anchorPixel({ ...base, corner: 'top-left' }).x, 24 - side);
+    // 纵向不受 sideAllow 影响
+    assert.equal(anchorPixel({ ...base, corner: 'bottom-right' }).y, 1068 - (300 * 9) / 16 - 20);
+  });
+
   test('漫游落点落在空洞里时返回 null', () => {
     const common = {
       cy: -300, // 主屏上方的高度：只有副屏在这条线上有像素

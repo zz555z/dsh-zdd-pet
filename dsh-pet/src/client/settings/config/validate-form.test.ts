@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { validateForm, type FormValues } from './validate-form.ts';
 import { DEFAULT_FONT, FONT_SIZE_MAX } from '../../../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
+import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
 import type { Pet } from '../../../shared/types.ts';
 
 const pet = (extra: Record<string, unknown> = {}): Pet =>
@@ -32,6 +33,7 @@ const valid = (overrides: Partial<FormValues> = {}): FormValues => ({
   chatMemory: 5,
   chatImageLimit: 10,
   font: { ...DEFAULT_FONT },
+  pomodoro: { ...DEFAULT_POMODORO },
   ...overrides,
 });
 

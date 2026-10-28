@@ -3,7 +3,7 @@
  * 不负责右键菜单本身，也不碰拖拽与点击判定——到点只回调，派发交给调用方。
  * 鼠标与笔不走这条分支，起表前先按指针类型挡掉。
  * 不变量：同一时刻只有一个计时器；到点时按压若已结束，回调自弃。
- * @module dsh-pet/src/client/pet/motion/touch-press
+ * @module dsh-zdd-pet/src/client/pet/motion/touch-press
  */
 /** 触屏长按多久算右键（ms）。 */
 const LONG_PRESS_MS = 500;

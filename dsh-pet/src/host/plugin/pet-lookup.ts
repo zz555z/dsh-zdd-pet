@@ -3,7 +3,7 @@
  *
  * 不读配置以外的介质，只经 onChange 同步锁状态到 S。
  * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
- * @module dsh-pet/src/host/plugin/pet-lookup
+ * @module dsh-zdd-pet/src/host/plugin/pet-lookup
  */
 import { LockStore } from '../lock.ts';
 import { PoseStore } from '../pose.ts';
@@ -30,7 +30,7 @@ export function createPetLookup(deps: PetLookupInput) {
   });
 
   // 实况快照（issue #122 第 1 条）：桌面渲染端变化时上报，第三方用 GET /pose 读。
-  // 网页端不走这里——它的位置天生每个页面一份，走页面内的 Cordis 服务 `petApi7340`。
+  // 网页端不走这里——它的位置天生每个页面一份，走页面内的 Cordis 服务 `petApiZdd`。
   const pose = new PoseStore();
 
   /**

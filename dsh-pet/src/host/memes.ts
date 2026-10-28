@@ -6,7 +6,7 @@
  * /pic/memes 就必须「取得到」，否则气泡图裂。文件缺失的条目静默剔除（用户删图后不必同步改
  * 配置），配置没写的图不参与（无从得知它的描述）。纯函数 + 目录参数，便于测试。
  * 契约见 CONFIG.md 与 API.md。
- * @module dsh-pet/src/host/memes
+ * @module dsh-zdd-pet/src/host/memes
  */
 
 import { existsSync } from 'node:fs';

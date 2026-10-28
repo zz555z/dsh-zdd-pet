@@ -1,7 +1,7 @@
 /**
  * 「添加宠物」的草稿构造：新 id 的分配与从模板拷贝哪些字段。
  * 只拷贝条目级之外的实例字段——条目级字段（人设之外的全局值）由成品配置回落，不在这里抄一份。
- * @module dsh-pet/src/client/settings/pet-draft
+ * @module dsh-zdd-pet/src/client/settings/pet-draft
  */
 import type { Pet } from '../../shared/types.ts';
 

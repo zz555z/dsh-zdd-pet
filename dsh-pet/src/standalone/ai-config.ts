@@ -4,7 +4,7 @@
  * 负责把调用方补丁校验为成品配置，并让密钥只留在本机配置文件；
  * 不负责模型请求（见 ai-provider），也不负责文件权限与原子写（见 ai-storage）。
  * 必须始终成立：对外只返回脱敏视图，持久化失败时不更新内存中的设置。
- * @module dsh-pet/src/standalone/ai-config
+ * @module dsh-zdd-pet/src/standalone/ai-config
  */
 import { z } from 'zod';
 import { readAiSettings, writeAiSettings } from './ai-storage.ts';

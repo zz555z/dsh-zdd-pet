@@ -4,14 +4,14 @@
  * 只打 `data-*` 标记并用 `::before` + mask 画字形，不动 DOM 结构，否则 React 会对被替换的节点 removeChild 崩。
  * 认行只能靠标题文本：投影到 DOM 的只有 label，而 account 行条件出现、位置会漂，不能用 `:nth-child`。
  * 降级：缺 document / MutationObserver、渲不出 SVG 时不装，认不出那一行时什么都不做，只告警。
- * @module dsh-pet/src/client/nav-icon
+ * @module dsh-zdd-pet/src/client/nav-icon
  */
 
 /** 注入的样式表去重标记（与宠物页面 / 设置页同一套 `data-plugin-css` 约定）。 */
-const STYLE_TAG = 'dsh-pet/nav-icon.css';
+const STYLE_TAG = 'dsh-zdd-pet/nav-icon.css';
 
 /** 打在目标行 `<button>` 上的标记属性：React 从不 diff 它，重渲染 / 切语言都不会掉。 */
-const MARK = 'data-dsh-pet-nav';
+const MARK = 'data-dsh-zdd-pet-nav';
 
 /** 设置面板根节点：shell 用 `createPortal` 挂到 body 上。 */
 const PANEL_SELECTOR = '[data-shortcut-modal="settings"]';
@@ -66,7 +66,7 @@ function cssFor(glyph: string): string {
 function injectCss(doc: Document, glyph: string): void {
   if (doc.querySelector('style[data-plugin-css="' + STYLE_TAG + '"]') !== null) return;
   const tag = doc.createElement('style');
-  tag.dataset.plugin = 'dsh-pet';
+  tag.dataset.plugin = 'dsh-zdd-pet';
   tag.dataset.pluginCss = STYLE_TAG;
   tag.textContent = cssFor(glyph);
   doc.head.appendChild(tag);
@@ -86,7 +86,7 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
   const doc = typeof document === 'undefined' ? undefined : document;
   const Observer = typeof MutationObserver === 'undefined' ? undefined : MutationObserver;
   if (doc === undefined || Observer === undefined || doc.body === null) {
-    console.warn('[dsh-pet] 设置页导航图标不可用：缺少 document / body / MutationObserver（齿轮照旧）');
+    console.warn('[dsh-zdd-pet] 设置页导航图标不可用：缺少 document / body / MutationObserver（齿轮照旧）');
     return () => {};
   }
 
@@ -94,11 +94,11 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
   try {
     glyph = svgMaskUri(target.renderSvg());
   } catch (error) {
-    console.warn('[dsh-pet] 设置页导航图标不可用：图标渲染失败（齿轮照旧）：' + describe(error));
+    console.warn('[dsh-zdd-pet] 设置页导航图标不可用：图标渲染失败（齿轮照旧）：' + describe(error));
     return () => {};
   }
   if (glyph === '') {
-    console.warn('[dsh-pet] 设置页导航图标不可用：图标渲成了空 SVG（齿轮照旧）');
+    console.warn('[dsh-zdd-pet] 设置页导航图标不可用：图标渲成了空 SVG（齿轮照旧）');
     return () => {};
   }
   injectCss(doc, glyph);
@@ -120,7 +120,7 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
     } catch (error) {
       if (!warned) {
         warned = true;
-        console.warn('[dsh-pet] 设置页导航图标补丁异常，本次跳过（齿轮照旧）：' + describe(error));
+        console.warn('[dsh-zdd-pet] 设置页导航图标补丁异常，本次跳过（齿轮照旧）：' + describe(error));
       }
     }
   };

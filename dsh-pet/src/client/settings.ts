@@ -3,11 +3,12 @@
  * 本文件是装配根：持有表单状态、串起加载与写盘、把卡片拼成一页；卡片、字典、样式与 HTTP 都在 `settings/` 里。
  * 只读成品配置里可编辑的 main 条目，不自行拼条目级字段；文件宠物永不回写。
  * 保存与同步都全量写用户层，再把宿主返回的成品交给容器重渲染——两条路都无需刷新页面。
- * @module dsh-pet/src/client/settings
+ * @module dsh-zdd-pet/src/client/settings
  */
 import { DEFAULT_FONT } from '../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../shared/physics.ts';
-import type { FontConfig, ModelSelection, PhysicsParams } from '../shared/types.ts';
+import { DEFAULT_POMODORO } from '../shared/pomodoro.ts';
+import type { FontConfig, ModelSelection, PhysicsParams, PomodoroParams } from '../shared/types.ts';
 import type { FunctionComponent } from 'react';
 import { requestNotificationPermission } from './notify.ts';
 import { injectSettingsCss } from './settings/css.ts';
@@ -27,6 +28,7 @@ import { makePetCard } from './settings/pet-card.ts';
 import { makePetTabs } from './settings/pet-tabs.ts';
 import { createWriteFlow } from './settings/config/index.ts';
 import { makePhysicsCard } from './settings/physics-card.ts';
+import { makePomodoroCard } from './settings/pomodoro-card.ts';
 import type { SettingsRuntime } from './settings/runtime.ts';
 import { useConfigLoad } from './settings/config/index.ts';
 import { usePetList } from './settings/use-pet-list.ts';
@@ -63,6 +65,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
   const FontCard = makeFontCard(rt);
   const ModelCard = makeModelCard(rt, ModelPicker);
   const PhysicsCard = makePhysicsCard(rt);
+  const PomodoroCard = makePomodoroCard(rt);
   const Actions = makeActions(rt);
   const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
   const SettingsDialog = makeDialog(rt);
@@ -113,6 +116,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const [trayEnabled, setTrayEnabled] = useState(true);
     // 物理参数（全局）：只改本地状态，随「保存」整包写入；初值仅占位，成品加载成功后才允许编辑与保存。
     const [physics, setPhysics] = useState<PhysicsParams>({ ...DEFAULT_PHYSICS });
+    // 番茄钟（全局默认）：与 physics 同一套语义；初值仅占位，成品加载成功后才允许编辑与保存。
+    const [pomodoro, setPomodoro] = useState<PomodoroParams>({ ...DEFAULT_POMODORO });
     // 字体（全局默认）：与 physics 同一套语义；初值仅占位，成品加载成功后才允许编辑与保存。
     const [font, setFont] = useState<FontConfig>({ ...DEFAULT_FONT });
     // AI 模型（条目级）：碎碎念 / 对话各自的服务商与模型，两者都留空 = 跟随当前对话；随「保存」整包写入。
@@ -138,6 +143,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         if (patch.confineToScreen !== undefined) setConfineScreen(patch.confineToScreen);
         if (patch.trayEnabled !== undefined) setTrayEnabled(patch.trayEnabled);
         if (patch.physics !== undefined) setPhysics(patch.physics);
+        if (patch.pomodoro !== undefined) setPomodoro(patch.pomodoro);
         if (patch.font !== undefined) setFont(patch.font);
         if (patch.whisperModel !== undefined) setWhisperModel(patch.whisperModel);
         if (patch.chatModel !== undefined) setChatModel(patch.chatModel);
@@ -190,6 +196,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     /** 局部补丁写入：字体与物理参数都是「整段对象 + 改几个字段」。 */
     const patchFont = (patch: Partial<FontConfig>): void => setFont((current) => ({ ...current, ...patch }));
     const patchPhysics = (patch: Partial<PhysicsParams>): void => setPhysics((current) => ({ ...current, ...patch }));
+    const patchPomodoro = (patch: Partial<PomodoroParams>): void =>
+      setPomodoro((current) => ({ ...current, ...patch }));
 
     /** 两个模型字段各有一份状态，卡片只回传键名。 */
     const setModel = (key: ModelFieldKey, value: ModelSelection): void => {
@@ -210,6 +218,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         confineToScreen: confineScreen,
         trayEnabled,
         physics,
+        pomodoro,
         whisperModel,
         chatModel,
         chatMemoryRounds: chatMemory,
@@ -253,12 +262,12 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     // 卡片顺序即阅读顺序：先编辑宠物，再改全局默认，最后是落盘位置与弹窗。
     return h('section', {
       ref: rootRef,
-      className: 'dsh-pet-cfg',
+      className: 'dsh-zdd-pet-cfg',
       style: { maxWidth: '720px' },
       children: [
         // 标题：intro 与「额外宠物」说明都收进问号。
         h('h2', {
-          className: 'dsh-pet-cfg__title',
+          className: 'dsh-zdd-pet-cfg__title',
           children: [
             t('nav'),
             q(packCount > 0 ? t('intro') + '\n' + t('extraPetsHint').replace('{n}', String(packCount)) : t('intro')),
@@ -293,6 +302,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
           onChatImageLimitChange: setChatImageLimit,
         }),
         h(PhysicsCard, { busy, physics, onChange: patchPhysics }),
+        h(PomodoroCard, { busy, pomodoro, onChange: patchPomodoro }),
         h(Actions, {
           busy,
           msg,

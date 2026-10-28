@@ -3,7 +3,7 @@
  *
  * 纯类型，不含实现。
  * 必须始终成立：字段全部 readonly，调用方不得改写服务内部状态。
- * @module dsh-pet/src/standalone/ai-provider/types
+ * @module dsh-zdd-pet/src/standalone/ai-provider/types
  */
 import { type createAiConfig, type StandaloneAiPublicSettings } from '../ai-config.ts';
 import { type AiFetch } from '../ai-transport.ts';

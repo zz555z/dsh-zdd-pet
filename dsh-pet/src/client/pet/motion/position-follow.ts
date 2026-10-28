@@ -2,7 +2,7 @@
  * 位置跟随：把位置指令（归一化中心）变成一次落位动画——instant 一帧到位、line 直线补间、spring 过阻尼跟随。
  * 三种模式都只在像素空间插值：按归一化比例插值会把斜线走歪，也会让不同视口下的速度不一致。
  * 一次只跑一条：新指令取消旧的，世代号让迟到的帧自弃；用户按下宠物时整拍让位（交互优先）。
- * @module dsh-pet/src/client/pet/motion/position-follow
+ * @module dsh-zdd-pet/src/client/pet/motion/position-follow
  */
 import { springStep } from '../../../shared/physics.ts';
 import type { PositionMode } from '../../../shared/state.ts';

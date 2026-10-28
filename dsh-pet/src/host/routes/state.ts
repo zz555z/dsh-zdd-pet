@@ -3,7 +3,7 @@
  *
  * 不生成状态，只汇总 store 里的当前值。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/state
+ * @module dsh-zdd-pet/src/host/routes/state
  */
 import { parseStateWaitQuery } from '../state.ts';
 import { type RouteResult } from '../http.ts';

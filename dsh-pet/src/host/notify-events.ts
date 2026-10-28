@@ -7,7 +7,7 @@
  * 必须始终成立：推帧前先过两道门——会话门（子代理与深层委派不发）与活动门（还有活在跑时
  * 「对话完成」不发）；判据拿不到一律放行，宁可多弹一条，也不能让通知整体失效。
  * 契约见 API.md 与 openapi.yaml。
- * @module dsh-pet/src/host/notify-events
+ * @module dsh-zdd-pet/src/host/notify-events
  */
 
 /** 通知帧（与 shared/notify.ts 的 NotifyFrame 同形状；宿主半侧自包含定义，避免跨端 import）。 */

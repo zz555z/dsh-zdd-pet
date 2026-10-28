@@ -4,7 +4,7 @@
  * 规则住在这里、main.js 只接线，是为了能被 node:test 直接加载：macOS 菜单栏有深浅色，图标须按
  * 模板图处理且左键单击即弹菜单；Windows 的 setContextMenu 只接管右键，图标还会被收进溢出面板；
  * Linux 的 click 事件不可靠，原生 GNOME 默认不显示托盘图标。这些差异代码管不了，只能按平台分流。
- * @module dsh-pet/runtime/electron-helper/tray-platform
+ * @module dsh-zdd-pet/runtime/electron-helper/tray-platform
  */
 'use strict';
 

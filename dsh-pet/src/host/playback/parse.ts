@@ -3,7 +3,7 @@
  *
  * 不读 store、不判状态；非法输入返回 undefined，由路由层回 400。
  * 必须始终成立：解析结果只依赖入参，不依赖调用时序。
- * @module dsh-pet/src/host/playback/parse
+ * @module dsh-zdd-pet/src/host/playback/parse
  */
 import { MAX_PLAYBACK_WAIT_MS, isPlaybackStatus } from './status.ts';
 import type { PlaybackStatus } from './status.ts';

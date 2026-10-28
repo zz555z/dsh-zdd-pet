@@ -3,7 +3,7 @@
  *
  * 不监听会话事件（归会话监听器），不渲染气泡。
  * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
- * @module dsh-pet/src/host/plugin/work-status-bridge
+ * @module dsh-zdd-pet/src/host/plugin/work-status-bridge
  */
 import type { HostSetup } from './setup.ts';
 
@@ -30,7 +30,10 @@ export function createWorkStatusBridge(deps: WorkStatusBridgeInput) {
 
   const publishWorkStatus = (): void => {
     const snap = workStatus.snapshot();
-    const key = String(snap.state) + '\u0000' + String(snap.task);
+    // 去重 key 必须含 progress：todo 的 content 原地不动、只有 done 从 2→3 时，若 key 不含进度就会
+    // 被当成「没变化」丢掉，气泡永远停在旧数字。
+    const progressKey = snap.progress ? `${snap.progress.done}/${snap.progress.total}` : '';
+    const key = String(snap.state) + '\u0000' + String(snap.task) + '\u0000' + progressKey;
     if (key === publishedWork) return;
     // 抖动判定：只压 working → result 这一个方向（同档只换文案不算抖动，照常立即写；
     // 反向 result → working 立即写）
@@ -52,7 +55,7 @@ export function createWorkStatusBridge(deps: WorkStatusBridgeInput) {
     publishedWork = key;
     publishedState = snap.state;
     publishedWorkAt = Date.now();
-    state.writeSection('workStatus', { state: snap.state, task: snap.task });
+    state.writeSection('workStatus', { state: snap.state, task: snap.task, progress: snap.progress });
   };
 
   /** 停掉挂起的补写定时器（插件卸载时调用）。 */

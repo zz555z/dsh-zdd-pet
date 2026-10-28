@@ -3,7 +3,7 @@
  *
  * 不负责读取与合并（归 ./read），也不重启桌面 Helper（由调用方决定）。
  * 必须始终成立：只写白名单字段，用户手改的非白名单字段必须原样带回。
- * @module dsh-pet/src/host/config/save
+ * @module dsh-zdd-pet/src/host/config/save
  */
 import { defaultLog } from '../log-file.ts';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -11,6 +11,7 @@ import { dirname } from 'node:path';
 import { CORNER_SET, isValidPetId, PET_DISPLAY_SET } from './constants.ts';
 import type { ConfigPaths } from './constants.ts';
 import { fontValid, modelSelectionValid, physicsValid, topFieldValid } from './validate.ts';
+import { pomodoroValid } from '../../shared/pomodoro.ts';
 
 /**
  * 保存用户层（PUT /config）：接受 pets + 全局开关 + physics / font / 两个模型 / 对话参数。
@@ -40,7 +41,7 @@ export function saveUserConfig(
     // 显示名：可重复不校验唯一；缺失/留空/非字符串 → 按该宠物 id 处理（兼容旧配置）并告警
     let name = typeof pp.name === 'string' ? pp.name.trim() : '';
     if (!name) {
-      defaultLog('warn', `dsh-pet: pet「${id}」缺少 name，已按默认 ${id}（宠物 id）处理`);
+      defaultLog('warn', `dsh-zdd-pet: pet「${id}」缺少 name，已按默认 ${id}（宠物 id）处理`);
       name = id;
     }
     const balanceEnabled = pp.balanceEnabled;
@@ -106,6 +107,11 @@ export function saveUserConfig(
   // 校验直接复用读取侧的 fontValid（family 白名单 / size 4~200 / followPet 布尔），读写同一份规则。
   const fo = o.font;
   if (fo !== undefined && !fontValid(fo)) return null;
+  // pomodoro（番茄钟：开关 + 提醒间隔；设置页「番茄钟」区可编辑）：与 physics/font 同一套语义——
+  // 传了就整段校验后进白名单，没传则透传保留（用户手改的 texts 等其它子键借此保住）。
+  // 只写 enabled/intervalMin 两个白名单子键，texts 由 existing 透传——设置页不编辑文案池。
+  const po = o.pomodoro;
+  if (po !== undefined && !pomodoroValid(po)) return null;
   // whisperModel / chatModel（碎碎念 / 对话各自的服务商 + 模型；设置页两个下拉框写的就是它们）：
   // 与 physics 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
   // 落盘时归一化成 { provider, model } 两个 trim 过的字符串（请求体多带的键不写进用户层）。
@@ -137,6 +143,20 @@ export function saveUserConfig(
   if (te !== undefined) outConfig.trayEnabled = te;
   if (ph !== undefined) outConfig.physics = ph;
   if (fo !== undefined) outConfig.font = fo;
+  if (po !== undefined) {
+    // pomodoro 落盘：只写设置页编辑的两个子键，其余子键（texts / images 等）从 existing 的
+    // pomodoro 段透传合并——否则每次保存都会把用户手改的文案池抹掉。
+    const pv = po as Record<string, unknown>;
+    const prev =
+      (existing && typeof existing === 'object'
+        ? (existing.pomodoro as Record<string, unknown> | undefined)
+        : undefined) ?? {};
+    outConfig.pomodoro = {
+      ...prev,
+      enabled: pv.enabled,
+      intervalMin: Number(pv.intervalMin),
+    };
+  }
   if (wm !== undefined) outConfig.whisperModel = cleanModel(wm as Record<string, unknown>);
   if (cm !== undefined) outConfig.chatModel = cleanModel(cm as Record<string, unknown>);
   // 数值归一化落盘：请求体传 "9" 也存成 9（与读取侧 topFieldValid 的 Number() 口径一致）
@@ -155,6 +175,7 @@ export function saveUserConfig(
   if (te !== undefined) bodyOwned.add('trayEnabled');
   if (ph !== undefined) bodyOwned.add('physics');
   if (fo !== undefined) bodyOwned.add('font');
+  if (po !== undefined) bodyOwned.add('pomodoro');
   if (wm !== undefined) bodyOwned.add('whisperModel');
   if (cm !== undefined) bodyOwned.add('chatModel');
   if (cmr !== undefined) bodyOwned.add('chatMemoryRounds');

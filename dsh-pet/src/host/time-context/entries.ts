@@ -3,7 +3,7 @@
  *
  * 纯数据与索引构建。
  * 必须始终成立：新条目必须带 ahead/after 范围，否则索引会漏掉它。
- * @module dsh-pet/src/host/time-context/entries
+ * @module dsh-zdd-pet/src/host/time-context/entries
  */
 import { DEFAULT_AFTER, DEFAULT_AHEAD, DEFAULT_SPAN } from './constants.ts';
 

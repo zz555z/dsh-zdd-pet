@@ -4,7 +4,7 @@
  * 只校验 id 形状、把引用交给宿主附件服务算路径——插件自己不拼任何文件路径，路径穿越无从谈起。
  * 不校验归属（id 是内容哈希、不可猜，服务只监听回环），也不做缩放（原图 + 缓存头，够用）。
  * 附件对象按 sha256 命名、没有扩展名，所以类型只能从文件头判断，不能从文件名猜。
- * @module dsh-pet/src/host/routes/attachment
+ * @module dsh-zdd-pet/src/host/routes/attachment
  */
 import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 import type { PetImageLocator, PetImageSink } from '../image-attachment.ts';
@@ -21,16 +21,16 @@ const HEAD_BYTES = 16;
 export async function handleAttachmentRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { method, rest, url } = input;
   if (rest === 'attachment') {
-    if (method !== 'GET') return { kind: 'text', status: 405, body: 'dsh-pet: method not allowed' };
+    if (method !== 'GET') return { kind: 'text', status: 405, body: 'dsh-zdd-pet: method not allowed' };
     const id = url.searchParams.get('id') ?? '';
-    if (!ATTACHMENT_ID.test(id)) return { kind: 'text', status: 400, body: 'dsh-pet: invalid attachment id' };
+    if (!ATTACHMENT_ID.test(id)) return { kind: 'text', status: 400, body: 'dsh-zdd-pet: invalid attachment id' };
     const sink = deps.optionalService('attachments') as PetImageSink | undefined;
     // 独立模式没有附件服务：取图直接不可用（与 POST /chat 的图片能力同一降级口径）
     const file = locate(sink, id);
-    if (file === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: attachment not found' };
+    if (file === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: attachment not found' };
     const contentType = sniffImageType(file);
     if (contentType === undefined) {
-      return { kind: 'text', status: 404, body: 'dsh-pet: attachment is not a displayable image' };
+      return { kind: 'text', status: 404, body: 'dsh-zdd-pet: attachment is not a displayable image' };
     }
     return { kind: 'file', file, contentType };
   }

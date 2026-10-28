@@ -1,6 +1,6 @@
 /**
  * 宠物页的共享类型：注入的 react 能力与拍平后的成品宠物实例。
- * @module dsh-pet/src/client/pet/types
+ * @module dsh-zdd-pet/src/client/pet/types
  */
 import type { Animations, Pet, PhysicsParams, Weights } from '../../shared/types.ts';
 import type * as ReactNS from 'react';

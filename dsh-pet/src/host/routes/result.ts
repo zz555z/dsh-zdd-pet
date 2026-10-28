@@ -4,7 +4,7 @@
  * 「请求进了处理器」之后的判断（缺参、未知宠物、被占用、生成失败）是业务结论，用 {@link failResult}；
  * 请求没进业务（方法不对、JSON 坏了、体超限）用 {@link methodNotAllowed} 一类的协议构造器。
  * 不判断业务、不解析输入：只把 reason 与文案包成 RouteResult，状态码由结论类型决定。
- * @module dsh-pet/src/host/routes/result
+ * @module dsh-zdd-pet/src/host/routes/result
  */
 import type { RouteResult } from '../http.ts';
 
@@ -92,7 +92,7 @@ export function payloadTooLarge(message = 'request body too large'): RouteResult
 
 /** 未预期异常：500。文案固定，真实原因只进日志，不外泄路径与内部细节。 */
 export function internalError(): RouteResult {
-  return rejected(500, 'internal-error', 'dsh-pet: internal error');
+  return rejected(500, 'internal-error', 'dsh-zdd-pet: internal error');
 }
 
 /** 协议失败：真实状态码 + 与业务失败同一形状的体。 */

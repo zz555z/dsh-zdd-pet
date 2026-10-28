@@ -2,7 +2,7 @@
  * 桌面 Helper 三个子模块共用的输入类型，避免相互 import 形成环。
  *
  * 只声明依赖形状，不含实现；字段语义见各使用处。
- * @module dsh-pet/src/host/plugin/desktop/types
+ * @module dsh-zdd-pet/src/host/plugin/desktop/types
  */
 import type { BalancePoll } from '../balance-poll.ts';
 import type { DownloadReport } from '../download-report.ts';

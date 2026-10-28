@@ -89,17 +89,17 @@ function withFakeDom(): { doc: FakeDocument; restore: () => void } {
 }
 
 describe('injectSettingsCss —— 设置页样式注入', () => {
-  test('首次注入：head 里出现一个带 dsh-pet 标记的 style，且两族类名都在', () => {
+  test('首次注入：head 里出现一个带 dsh-zdd-pet 标记的 style，且两族类名都在', () => {
     const { doc, restore } = withFakeDom();
     try {
       injectSettingsCss();
       assert.equal(doc.head.children.length, 1, '应只注入一个 style');
       const [tag] = doc.head.children;
       assert.equal(tag.tag, 'style');
-      assert.equal(tag.dataset.plugin, 'dsh-pet');
-      assert.equal(tag.dataset.pluginCss, 'dsh-pet/settings.css');
-      assert.ok(tag.textContent.includes('.dsh-pet-mp__trigger'), '模型选择器的样式必须在');
-      assert.ok(tag.textContent.includes('.dsh-pet-cfg__inp'), '配置卡片表单的样式必须在');
+      assert.equal(tag.dataset.plugin, 'dsh-zdd-pet');
+      assert.equal(tag.dataset.pluginCss, 'dsh-zdd-pet/settings.css');
+      assert.ok(tag.textContent.includes('.dsh-zdd-pet-mp__trigger'), '模型选择器的样式必须在');
+      assert.ok(tag.textContent.includes('.dsh-zdd-pet-cfg__inp'), '配置卡片表单的样式必须在');
     } finally {
       restore();
     }

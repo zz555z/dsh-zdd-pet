@@ -2,7 +2,7 @@
  * 右键菜单、对话弹窗与悬浮提示的入口：三样都是贴在宠物上的浮层，共享同一套关闭与定位时机。
  * 不负责动作本身：菜单叶子交给 menu-actions 派发，对话内容由 shared/chat 与宿主 /chat 处理。
  * 浮层句柄只在本模块持有，卸载时统一关闭；提示位置直接写 style，不走 React 状态。
- * @module dsh-pet/src/client/pet/card/entry
+ * @module dsh-zdd-pet/src/client/pet/card/entry
  */
 import { CHAT_HOTKEY_HINT, mountChatDialog } from '../../../shared/chat/index.ts';
 import { captureDisplayFrame } from '../../../shared/chat/capture.ts';
@@ -119,7 +119,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
     /** 打开对话弹窗：弹窗贴在身体命中区右上角，视频框右上角不等于宠物右上角；超出视口夹回。 */
     const openChat = (image?: File): void => {
       if (chatRef.current) chatRef.current.close();
-      const hitRect = stage()?.querySelector('.dsh-pet-hit')?.getBoundingClientRect();
+      const hitRect = stage()?.querySelector('.dsh-zdd-pet-hit')?.getBoundingClientRect();
       chatRef.current = mountChatDialog({
         petId: cfgRef.current.id,
         baseUrl: ROUTE_PATH + '/chat',
@@ -131,7 +131,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
         capture: captureDisplayFrame,
         onSent: () => {
           // 发送成功：回复已写进 /state，长轮询会立刻返回并弹气泡。
-          console.info('[dsh-pet] 对话已发送 pet=' + cfgRef.current.id);
+          console.info('[dsh-zdd-pet] 对话已发送 pet=' + cfgRef.current.id);
         },
         onClose: () => {
           chatRef.current = null;

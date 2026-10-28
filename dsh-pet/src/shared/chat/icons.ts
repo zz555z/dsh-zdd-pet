@@ -1,7 +1,7 @@
 /**
  * 对话弹窗里的两枚内联 SVG 图标。
  * 不用 emoji：同一个符号在不同字体回退链下会被渲染成异体字形（上传用的 🖼 在 Windows 上就是如此）。
- * @module dsh-pet/src/shared/chat/icons
+ * @module dsh-zdd-pet/src/shared/chat/icons
  */
 
 /** SVG 图标共用的描边属性：一条线宽、随文字颜色。 */

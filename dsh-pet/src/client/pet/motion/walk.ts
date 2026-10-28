@@ -3,7 +3,7 @@
  * 不负责选哪段走路动作（planMoveAction 已决定），也不负责位置跟随的弹簧与拖拽——那是另外两条驱动。
  * 依赖注入的取值函数与当帧度量；rAF 句柄与待走动作由本模块持有，stop 之后同一实例可重新规划。
  * 不变量：同一时刻最多一条走位在跑；停走必须取消在跑的帧并作废已排队的动作。
- * @module dsh-pet/src/client/pet/motion/walk
+ * @module dsh-zdd-pet/src/client/pet/motion/walk
  */
 import { planMoveAction, type PendingMove } from './move-action.ts';
 import type { BoxPoint } from './geometry.ts';

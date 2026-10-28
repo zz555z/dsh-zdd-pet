@@ -1,12 +1,12 @@
 /**
- * 桌面 Helper 自测用的 mock 宿主，只实现 /dsh-pet-7340 前缀下的四条只读端点：
+ * 桌面 Helper 自测用的 mock 宿主，只实现 /dsh-zdd-pet-7340 前缀下的四条只读端点：
  * 成品配置、按 petId 取动画、余额、余额触发计数。开发自测工具，不入 npm 包。
  * 不模拟用户层与文件宠物（配置只回内置默认一条），也不提供写操作、鉴权与系统通知
  * （系统通知是浏览器半侧的独立能力，走 DSH 网页自身事件流，与桌面模式无关）。
  * 素材一律从包内 assets/webm 读，petId 只作归属标识、不映射到独立素材目录。
  * 必须始终：thumb 解析出的路径要留在素材根内，越界即 400。
  * 端口取第一个参数，默认 8231；入口是 npm run dev:mock。
- * @module dsh-pet/scripts/dev/mock-server
+ * @module dsh-zdd-pet/scripts/dev/mock-server
  */
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync, readFileSync } from 'node:fs';
@@ -40,7 +40,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const pathname = decodeURIComponent(url.pathname);
 
-  if (pathname === '/dsh-pet-7340/balance') {
+  if (pathname === '/dsh-zdd-pet-7340/balance') {
     // 模拟 DeepSeek 余额：固定 11.06 元，按已用比例落在钱袋档位，便于对照余额动画。
     sendJson(res, 200, {
       ok: true,
@@ -51,14 +51,14 @@ const server = createServer((req, res) => {
     return;
   }
 
-  if (pathname === '/dsh-pet-7340/balance/trigger') {
+  if (pathname === '/dsh-zdd-pet-7340/balance/trigger') {
     sendJson(res, 200, { count: 0 });
     return;
   }
 
   // 成品配置：mock 环境无用户层与文件宠物，故只有 main 条目（等于内置默认，字段原样保留），
   // 消费端按成品配置的结构读取，不校验。
-  if (pathname === '/dsh-pet-7340/config') {
+  if (pathname === '/dsh-zdd-pet-7340/config') {
     if (!existsSync(CONFIG_FILE)) {
       res.writeHead(404);
       res.end('no config.jsonc');
@@ -68,11 +68,11 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // 动画文件：/dsh-pet-7340/thumb/<petId>/<name>.webm，与宿主路由同一形态。
+  // 动画文件：/dsh-zdd-pet-7340/thumb/<petId>/<name>.webm，与宿主路由同一形态。
   // petId 仅作归属标识，mock 从统一素材根读（开发环境不模拟独立素材目录）；
   // 先剥掉 petId 段再按文件名解析，必须确认目标仍在 WEBM_ROOT 内才放行。
-  if (pathname.startsWith('/dsh-pet-7340/thumb/')) {
-    let rel = pathname.slice('/dsh-pet-7340/thumb/'.length);
+  if (pathname.startsWith('/dsh-zdd-pet-7340/thumb/')) {
+    let rel = pathname.slice('/dsh-zdd-pet-7340/thumb/'.length);
     const slash = rel.indexOf('/');
     rel = slash >= 0 ? rel.slice(slash + 1) : rel;
     if (!rel || rel.length === 0) {
@@ -107,7 +107,7 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[mock-server] listening on http://127.0.0.1:${PORT}/dsh-pet-7340/`);
-  console.log(`[mock-server] config:  http://127.0.0.1:${PORT}/dsh-pet-7340/config`);
+  console.log(`[mock-server] listening on http://127.0.0.1:${PORT}/dsh-zdd-pet-7340/`);
+  console.log(`[mock-server] config:  http://127.0.0.1:${PORT}/dsh-zdd-pet-7340/config`);
   console.log(`[mock-server] assets:  ${WEBM_ROOT}`);
 });

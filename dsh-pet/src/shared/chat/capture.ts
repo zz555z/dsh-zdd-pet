@@ -3,7 +3,7 @@
  *
  * 只抓一帧、不保留流；用户取消选择或页面策略禁止 display-capture 时抛错，
  * 由弹窗把原因显示出来（浏览器不允许时只能改用上传）。
- * @module dsh-pet/src/shared/chat/capture
+ * @module dsh-zdd-pet/src/shared/chat/capture
  */
 import { type EncodedImage, encodeCanvas } from './encode.ts';
 

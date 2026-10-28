@@ -3,7 +3,7 @@
  *
  * 纯类型与常量，不含实现。
  * 必须始终成立：默认端口变化要同步 CLI 帮助文案与 CONFIG.md。
- * @module dsh-pet/src/standalone/server/options
+ * @module dsh-zdd-pet/src/standalone/server/options
  */
 import { type RegisteredRoute, type StandaloneLogger } from '../context.ts';
 import { type RequestSecurity } from '../request-security.ts';

@@ -2,7 +2,7 @@
  * Q 弹挤压：前台视频贴地压扁再回弹。曲线在 `shared/physics`（`squashScale`），本模块只管 rAF 与 token。
  * 同一时刻只跑一条：新的一次会取消上一条，并用世代号丢掉迟到的帧，避免两次挤压互相抢 `transform`。
  * 尊重系统的「减少动效」：命中时不挤压，但界面照常。
- * @module dsh-pet/src/client/pet/motion/squash
+ * @module dsh-zdd-pet/src/client/pet/motion/squash
  */
 import { SQ_DURATION_MS, SQ_SQUASH, squashScale } from '../../../shared/physics.ts';
 

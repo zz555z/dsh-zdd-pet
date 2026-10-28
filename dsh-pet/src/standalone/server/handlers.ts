@@ -3,7 +3,7 @@
  *
  * 不负责分发与监听；请求体已由上层解析并限长。
  * 必须始终成立：设置页只回本机数据，绝不回显凭据。
- * @module dsh-pet/src/standalone/server/handlers
+ * @module dsh-zdd-pet/src/standalone/server/handlers
  */
 import { publicSettings, validateSettings, type StandaloneSettingsService } from '../settings.ts';
 import { type IncomingMessage, type ServerResponse } from 'node:http';

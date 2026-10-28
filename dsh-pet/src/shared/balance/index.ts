@@ -4,7 +4,7 @@
  * 不负责取数——余额由 host 定时刷新并写入 /state（两端共享同一份结果），也不依赖 React 与 DOM。
  * 必须始终成立：不认识任何具体服务商，解析失败返回 null 而不抛异常（1s 轮询里抛一次会打断整拍）。
  *
- * @module dsh-pet/src/shared/balance/index
+ * @module dsh-zdd-pet/src/shared/balance/index
  */
 
 export * from './types.ts';

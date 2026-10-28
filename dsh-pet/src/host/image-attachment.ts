@@ -2,7 +2,7 @@
  * 对话图片入参的解析：把线上 JSON 的 `attachment` 变成附件服务可直接接收的字节。
  * 不做 IO、不碰附件服务——落盘与权威校验（解码真实性、像素上限）在路由层，本模块只负责
  * 形状、媒体类型白名单与 base64 规范化。
- * @module dsh-pet/src/host/image-attachment
+ * @module dsh-zdd-pet/src/host/image-attachment
  */
 
 /** 图片媒体类型白名单，与宿主附件服务接受的集合一致。 */

@@ -3,7 +3,7 @@
  * 只有 macOS 与 iOS 的 WebKit（Safari / WKWebView）需要 mov——`canPlayType` 判不出来：Safari 能解码 VP9 webm
  * 却会丢弃 alpha，表现成黑底；「能解码」与「透明还在」是两件事，后者没有 Web API 可查询。
  * 判断结果按会话缓存一次，扩展名不会在运行中来回变。
- * @module dsh-pet/src/client/pet/animation/media
+ * @module dsh-zdd-pet/src/client/pet/animation/media
  */
 import { ANIMATION_EXT } from '../../../shared/constants.ts';
 

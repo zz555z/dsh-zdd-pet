@@ -5,7 +5,7 @@
  * 鼠标事件位置——建窗后就冻结，兜底轮询拿着陈旧坐标算，宠物永远翻不成可交互。这里直接走 X11 协议：
  * 连接握手（Xauthority 的 MIT-MAGIC-COOKIE-1）与 QueryPointer，失败时 get() 返回 null 由调用方回退
  * 原生 API。QueryPointer 返回物理像素，缩放不为 1 时由调用方除以 scaleFactor。
- * @module dsh-pet/runtime/electron-helper/x11-pointer
+ * @module dsh-zdd-pet/runtime/electron-helper/x11-pointer
  */
 const net = require('node:net');
 const fs = require('node:fs');

@@ -1,7 +1,7 @@
 /**
  * 桌面几何：把逐显示器的 bounds/workArea 汇总成渲染端要的 hull、逐屏区域与完整面板（纯计算，不碰 Electron）。
  * macOS 把工作区顶边放开到面板顶边（宠物可进入菜单栏条带），但保留 Dock 一侧的排除。
- * @module dsh-pet/runtime/electron-helper/desktop-geometry
+ * @module dsh-zdd-pet/runtime/electron-helper/desktop-geometry
  */
 'use strict';
 

@@ -2,7 +2,7 @@
  * 点击积分：飞行中的宠物被点击时按速度与体型算分，速度越快、宠物越小分越高。
  * 不负责达标判定与展示——阈值由调用方判，弹窗与粒子在 score-popup。
  * 依赖 constants 的基准宠物宽度换算体型加成。
- * @module dsh-pet/src/shared/score
+ * @module dsh-zdd-pet/src/shared/score
  */
 import { PET_REF_WIDTH } from './constants.ts';
 

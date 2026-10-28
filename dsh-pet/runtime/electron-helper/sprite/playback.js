@@ -3,7 +3,7 @@
  *
  * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
  * 只读实例状态与 shared-core 的选池函数，副作用是 DOM 视频源与 this.* 字段。
- * @module dsh-pet/runtime/electron-helper/sprite-playback
+ * @module dsh-zdd-pet/runtime/electron-helper/sprite-playback
  */
 'use strict';
 
@@ -43,7 +43,7 @@ Object.assign(PetSprite.prototype, {
     const loadGuard = (why) => {
       if (!this.pending || this.pending.gen !== gen) return;
       this.pending = null;
-      console.warn('[dsh-pet] 素材加载失败 pet=' + this.pet.id + ' anim=' + next + '：' + why + '（已释放本次切换）');
+      console.warn('[dsh-zdd-pet] 素材加载失败 pet=' + this.pet.id + ' anim=' + next + '：' + why + '（已释放本次切换）');
       // 播放回执：这一段没能播起来 → 如实回 failed（而不是让调用方干等到 timeout）
       if (playbackId) {
         if (this.playback === playbackId) this.playback = null;
@@ -125,7 +125,7 @@ Object.assign(PetSprite.prototype, {
     if (this.frozen === next) return;
     this.frozen = next;
     const el = this.front === 0 ? this.videoA : this.videoB;
-    const stamp = '[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id;
+    const stamp = '[dsh-zdd-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id;
     if (next) {
       // 停住正在播的那一段：宿主停不掉一段视频，完全静止只能由渲染端执行；只堵随机链入口不够，
       // 那个入口要等动画播完才被调用。
@@ -235,7 +235,7 @@ Object.assign(PetSprite.prototype, {
       const nextWork = nonTerminal ? S.nextWorkStatusAnim(animations.events?.workStatus ?? [], this.anim) : null;
       if (nextWork !== null) {
         console.log(
-          '[dsh-pet] ' +
+          '[dsh-zdd-pet] ' +
             new Date().toTimeString().slice(0, 8) +
             ' pet=' +
             this.pet.id +
@@ -281,7 +281,7 @@ Object.assign(PetSprite.prototype, {
     if (slot === undefined) return false;
     const name = S.pickSlot(slot, this.anim); // 避开当前正播动画（避免连续重复）
     console.log(
-      '[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id + ' 恢复工作状态动画: ' + name,
+      '[dsh-zdd-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id + ' 恢复工作状态动画: ' + name,
     );
     const rotating = Array.isArray(slot) && slot.length > 1;
     if (rotating)

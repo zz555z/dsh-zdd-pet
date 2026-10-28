@@ -4,7 +4,7 @@
  * 只做路由与请求边界（去重、限长、CORS、错误兜底），不实现各路由的业务逻辑；对 Electron 无依赖，
  * 便于直接测非法与不可信请求。依赖 standalone 的页面与安全模块，安全判定一律先于分发。
  *
- * @module dsh-pet/src/app/router
+ * @module dsh-zdd-pet/src/app/router
  */
 
 import { createServer } from 'node:http';

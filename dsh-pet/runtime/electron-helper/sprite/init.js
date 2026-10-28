@@ -3,7 +3,7 @@
  *
  * 只由 constructor 调用一次；运行期的行为在 sprite-playback / sprite-motion / sprite-input。
  * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
- * @module dsh-pet/runtime/electron-helper/sprite-init
+ * @module dsh-zdd-pet/runtime/electron-helper/sprite-init
  */
 'use strict';
 
@@ -93,6 +93,7 @@ Object.assign(PetSprite.prototype, {
     this.workTimer = null;
     this.workText = null;
     this.workState = null; // 最近一次工作状态（互动/事件动画播完恢复档位循环用）
+    this.workStatusSnap = null; // 最近一份工作状态快照（含 task/progress），进度气泡优先与角标渲染读它
     this.prevWorkState = null; // 上一档状态（气泡只在状态变化时点亮/收起）
     this.prevWorkTick = 0;
     // 占用锁：frozen = 此刻正被第三方占用；lockTimer 按叶子里的 expiresAt 自己到点解除
@@ -115,8 +116,8 @@ Object.assign(PetSprite.prototype, {
     this.el.style.setProperty('--pet-size', this.size + 'px');
     // 字号（配置 font）：按本宠物尺寸算好最终 px 注入，气泡与提示的 CSS 读这两个变量
     const fontPx = S.resolveFontPx(this.font, this.size);
-    this.el.style.setProperty('--dsh-pet-font-bubble', fontPx.bubble + 'px');
-    this.el.style.setProperty('--dsh-pet-font-tip', fontPx.tip + 'px');
+    this.el.style.setProperty('--dsh-zdd-pet-font-bubble', fontPx.bubble + 'px');
+    this.el.style.setProperty('--dsh-zdd-pet-font-tip', fontPx.tip + 'px');
     const stage = document.createElement('div');
     stage.className = 'pet-stage';
     stage.style.transform = 'translateY(' + this.bottomPad + 'px)';

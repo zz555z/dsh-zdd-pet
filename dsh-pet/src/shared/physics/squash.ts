@@ -3,7 +3,7 @@
  *
  * 不做碰撞检测、不改位置；只回答「这一下该压多扁」。
  * 必须始终成立：返回值落在 [SQ_MAX_SQUASH, 0.8]，超出即视为调用方算错了速度。
- * @module dsh-pet/src/shared/physics/squash
+ * @module dsh-zdd-pet/src/shared/physics/squash
  */
 import { SQ_HARD_SPEED, SQ_MAX_SQUASH, SQ_SOFT_SPEED, SQ_SQUASH } from './constants.ts';
 

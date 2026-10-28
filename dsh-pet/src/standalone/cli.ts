@@ -5,7 +5,7 @@
  * 负责把伪 ctx、本机 HTTP 服务与桌面 Helper 串成一条启动路径，并处理收尾与退出码。
  * 不实现路由、配置读取或窗口逻辑，这些都复用插件与宿主半侧的实现。
  * 必须始终成立：服务先监听再 apply，所有退出入口共用同一套收尾流程。
- * @module dsh-pet/src/standalone/cli
+ * @module dsh-zdd-pet/src/standalone/cli
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -63,7 +63,7 @@ async function run(logger: StandaloneLogger, options: { port: number }): Promise
     security,
     ai,
     status: () => ({
-      name: 'dsh-pet-standalone',
+      name: 'dsh-zdd-pet-standalone',
       pid: process.pid,
       pluginRoot: packageRoot,
       plugin: { root: packageRoot, version: packageVersion(packageRoot) },
@@ -129,8 +129,8 @@ async function run(logger: StandaloneLogger, options: { port: number }): Promise
   const desktopVisible = pets.filter(isDesktopVisible);
   for (const line of [
     '',
-    '===== dsh-pet 独立模式（不需要 DSH）=====',
-    `  插件        dsh-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
+    '===== dsh-zdd-pet 独立模式（不需要 DSH）=====',
+    `  插件        dsh-zdd-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
     `  路由        http://127.0.0.1:${server.port}${ROUTE_PATH}/`,
     `  配置        ${configSource}`,
     `  宠物        ${describePets(pets)}`,
@@ -155,7 +155,7 @@ async function run(logger: StandaloneLogger, options: { port: number }): Promise
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
   if ('error' in parsed) {
-    console.error(`dsh-pet-standalone: ${parsed.error}\n`);
+    console.error(`dsh-zdd-pet-standalone: ${parsed.error}\n`);
     console.error(USAGE);
     return 2;
   }
@@ -165,7 +165,7 @@ async function main(): Promise<number> {
     return 0;
   }
   // 独立模式常常没有终端，日志必须同时落盘；插件会复用同一个 logger。
-  const logger = createStandaloneLogger({ file: join(dshHomeDir(), 'dsh-pet', 'logs.txt') });
+  const logger = createStandaloneLogger({ file: join(dshHomeDir(), 'dsh-zdd-pet', 'logs.txt') });
   // 纯模块没有 ctx.logger，靠默认出口落盘。
   setDefaultLogger(logger);
   if (options.check) return runCheck(logger);
@@ -182,7 +182,7 @@ main()
   .catch((error: unknown) => {
     defaultLog(
       'error',
-      `dsh-pet-standalone: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      `dsh-zdd-pet-standalone: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     );
     process.exit(1);
   });

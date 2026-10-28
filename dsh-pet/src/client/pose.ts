@@ -1,9 +1,9 @@
 /**
- * 「实况」（位置 + 朝向）的页面内注册表：PetCard 挂载时注册读法，供 Cordis 只读服务 `petApi7340` 读取。
+ * 「实况」（位置 + 朝向）的页面内注册表：PetCard 挂载时注册读法，供 Cordis 只读服务 `petApiZdd` 读取。
  * 网页端的位置天生按页面各一份：宠物在各自视口里，读到的也正好是这一页里的这只，无需实例 id。
  * 只服务浏览器半侧；不负责宿主半侧的快照——桌面宠物走自己的 `POST /pose/report` 与 `GET /pose`。
  * 坐标口径与 `POST /position` 完全一致（归一化中心坐标），且按需读取，不是注册时的快照。
- * @module dsh-pet/src/client/pose
+ * @module dsh-zdd-pet/src/client/pose
  */
 
 /** 一次实况：宠物中心的归一化坐标与朝向。 */

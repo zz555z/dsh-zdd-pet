@@ -3,7 +3,7 @@
  *
  * 不复用正式通道：不污染限流窗口、忙状态与暂停标记，超时也是独立的 15 秒。
  * 不判断服务是否已释放（归 ./create），也不校验设置是否已保存（用户可能正在填表单）。
- * @module dsh-pet/src/standalone/ai-provider/test-connection
+ * @module dsh-zdd-pet/src/standalone/ai-provider/test-connection
  */
 import { type StandaloneAiSettings } from '../ai-config.ts';
 import { isAuthenticationFailure, isRateLimitFailure, sdkTextStream, type AiFetch } from '../ai-transport.ts';

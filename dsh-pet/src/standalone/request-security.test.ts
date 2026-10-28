@@ -26,7 +26,7 @@ test('capabilities are random, fragment-only, and process-bound', () => {
   const a = createRequestSecurity();
   const b = createRequestSecurity();
   assert.notEqual(a.token, b.token);
-  const url = new URL(a.authenticatedUrl('http://127.0.0.1:3080/dsh-pet'));
+  const url = new URL(a.authenticatedUrl('http://127.0.0.1:3080/dsh-zdd-pet'));
   assert.equal(url.pathname, '/standalone-ai/');
   assert.equal(url.search, '');
   assert.equal(new URLSearchParams(url.hash.slice(1)).get('token'), a.token);
@@ -36,10 +36,10 @@ test('capabilities are random, fragment-only, and process-bound', () => {
 test('encoded private routes still require a capability; invalid encodings fail explicitly', () => {
   const security = createRequestSecurity();
   for (const path of [
-    '/dsh-pet-7340/%63hat?pet=main',
-    '/dsh-pet-7340/ch%61t',
-    '/dsh-pet-7340/chat%2Fhistory',
-    '/dsh-pet-7340/%77hisper',
+    '/dsh-zdd-pet-7340/%63hat?pet=main',
+    '/dsh-zdd-pet-7340/ch%61t',
+    '/dsh-zdd-pet-7340/chat%2Fhistory',
+    '/dsh-zdd-pet-7340/%77hisper',
   ]) {
     for (const method of ['GET', 'HEAD']) {
       const res = response();
@@ -47,7 +47,7 @@ test('encoded private routes still require a capability; invalid encodings fail 
       assert.equal(res.status, 403);
       assert.equal(
         security.authorize(
-          request({ 'x-dsh-pet-token': security.token }, path, method),
+          request({ 'x-dsh-zdd-pet-token': security.token }, path, method),
           response() as unknown as ServerResponse,
         ),
         true,
@@ -58,7 +58,7 @@ test('encoded private routes still require a capability; invalid encodings fail 
     const res = response();
     assert.equal(
       security.authorize(
-        request({ 'x-dsh-pet-token': security.token }, '/dsh-pet-7340/%ZZ', method),
+        request({ 'x-dsh-zdd-pet-token': security.token }, '/dsh-zdd-pet-7340/%ZZ', method),
         res as unknown as ServerResponse,
       ),
       false,
@@ -66,7 +66,10 @@ test('encoded private routes still require a capability; invalid encodings fail 
     assert.equal(res.status, 400);
   }
   assert.equal(
-    security.authorize(request({}, '/dsh-pet-7340/thumb/main/%E7%9C%8B.webm'), response() as unknown as ServerResponse),
+    security.authorize(
+      request({}, '/dsh-zdd-pet-7340/thumb/main/%E7%9C%8B.webm'),
+      response() as unknown as ServerResponse,
+    ),
     true,
   );
 });
@@ -74,9 +77,9 @@ test('encoded private routes still require a capability; invalid encodings fail 
 test('desktop file-origin exception always needs a capability and never relaxes Host checks', () => {
   const security = createRequestSecurity();
   const fileHeaders = { origin: 'null', 'sec-fetch-site': 'cross-site' };
-  for (const path of ['/dsh-pet-7340/config', '/dsh-pet-7340/chat']) {
+  for (const path of ['/dsh-zdd-pet-7340/config', '/dsh-zdd-pet-7340/chat']) {
     assert.equal(security.authorize(request(fileHeaders, path), response() as unknown as ServerResponse, true), false);
-    const headers = { ...fileHeaders, 'x-dsh-pet-token': security.token };
+    const headers = { ...fileHeaders, 'x-dsh-zdd-pet-token': security.token };
     assert.equal(security.authorize(request(headers, path), response() as unknown as ServerResponse, true), true);
     assert.equal(security.authorize(request(headers, path), response() as unknown as ServerResponse), false);
     assert.equal(
@@ -104,7 +107,7 @@ test('all private reads and mutations need the header, never a query capability'
       const res = response();
       assert.equal(
         security.authorize(
-          request({ 'x-dsh-pet-token': token }, '/private?token=' + security.token, method),
+          request({ 'x-dsh-zdd-pet-token': token }, '/private?token=' + security.token, method),
           res as unknown as ServerResponse,
         ),
         false,
@@ -113,7 +116,7 @@ test('all private reads and mutations need the header, never a query capability'
     }
     assert.equal(
       security.authorize(
-        request({ 'x-dsh-pet-token': security.token }, '/private', method),
+        request({ 'x-dsh-zdd-pet-token': security.token }, '/private', method),
         response() as unknown as ServerResponse,
       ),
       true,
@@ -135,14 +138,17 @@ test('DNS rebinding, null/foreign origins, wrong ports and cross-site fetches fa
   for (const headers of headersList) {
     const res = response();
     assert.equal(
-      security.authorize(request({ ...headers, 'x-dsh-pet-token': security.token }), res as unknown as ServerResponse),
+      security.authorize(
+        request({ ...headers, 'x-dsh-zdd-pet-token': security.token }),
+        res as unknown as ServerResponse,
+      ),
       false,
       JSON.stringify(headers),
     );
   }
   assert.equal(
     security.authorize(
-      request({ origin: 'http://127.0.0.1:3080', 'x-dsh-pet-token': security.token }),
+      request({ origin: 'http://127.0.0.1:3080', 'x-dsh-zdd-pet-token': security.token }),
       response() as unknown as ServerResponse,
     ),
     true,
@@ -155,8 +161,8 @@ test('only minimal health, settings shell and known media GET are public; public
     '/health',
     '/standalone-ai/',
     '/standalone-ai/settings.js',
-    '/dsh-pet-7340/thumb/main/idle.webm',
-    '/dsh-pet-7340/pic/memes/main/a.png',
+    '/dsh-zdd-pet-7340/thumb/main/idle.webm',
+    '/dsh-zdd-pet-7340/pic/memes/main/a.png',
   ]) {
     assert.equal(security.authorize(request({}, path), response() as unknown as ServerResponse), true, path);
     assert.equal(
@@ -166,10 +172,10 @@ test('only minimal health, settings shell and known media GET are public; public
     );
     assert.equal(security.authorize(request({}, path, 'POST'), response() as unknown as ServerResponse), false, path);
   }
-  for (const path of ['/standalone-ai/settings', '/dsh-pet-7340/whisper', '/dsh-pet-7340/chat', '/shutdown']) {
+  for (const path of ['/standalone-ai/settings', '/dsh-zdd-pet-7340/whisper', '/dsh-zdd-pet-7340/chat', '/shutdown']) {
     assert.equal(security.authorize(request({}, path), response() as unknown as ServerResponse), false, path);
   }
-  for (const path of ['/dsh-pet-7340/config', '/dsh-pet-7340/state']) {
+  for (const path of ['/dsh-zdd-pet-7340/config', '/dsh-zdd-pet-7340/state']) {
     assert.equal(security.authorize(request({}, path), response() as unknown as ServerResponse), true, path);
     assert.equal(
       security.authorize(request({ origin: 'http://evil.test' }, path), response() as unknown as ServerResponse),

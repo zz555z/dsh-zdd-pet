@@ -82,7 +82,7 @@ function makeHarness(): Harness {
 
 /** 造一次请求；`body` 传字符串时原样发送（用于坏 JSON）。 */
 const input = (body: unknown, method = 'POST'): RouteInput => ({
-  url: new URL('http://localhost/dsh-pet-7340/pet-config'),
+  url: new URL('http://localhost/dsh-zdd-pet-7340/pet-config'),
   rest: 'pet-config',
   method,
   body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -109,7 +109,7 @@ function writePack(file: string): void {
 }
 
 before(() => {
-  root = mkdtempSync(join(tmpdir(), 'dsh-pet-config-entry-'));
+  root = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-config-entry-'));
   savedHome = process.env.DSH_HOME;
   // 告警日志落在这个临时 home 下，别污染真实用户目录。
   process.env.DSH_HOME = join(root, 'home');

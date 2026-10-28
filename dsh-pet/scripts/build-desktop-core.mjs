@@ -4,7 +4,7 @@
  * 必须是经典 script 而非 ESM：桌面 Helper 从 file:// 载入页面，Chromium 对 file:// 的 ES module 有 CORS 限制。
  * shared-core.js 先于 renderer.js 加载，renderer 直接读全局，不再另建模块系统。
  * 只产这一份构建产物，不做类型检查、不写声明；由发布链的 npm run build:desktop-core 调用。
- * @module dsh-pet/scripts/build-desktop-core
+ * @module dsh-zdd-pet/scripts/build-desktop-core
  */
 import { rolldown } from 'rolldown';
 import { readFileSync, writeFileSync } from 'node:fs';

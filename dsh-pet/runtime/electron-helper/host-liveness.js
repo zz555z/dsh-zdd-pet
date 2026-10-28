@@ -4,7 +4,7 @@
  * Helper 的 stdout/stderr 是宿主给的管道，宿主一退出读端就消失，下一次写拿到 EPIPE；
  * 未挂监听的流错误会成为未捕获异常，而 Electron 的默认处理器只弹模态框、不退出。
  * 这里只放判定（不 require electron），主进程侧负责挂监听、起轮询与退出。
- * @module dsh-pet/runtime/electron-helper/host-liveness
+ * @module dsh-zdd-pet/runtime/electron-helper/host-liveness
  */
 
 'use strict';

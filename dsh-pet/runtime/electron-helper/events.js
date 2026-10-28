@@ -4,7 +4,7 @@
  * 展示与 tick 回调挂在 PetSprite.prototype 上，必须在 sprite.js 之后加载（顶层就改写原型）；startLoops 是全部轮询的
  * 唯一入口，boot 成功后调用。不负责动画播放与气泡渲染本身（见 sprite.js）。依赖 constants.js / sprite.js。
  *
- * @module dsh-pet/runtime/electron-helper/events
+ * @module dsh-zdd-pet/runtime/electron-helper/events
  */
 'use strict';
 
@@ -20,6 +20,9 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
   // 宿主侧不挡这个全局段：sections.workStatus 是所有宠物共用一份，跳过写入会连带静音别的宠物。
   if (this.frozen) return;
   const state = snapshot && snapshot.state ? snapshot.state : null;
+  // 快照整份留在 sprite 上：renderBubble 是只读渲染路径，需要 task/progress 才知道「有没有任务」
+  // （进度气泡优先判定）以及进度角标该写什么
+  this.workStatusSnap = snapshot || null;
   this.workState = state; // 当前工作状态：互动/事件动画播完恢复档位循环用
   const stateChanged = this.prevWorkState !== state;
   this.prevWorkState = state;
@@ -39,23 +42,24 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
     this.workTimer = null;
     this.workOn = false;
     this.workText = null;
+    this.workStatusSnap = null; // 回空闲 → 没有任务，碎碎念/余额可以正常占气泡
     this.renderBubble();
     return;
   }
   const pool = this.animations.events?.workStatus;
   if (!pool || pool.length === 0) {
-    console.error('[dsh-pet] 配置缺少 animations.events.workStatus，无法播放工作状态动画');
+    console.error('[dsh-zdd-pet] 配置缺少 animations.events.workStatus，无法播放工作状态动画');
     return;
   }
   const idx = S.WORK_STATUS_INDEX[state];
   const slot = pool[idx];
   if (slot === undefined) {
-    console.error('[dsh-pet] work-status 档位索引越界：state=' + state + ' idx=' + idx);
+    console.error('[dsh-zdd-pet] work-status 档位索引越界：state=' + state + ' idx=' + idx);
     return;
   }
   const name = S.pickSlot(slot, this.anim); // 数组槽位档内随机抽 1，避开当前正播动画（与浏览器一致）
   console.log(
-    '[dsh-pet] ' +
+    '[dsh-zdd-pet] ' +
       new Date().toTimeString().slice(0, 8) +
       ' workStatus pet=' +
       this.pet.id +
@@ -151,14 +155,14 @@ PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duratio
   if (anim !== false) {
     const pool = this.animations.events?.whisper;
     if (!pool || pool.length === 0) {
-      console.error('[dsh-pet] 配置缺少 animations.events.whisper，无法播放碎碎念动画');
+      console.error('[dsh-zdd-pet] 配置缺少 animations.events.whisper，无法播放碎碎念动画');
       return;
     }
     // 整池随机抽 1 槽（避开当前正播动画，避免连续重复）；槽位若为数组候选再档内随机（与浏览器一致）
     name = S.pickSlot(S.pick(pool, this.anim), this.anim);
   }
   console.log(
-    '[dsh-pet] ' +
+    '[dsh-zdd-pet] ' +
       new Date().toTimeString().slice(0, 8) +
       ' whisper pet=' +
       this.pet.id +
@@ -211,13 +215,13 @@ PetSprite.prototype.showBalanceNow = function showBalanceNow(state, manual) {
   if (p === undefined) return;
   const pool = this.animations.events?.balance;
   if (!pool || pool.length === 0) {
-    console.error('[dsh-pet] 配置缺少 animations.events.balance，无法播放余额事件动画');
+    console.error('[dsh-zdd-pet] 配置缺少 animations.events.balance，无法播放余额事件动画');
     return;
   }
   const idx = S.balanceEventIndex(p);
   const slot = pool[idx];
   if (!slot) {
-    console.error('[dsh-pet] balance 档位索引越界：p=' + p + ' idx=' + idx);
+    console.error('[dsh-zdd-pet] balance 档位索引越界：p=' + p + ' idx=' + idx);
     return;
   }
   const name = S.pickSlot(slot, this.anim); // 数组槽位档内随机抽 1，且避开当前正播动画（避免连续重复，与浏览器一致）
@@ -255,7 +259,7 @@ function applyBalanceNotice(state, explicit) {
   if (notice.show) for (const s of sprites) s.showBalanceNotice(state, explicit);
   // 未登记服务商是配置事实（已由气泡说明），不再刷 console；其余原因照旧显式报错，绝不伪造余额
   if (state.reason !== 'unsupported') {
-    console.error('[dsh-pet] 余额查询失败 reason=' + state.reason + (state.message ? ' ' + state.message : ''));
+    console.error('[dsh-zdd-pet] 余额查询失败 reason=' + state.reason + (state.message ? ' ' + state.message : ''));
   }
 }
 

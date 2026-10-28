@@ -3,7 +3,7 @@
  *
  * 不决定状态码语义（由处理器给），只负责按格式落盘。
  * 必须始终成立：写回前必须确认响应未结束，避免二次写。
- * @module dsh-pet/src/standalone/server/respond
+ * @module dsh-zdd-pet/src/standalone/server/respond
  */
 import { type RegisteredRoute, type StandaloneLogger } from '../context.ts';
 import { type ServerResponse } from 'node:http';

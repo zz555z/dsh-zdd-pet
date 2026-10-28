@@ -3,7 +3,7 @@
  *
  * 不启动也不停止进程，只给 ./child 提供纯计算的决策。
  * 必须始终成立：退避单调不减，熔断后不再自动重试。
- * @module dsh-pet/src/host/helper/restart
+ * @module dsh-zdd-pet/src/host/helper/restart
  */
 
 /** 停止 helper 的等待上限（ms）：超过就升级 SIGKILL。 */

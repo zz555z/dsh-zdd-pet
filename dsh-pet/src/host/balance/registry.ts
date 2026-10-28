@@ -5,7 +5,7 @@
  * 新增内置服务商：加一个 provider 文件，并在本表登记一行。
  * 始终成立：内置优先，第三方不得占用内置 id；同一 id 重复注册抛错；注销只删自己登记的那份。
  *
- * @module dsh-pet/src/host/balance/registry
+ * @module dsh-zdd-pet/src/host/balance/registry
  */
 import { commandCode } from './providers/commandcode.ts';
 import { deepseekAccount } from './providers/deepseek-account.ts';

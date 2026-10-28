@@ -4,7 +4,7 @@
  * 刻意写成 `Record<BalanceShape, ShapeHandler>` 而不是若干 if/switch：给 BalanceShape 加形态却
  * 忘了补 handler 时，类型检查会直接报缺少属性，而不是静默走进别的分支。
  *
- * @module dsh-pet/src/shared/balance/handlers/index
+ * @module dsh-zdd-pet/src/shared/balance/handlers/index
  */
 
 import type { BalanceShape } from '../types.ts';

@@ -3,7 +3,7 @@
  *
  * 独立成叶子模块是为了避开循环依赖——handlers/* 需要 quotaTone，而 view.ts 又要分发到 handlers。
  *
- * @module dsh-pet/src/shared/balance/tone
+ * @module dsh-zdd-pet/src/shared/balance/tone
  */
 
 /** 进度条配色档位：低于 70% 正常、70% 至 90% 预警、90% 及以上危急。 */

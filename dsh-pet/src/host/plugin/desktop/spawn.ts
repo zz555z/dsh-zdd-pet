@@ -3,7 +3,7 @@
  *
  * 不算宠物列表（归 ./pets），不决定何时重启（归 ./sync 的调用方）。
  * 依赖显式传入（见输入类型），模块内只读两个进程级环境事实：`DSH_PET_IN_PROCESS` 与 `process.versions.electron`。
- * @module dsh-pet/src/host/plugin/desktop/spawn
+ * @module dsh-zdd-pet/src/host/plugin/desktop/spawn
  */
 import { join } from 'node:path';
 import { ROUTE_PATH } from '../../../shared/constants.ts';
@@ -67,10 +67,10 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
       // 「连尝试都没有」且没有任何线索。这里只加可见性，重试节奏与次数保持原样。
       portWaitAttempts += 1;
       if (portWaitAttempts === 1) {
-        log.info(`[dsh-pet] webServer 端口尚未就绪（port=${String(port)}），每 500ms 重试拉起桌面 Helper`);
+        log.info(`[dsh-zdd-pet] webServer 端口尚未就绪（port=${String(port)}），每 500ms 重试拉起桌面 Helper`);
       } else if (portWaitAttempts % 20 === 0) {
         log.warn(
-          `[dsh-pet] 已等待 webServer 端口 ${(portWaitAttempts * 500) / 1000}s 仍未就绪` +
+          `[dsh-zdd-pet] 已等待 webServer 端口 ${(portWaitAttempts * 500) / 1000}s 仍未就绪` +
             `（port=${String(port)}），桌面 Helper 尚未拉起`,
         );
       }
@@ -105,7 +105,7 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
           //   site    = dsh web / 独立模式 → 系统默认浏览器打开站点
           DSH_PET_OPEN_TARGET: isDesktopHost() ? 'desktop' : 'site',
           DSH_PET_SCALE: '1',
-          // 打开 bridge 协议：main.js 注册 dsh-pet-bridge scheme，把渲染端请求经管道转给宿主
+          // 打开 bridge 协议：main.js 注册 dsh-zdd-pet-bridge scheme，把渲染端请求经管道转给宿主
           DSH_PET_BRIDGE: '1',
           // 每只桌面宠物一个局部小窗口：透传宠物列表（[{id,size}]）
           DSH_PET_PETS: JSON.stringify(desktopPetList()),
@@ -122,9 +122,9 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
     try {
       helper.start();
       desktopModeEverActive = true; // 此后即使桌面宠物清零也保留 Helper：托盘常驻，可随时切回来
-      log.info(`dsh-pet desktop helper started (config: ${configUrl})`);
+      log.info(`dsh-zdd-pet desktop helper started (config: ${configUrl})`);
     } catch (e) {
-      log.warn(`dsh-pet desktop helper start failed: ${e instanceof Error ? e.message : String(e)}`);
+      log.warn(`dsh-zdd-pet desktop helper start failed: ${e instanceof Error ? e.message : String(e)}`);
       helper = undefined;
     }
   };
@@ -139,7 +139,7 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
       if (!noDesktopSkipped) {
         noDesktopSkipped = true;
         log.info(
-          `[dsh-pet] 无桌面宠物（display 均为 web/none）且无需保留托盘（tray=${getTrayOn()}），已跳过桌面 Helper 启动`,
+          `[dsh-zdd-pet] 无桌面宠物（display 均为 web/none）且无需保留托盘（tray=${getTrayOn()}），已跳过桌面 Helper 启动`,
         );
       }
       return;
@@ -150,7 +150,7 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
       if (!displayWarned) {
         displayWarned = true;
         log.warn(
-          '[dsh-pet] 未检测到图形显示环境（DISPLAY/WAYLAND_DISPLAY 均为空），已跳过桌面宠物。' +
+          '[dsh-zdd-pet] 未检测到图形显示环境（DISPLAY/WAYLAND_DISPLAY 均为空），已跳过桌面宠物。' +
             '浏览器内宠物不受影响；如需在服务器上启用桌面模式，请配置 Xvfb 后设置 DSH_PET_DESKTOP_FORCE=1。',
         );
       }
@@ -164,10 +164,10 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
     // 诊断日志（issue #168）：只报「没找到」不够用——最常见的情形是「文件明明存在」，
     // 但不在实际查询的路径上（DSH_HOME 不一致）。把真正查的路径一起打出来。
     log.warn(
-      `[dsh-pet] 未找到 Electron 可执行文件：DSH_HOME=${dshHomeDir()}，查找路径=${defaultElectronExe()}` +
+      `[dsh-zdd-pet] 未找到 Electron 可执行文件：DSH_HOME=${dshHomeDir()}，查找路径=${defaultElectronExe()}` +
         `，DSH_PET_ELECTRON_PATH=${process.env.DSH_PET_ELECTRON_PATH ?? '(未设置)'}`,
     );
-    log.warn(`[dsh-pet] 开始下载 Electron 到 ${defaultElectronExe()} ...`);
+    log.warn(`[dsh-zdd-pet] 开始下载 Electron 到 ${defaultElectronExe()} ...`);
     electronEnsure = ensureElectronDownload({
       // 下载全过程写进工作状态气泡（用户没有控制台，只能靠它看进度与失败原因）
       onLog: ({ text, level, done }) =>
@@ -180,7 +180,7 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
           launchHelper(path);
         } else {
           log.warn(
-            '[dsh-pet] Electron download failed; desktop pet unavailable. Set DSH_PET_ELECTRON_PATH and restart, or retry later.',
+            '[dsh-zdd-pet] Electron download failed; desktop pet unavailable. Set DSH_PET_ELECTRON_PATH and restart, or retry later.',
           );
         }
       })

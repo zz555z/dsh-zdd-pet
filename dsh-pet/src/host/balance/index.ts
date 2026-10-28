@@ -6,7 +6,7 @@
  * resolveAccount。第三方经 registerBalanceProvider 注册，拿不到 key 与 resolveAccount。
  * 始终成立：服务商只走成功路径，任何失败都在此落成 fetch-error，绝不伪造 0 余额。
  *
- * @module dsh-pet/src/host/balance/index
+ * @module dsh-zdd-pet/src/host/balance/index
  */
 import { BUILTIN_PROVIDERS, matchBalanceProvider } from './registry.ts';
 import type { AccountBalanceSnapshot, BalanceResult } from './types.ts';

@@ -4,7 +4,7 @@
  * 判定本身无状态：只比对传入的 lastKey，调用方负责保存返回的 key。
  * 两端（浏览器 overlay 与桌面外壳）必须走同一份判定，各写一份必然漂移。
  *
- * @module dsh-pet/src/shared/balance/notice
+ * @module dsh-zdd-pet/src/shared/balance/notice
  */
 
 import type { BalanceNoticeDecision, BalanceState } from './types.ts';

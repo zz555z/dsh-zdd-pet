@@ -3,7 +3,7 @@
  *
  * 不决定文案与语气（归 shared/whisper）。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/interaction
+ * @module dsh-zdd-pet/src/host/routes/interaction
  */
 import { readAllConfig } from '../config.ts';
 import {

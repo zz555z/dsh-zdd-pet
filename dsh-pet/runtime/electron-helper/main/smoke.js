@@ -3,7 +3,7 @@
  * 冒烟自检：DSH_PET_SMOKE=1 时延时检查窗口、渲染、动画与交互链路，截图后退出。
  *
  * 只在开发与排查时进入；检查项要读主进程侧的窗口表与穿透镜像，所以由调用方传入，不自己持状态。
- * @module dsh-pet/runtime/electron-helper/main-smoke
+ * @module dsh-zdd-pet/runtime/electron-helper/main-smoke
  */
 
 const path = require('node:path');
@@ -17,7 +17,7 @@ const { writeFileSync } = require('node:fs');
  * @param deps.setPointerFallbackPaused - 检查穿透往返期间暂停兜底轮询。
  */
 function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused }) {
-  const smokeOut = process.env.DSH_PET_SMOKE_OUT || path.join(app.getPath('temp'), 'dsh-pet-smoke.png');
+  const smokeOut = process.env.DSH_PET_SMOKE_OUT || path.join(app.getPath('temp'), 'dsh-zdd-pet-smoke.png');
   const afterMs = Number(process.env.DSH_PET_SMOKE_AFTER_MS || 9000);
   const target = windows.values().next().value;
   if (target) {
@@ -134,7 +134,7 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
             } catch (err) {
               return { threw: String(err), menuMounted: false };
             }
-            var menu = document.querySelector('.dsh-pet-menu');
+            var menu = document.querySelector('.dsh-zdd-pet-menu');
             var out = {
               threw: null,
               menuMounted: !!menu,
@@ -143,11 +143,11 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
               errsNew: (d.errors || []).length - errsBefore,
             };
             if (menu) {
-              var branch = menu.querySelector('.dsh-pet-menu-branch');
+              var branch = menu.querySelector('.dsh-zdd-pet-menu-branch');
               if (branch) {
                 branch.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false, relatedTarget: menu }));
                 var panels = Array.prototype.slice.call(
-                  menu.querySelectorAll('.dsh-pet-menu-column'),
+                  menu.querySelectorAll('.dsh-zdd-pet-menu-column'),
                 );
                 var visible = function () {
                   return panels.filter(function (p) {
@@ -161,7 +161,7 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
                   return p !== panels[0];
                 })[0];
                 if (panel1) {
-                  var cat = panel1.querySelector('.dsh-pet-menu-branch');
+                  var cat = panel1.querySelector('.dsh-zdd-pet-menu-branch');
                   if (cat) {
                     cat.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false, relatedTarget: panel1 }));
                     await new Promise(function (resolve) {
@@ -200,14 +200,14 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
           })(),
         }))()`);
         console.log(
-          '[dsh-pet-desktop-helper] smoke dump: windows=' +
+          '[dsh-zdd-pet-desktop-helper] smoke dump: windows=' +
             windows.size +
             ' ids=' +
             JSON.stringify([...windows.keys()]) +
             ' => ' +
             JSON.stringify(dump),
         );
-        console.log('[dsh-pet-desktop-helper] smoke bounds:', JSON.stringify(first.getContentBounds()));
+        console.log('[dsh-zdd-pet-desktop-helper] smoke bounds:', JSON.stringify(first.getContentBounds()));
         // 点击穿透 round-trip：true → 窗口捕获输入，false → 恢复整窗穿透；状态取自主进程镜像。
         // 期间暂停兜底轮询：它按真实光标翻转，冒烟时鼠标不在宠物身上会覆盖本断言的状态。
         setPointerFallbackPaused(true);
@@ -219,15 +219,15 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
         const passthroughIgnoring = windowIgnore.get(first.id);
         setPointerFallbackPaused(false);
         console.log(
-          '[dsh-pet-desktop-helper] smoke interactive round-trip:',
+          '[dsh-zdd-pet-desktop-helper] smoke interactive round-trip:',
           JSON.stringify({ interactiveIgnoring, passthroughIgnoring }),
         );
         const image = await first.webContents.capturePage();
         writeFileSync(smokeOut, image.toPNG());
-        console.log('[dsh-pet-desktop-helper] smoke capture:', smokeOut);
+        console.log('[dsh-zdd-pet-desktop-helper] smoke capture:', smokeOut);
       }
     } catch (error) {
-      console.error('[dsh-pet-desktop-helper] smoke capture failed:', error);
+      console.error('[dsh-zdd-pet-desktop-helper] smoke capture failed:', error);
     }
     setTimeout(() => app.quit(), 500);
   }, afterMs);

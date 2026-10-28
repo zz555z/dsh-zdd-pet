@@ -2,7 +2,7 @@
  * 打开对话的隐式入口：拖拽落到宠物上、悬停时按 T。
  * 只在调用方生命周期内注册，卸载时全部摘除；不认为自己是 React 组件，也不碰状态。
  * 菜单项那条入口由调用方直接接线，不在这里。
- * @module dsh-pet/src/client/pet/card/open-chat
+ * @module dsh-zdd-pet/src/client/pet/card/open-chat
  */
 import { isChatHotkey } from '../../../shared/chat/hotkey.ts';
 import { dragHasFiles, firstImageFile } from '../../../shared/chat/image-pick.ts';

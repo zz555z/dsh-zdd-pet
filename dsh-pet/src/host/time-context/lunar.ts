@@ -3,7 +3,7 @@
  *
  * 依赖 ICU 的中国农历日历（不引第三方库），精度边界见 lunarPartsOf。
  * 必须始终成立：拿不到农历时返回 undefined，不猜一个近似值。
- * @module dsh-pet/src/host/time-context/lunar
+ * @module dsh-zdd-pet/src/host/time-context/lunar
  */
 import { DAY_MS } from './constants.ts';
 import { LUNAR_EVE, LUNAR_INDEX, SOLAR_INDEX } from './entries.ts';

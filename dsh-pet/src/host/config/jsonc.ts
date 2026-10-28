@@ -3,7 +3,7 @@
  *
  * 不校验字段，不做合并；解析失败一律抛出，由调用方决定回退还是报错。
  * 必须始终成立：只做去注释与解析，绝不改写用户文件内容。
- * @module dsh-pet/src/host/config/jsonc
+ * @module dsh-zdd-pet/src/host/config/jsonc
  */
 import { existsSync, readFileSync } from 'node:fs';
 import type { ConfigPaths } from './constants.ts';

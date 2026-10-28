@@ -1,7 +1,7 @@
 /**
  * 插件入口：Cordis 插件，把 host 半侧的配置、路由、斜杠命令、轮询与桌面 Helper 装配到 ctx。
  * 装配顺序不能改：`getHandlePetRoute` 惰性取用（`httpRoute` 在本函数后段才创建），`startHelper` 必须最后调用。
- * @module dsh-pet/src/host/index
+ * @module dsh-zdd-pet/src/host/index
  */
 import { createHostSetup } from './plugin/setup.ts';
 import { createHttpRoute, registerHttpRoute } from './plugin/http-route.ts';
@@ -14,6 +14,7 @@ import { registerSessionWatch } from './plugin/session-watch.ts';
 import { createDesktopHelper } from './plugin/desktop-helper.ts';
 import { createBalancePoll } from './plugin/balance-poll.ts';
 import { createChatMemory } from './plugin/chat-memory.ts';
+import { createExtras } from './plugin/extras.ts';
 import { createSessionNotify } from './plugin/session-notify.ts';
 import { createPetLookup } from './plugin/pet-lookup.ts';
 import { createDownloadReport } from './plugin/download-report.ts';
@@ -25,7 +26,7 @@ export const name = 'pet';
 /** 需要注入的服务：webServer（路由）+ agentDefaultModel（当前服务商）+ credentials（凭证）+ llm（对话模型调用）+ commands（/balance 斜杠命令）+ connection（桌面 Helper「打开 AI 设置」用的已鉴权站点 URL） */
 export const inject = ['webServer', 'agentDefaultModel', 'credentials', 'llm', 'commands', 'connection'];
 
-/** 宿主插件主体：注册 `/dsh-pet-7340` 前缀路由与斜杠命令（/balance /pet /chat）；ctx 暂用 any（peer 类型包本地不可解析）。 */
+/** 宿主插件主体：注册 `/dsh-zdd-pet-7340` 前缀路由与斜杠命令（/balance /pet /chat）；ctx 暂用 any（peer 类型包本地不可解析）。 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入的 ctx（webServer/locale 等 service 无静态类型）
 export function apply(ctx: any): void {
   const setup = createHostSetup(ctx);
@@ -42,6 +43,9 @@ export function apply(ctx: any): void {
     EXTERNAL_WORK_SESSION,
     nextExternalWorkSeq,
   } = setup;
+  // 附加玩法（番茄钟 / 任务彩蛋 / 余额告急演出）的共用投递器：把预设文案+配图写进宠物气泡，
+  // 不经模型、零 token。三个玩法各在 loops / session-watch / balance-poll 的接入点调用它。
+  const extras = createExtras({ configPaths, memeDirsFor, state });
   const workStatusBridge = createWorkStatusBridge({ state, workStatus });
   const { publishWorkStatus, stopWorkStatusFlush } = workStatusBridge;
   const downloadReport = createDownloadReport({
@@ -68,7 +72,15 @@ export function apply(ctx: any): void {
   const chatMemory = createChatMemory({ ctx, configPaths, log, memeDirsFor, state, userRoot });
   const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
 
-  const balancePoll = createBalancePoll({ ctx, configPaths, getActivePetId, log, state });
+  const balancePoll = createBalancePoll({
+    ctx,
+    configPaths,
+    deliverCue: extras.deliverCue,
+    getActivePetId,
+    log,
+    memeValid: extras.memeValid,
+    state,
+  });
   const { effectivePetList, balancePeriodSec, whisperPeriodSec, refreshBalance, resolveActivePetId, petDisplayName } =
     balancePoll;
 
@@ -100,7 +112,9 @@ export function apply(ctx: any): void {
   registerSessionWatch({
     ctx,
     cancelTerminalCleanup,
+    deliverEasterEgg: extras.deliverEasterEgg,
     lastTodoText,
+    log,
     notifyActivityTimers,
     publishWorkStatus,
     pushNotifyFrame,
@@ -118,9 +132,11 @@ export function apply(ctx: any): void {
     ctx,
     balancePeriodSec,
     configPaths,
+    deliverCue: extras.deliverCue,
     lastWhisperAt,
     lock,
     log,
+    pickPetMeme: extras.pickPetMeme,
     publishWhisper,
     refreshBalance,
     standaloneAiPolicy,

@@ -2,7 +2,7 @@
  * 点击音效：单例 audio，按键连点节流，播放失败一律静默（没有声音也不该有报错）。
  * 开关由成品配置驱动：配置没加载前保守静音，避免用户在设置页关掉后还响一声。
  * 模块级单例（不是每个宠物一份），多开时同时点也只响一次。
- * @module dsh-pet/src/client/pet/click-sound
+ * @module dsh-zdd-pet/src/client/pet/click-sound
  */
 import { ROUTE_PATH } from '../../shared/constants.ts';
 

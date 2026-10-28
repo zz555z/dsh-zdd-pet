@@ -3,9 +3,10 @@
  *
  * 校验失败只记一次告警并返回 false，由调用方回退默认值。
  * 必须始终成立：校验规则与读取侧同一套，写回时不得放宽。
- * @module dsh-pet/src/host/config/validate
+ * @module dsh-zdd-pet/src/host/config/validate
  */
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../shared/fonts.ts';
+import { pomodoroValid } from '../../shared/pomodoro.ts';
 import { FONT_FAMILY_SET } from './constants.ts';
 
 /** animations 段完整性校验（与旧 assertAnimationsHost 同一套规则；不 throw，非法返回 false） */
@@ -157,6 +158,8 @@ export function topFieldValid(key: string, value: unknown): boolean {
       return physicsValid(value);
     case 'font':
       return fontValid(value);
+    case 'pomodoro':
+      return pomodoroValid(value);
     case 'whisperModel':
     case 'chatModel':
       return modelSelectionValid(value);

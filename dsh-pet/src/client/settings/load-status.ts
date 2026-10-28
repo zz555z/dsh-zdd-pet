@@ -1,7 +1,7 @@
 /**
  * 加载态条：配置还在拉或拉失败时显示一行状态，失败时给「重试」。
  * 就绪后整块不出现，也不占位——它就是设置页顶部那条临时提示。
- * @module dsh-pet/src/client/settings/load-status
+ * @module dsh-zdd-pet/src/client/settings/load-status
  */
 import type { FunctionComponent } from 'react';
 import type { SettingsRuntime } from './runtime.ts';
@@ -29,13 +29,13 @@ export function makeLoadStatus(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionCo
     const failed = props.loadState === 'error';
     return h('div', {
       role: failed ? 'alert' : 'status',
-      className: 'dsh-pet-cfg__actions',
+      className: 'dsh-zdd-pet-cfg__actions',
       children: [
         h('span', { children: t(failed ? 'loadError' : 'loading') }),
         failed
           ? h('button', {
               type: 'button',
-              className: 'dsh-pet-cfg__btn',
+              className: 'dsh-zdd-pet-cfg__btn',
               onClick: props.onRetry,
               children: t('retry'),
             })

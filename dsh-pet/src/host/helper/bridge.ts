@@ -3,13 +3,13 @@
  *
  * 管道两端（宿主与 Electron 主进程）各按本文件对齐消息格式。
  * 必须始终成立：URL 已含路由前缀，宿主侧不得再拼一次。
- * @module dsh-pet/src/host/helper/bridge
+ * @module dsh-zdd-pet/src/host/helper/bridge
  */
 
 /** 协议行前缀：stdout/stdin 里以此开头的整行 JSON 属于 bridge 协议，其余为日志。 */
-export const BRIDGE_PREFIX = 'dsh-pet-bridge:';
+export const BRIDGE_PREFIX = 'dsh-zdd-pet-bridge:';
 
-/** 渲染端（经 main.js 转发）的一次请求：URL 是 /dsh-pet-7340/... 路径 + 查询串；
+/** 渲染端（经 main.js 转发）的一次请求：URL 是 /dsh-zdd-pet-7340/... 路径 + 查询串；
  *  cb = main.js 本地回调服务器地址（宿主把应答 POST 回去；Electron 主进程读不到 piped stdin，
  *  故应答不走 0 号管道 —— electron#4218） */
 export interface BridgeRequest {

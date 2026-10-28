@@ -1,7 +1,7 @@
 {
-  "name": "dsh-pet-electron-helper",
+  "name": "dsh-zdd-pet-electron-helper",
   "version": "0.1.0",
   "private": true,
-  "description": "dsh-pet desktop helper — Electron transparent overlay window",
+  "description": "dsh-zdd-pet desktop helper — Electron transparent overlay window",
   "main": "main.js"
 }

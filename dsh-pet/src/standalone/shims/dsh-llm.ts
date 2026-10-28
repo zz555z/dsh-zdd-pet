@@ -4,7 +4,7 @@
  * 独立模式没有模型后端，这些实现只为让静态 import 的模块图能加载。
  * 形状必须与 DSH 契约一致：配置里显式写了模型时，生成侧会真的走到这里。
  * 只在独立模式构建里生效，由 alias 指向本文件。
- * @module dsh-pet/src/standalone/shims/dsh-llm
+ * @module dsh-zdd-pet/src/standalone/shims/dsh-llm
  */
 
 /** 消息的最小形状：只有角色、内容与来源。 */

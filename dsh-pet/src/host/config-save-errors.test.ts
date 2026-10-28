@@ -26,10 +26,10 @@ let previousHome: string | undefined;
 
 before(async () => {
   previousHome = process.env.DSH_HOME;
-  home = mkdtempSync(join(tmpdir(), 'dsh-pet-save-errors-'));
+  home = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-save-errors-'));
   process.env.DSH_HOME = home;
-  file = join(home, 'dsh-pet', 'main-config.jsonc');
-  mkdirSync(join(home, 'dsh-pet'), { recursive: true });
+  file = join(home, 'dsh-zdd-pet', 'main-config.jsonc');
+  mkdirSync(join(home, 'dsh-zdd-pet'), { recursive: true });
   const routes: ReturnType<typeof createStandaloneContext>['routes'] = [];
   context = createStandaloneContext({ port: 0, routes, logger });
   apply(context.ctx);
@@ -45,7 +45,7 @@ after(async () => {
 });
 
 async function put(body: string, query = '') {
-  const response = await fetch(`http://127.0.0.1:${server.port}/dsh-pet-7340/config${query}`, {
+  const response = await fetch(`http://127.0.0.1:${server.port}/dsh-zdd-pet-7340/config${query}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body,

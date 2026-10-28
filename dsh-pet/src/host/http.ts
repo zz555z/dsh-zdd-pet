@@ -3,7 +3,7 @@
  *
  * 只做协议层的事：不判断业务、不读配置、不碰状态；路由层（./routes）决定应答什么，这里决定怎么落盘。
  * 必须始终成立：素材路径一律经 resolveAsset 限定在给定根目录内，任何拼接都不得逃出该根。
- * @module dsh-pet/src/host/http
+ * @module dsh-zdd-pet/src/host/http
  */
 import { createReadStream, existsSync, fstatSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';

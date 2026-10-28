@@ -27,7 +27,7 @@ function makeDeps(sink?: PetImageSink): { deps: PetRouteDeps; calls: ChatCall[] 
   const deps = {
     configPaths: {},
     log: { error: () => {}, info: () => {}, warn: () => {}, debug: () => {} },
-    memoryPath: '/tmp/dsh-pet-memory.json',
+    memoryPath: '/tmp/dsh-zdd-pet-memory.json',
     memoryRounds: () => 5,
     readMemory: async () => ({}),
     requirePet: () => ({ ok: true, petId: 'main', entry: 'main', conf: {} }),
@@ -66,7 +66,7 @@ function makeSink(overrides: Partial<PetImageSink> = {}): {
 /** 一次 POST /chat 调用；URL 只是占位，pet 与 surface 由 requirePet 桩决定。 */
 function postChat(body: unknown): RouteInput {
   return {
-    url: new URL('http://127.0.0.1/dsh-pet-7340/chat?pet=main&surface=web'),
+    url: new URL('http://127.0.0.1/dsh-zdd-pet-7340/chat?pet=main&surface=web'),
     rest: 'chat',
     method: 'POST',
     body: JSON.stringify(body),

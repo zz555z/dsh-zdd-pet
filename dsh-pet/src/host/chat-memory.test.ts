@@ -44,7 +44,7 @@ function fakeCtx(reply: string): unknown {
 
 /** 临时工作区：用户配置与记忆目录隔离，默认配置指回仓库里那一份。 */
 function tempWorkspace(overlay: Record<string, unknown> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-memory-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-memory-test-'));
   const configPaths: ConfigPaths = {
     defaultFile: fileURLToPath(new URL('../../assets/config.jsonc', import.meta.url)),
     userFile: join(dir, 'main-config.jsonc'),

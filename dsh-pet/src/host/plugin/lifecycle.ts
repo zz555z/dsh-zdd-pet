@@ -2,7 +2,7 @@
  * 卸载清理：摘监听、停定时器、结束挂起等待，顺序不可调换。
  *
  * 不做启动（装配末尾单独 startHelper），不持有资源句柄。
- * @module dsh-pet/src/host/plugin/lifecycle
+ * @module dsh-zdd-pet/src/host/plugin/lifecycle
  */
 import type { PetLookup } from './pet-lookup.ts';
 import type { DesktopHelper } from './desktop-helper.ts';

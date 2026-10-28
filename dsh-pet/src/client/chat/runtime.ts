@@ -3,7 +3,7 @@
  *
  * `h` 就是 `react/jsx-runtime` 的 `jsx`：子节点只能放进 `props.children`，
  * 它的第三个参数是 key 而不是 children——传成变参会把内容静默丢掉（表现为整块空白）。
- * @module dsh-pet/src/client/chat/runtime
+ * @module dsh-zdd-pet/src/client/chat/runtime
  */
 import type { Button, ImageLightbox, Modal } from '@deepseek-ai/dsh-client-ui-primitives';
 

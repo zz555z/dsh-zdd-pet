@@ -2,7 +2,7 @@
  * 一张宠物卡的动画链装配：构造 OwnAnimation、跟随状态换源，并登记挂载期的只读服务。
  * 不负责运动与浮层：走位、拖拽、挤压经装配根的迟绑槽取值，本模块只决定「何时读」。
  * 卸载顺序固定：摘监听 → 注销 pose/progress → dispose 动画链 → 停三套运动。
- * @module dsh-pet/src/client/pet/card/animation
+ * @module dsh-zdd-pet/src/client/pet/card/animation
  */
 import { createOwnAnimation, type OwnAnimation, type OwnAnimationDeps } from '../animation/animation.ts';
 import { registerPose } from '../../pose.ts';
@@ -113,7 +113,7 @@ export function createCardAnimation(rt: CardAnimationRuntime) {
           return { ...boxToRatio(clampReachableBox(box, viewport, { size, bottomPad }), viewport, half) };
         });
       window.addEventListener('resize', onResize);
-      // 把本页这只宠物的实时位置与朝向注册给只读服务 petApi7340（见 ../pose）；
+      // 把本页这只宠物的实时位置与朝向注册给只读服务 petApiZdd（见 ../pose）；
       // 消费者按需读闭包，拖拽、抛掷中途也能拿到当前值，不是快照。
       const unregisterPose = registerPose(petId, () => {
         const center = live.current.center();

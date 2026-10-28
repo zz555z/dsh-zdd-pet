@@ -4,7 +4,7 @@
  * 负责补齐 apply 需要的 Cordis 语义与降级替身，路由表仍由插件宿主半侧提供；
  * 不实现窗口逻辑，HTTP 边界由 ./server 提供。
  * 必须始终成立：替身只显式失败，effect 单项失败不拖垮整个插件。
- * @module dsh-pet/src/standalone/context
+ * @module dsh-zdd-pet/src/standalone/context
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 

@@ -3,7 +3,7 @@
  *
  * 不拼装提示词（归 ./chat）；图片入参的形状与 base64 校验归 ./image-attachment。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/chat
+ * @module dsh-zdd-pet/src/host/routes/chat
  */
 import { readAllConfig, sliceMemoryRounds } from '../config.ts';
 import { parseImageAttachment, type PetImageRef, type PetImageSink } from '../image-attachment.ts';
@@ -72,7 +72,7 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
         // 按空历史处理并记一行日志，不因为一条坏数据让整个历史接口报错。
         const list = Array.isArray(rawMessages) ? rawMessages.filter((m) => m && typeof m.content === 'string') : [];
         if (rawMessages !== undefined && !Array.isArray(rawMessages)) {
-          log.error(`[dsh-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按空历史处理：${memoryPath}`);
+          log.error(`[dsh-zdd-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按空历史处理：${memoryPath}`);
         }
         // 传了 ?rounds= 就用传的（含 0 = 空历史），没传才回落到配置
         const rounds = roundsOverride ?? memoryRounds(who.conf);

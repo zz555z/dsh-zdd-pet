@@ -4,7 +4,7 @@
  * 不负责取数，也不属于展示层——展示层只认数据里带出的档位与基准。
  * 两条路由（官方 API Key 与 DSH 账号）必须使用同一套基准，否则气泡档位会不一致。
  *
- * @module dsh-pet/src/host/balance/deepseek-common
+ * @module dsh-zdd-pet/src/host/balance/deepseek-common
  */
 import type { PricingTier } from './types.ts';
 

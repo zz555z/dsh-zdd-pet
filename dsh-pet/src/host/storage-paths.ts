@@ -5,14 +5,14 @@
  * 路径，只有系统级目录（桌面端 userData、Electron 下载缓存）按平台镜像一份。
  * 必须始终成立：能靠调用消掉的路径字面量不再写第二遍——多写一处就多一处会漂移的硬编码；
  * 桌面端应用名与 main.js 的 app.setName 必须一致（测试直接读 main.js 校验）。
- * @module dsh-pet/src/host/storage-paths
+ * @module dsh-zdd-pet/src/host/storage-paths
  */
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** 桌面端 Electron userData 目录名（= main.js 的 app.setName 入参）。 */
-export const DESKTOP_APP_NAME = 'dsh-pet-electron-helper';
+export const DESKTOP_APP_NAME = 'dsh-zdd-pet-electron-helper';
 
 /** Electron 下载缓存的应用名（@electron/get 写死 env-paths('electron')，与插件名无关）。 */
 const ELECTRON_PATHS_NAME = 'electron';
@@ -31,7 +31,7 @@ export interface StorageEntry {
 
 /** 清单推导的输入：各基准目录、平台与环境（后两者测试注入）。 */
 export interface StoragePathInput {
-  /** 插件用户数据根：传 index.ts 里真实用于写盘的 userRoot，本模块不自己拼 'dsh-pet'。 */
+  /** 插件用户数据根：传 index.ts 里真实用于写盘的 userRoot，本模块不自己拼 'dsh-zdd-pet'。 */
   userDataRoot: string;
   /** Electron 运行时落地目录：传 helper-process.ts 的 electronLandingDir()（下载方的唯一定义）。 */
   electronDir: string;
@@ -92,7 +92,7 @@ export function storageEntries(input: StoragePathInput): StorageEntry[] {
 /**
  * 从本包路径反推 profile 名（设置页拼卸载命令用）。
  *
- * 常规安装形态是 <$DSH_HOME>/profiles/<name>/node_modules/dsh-pet；反推不出来（link: 安装到别处、
+ * 常规安装形态是 <$DSH_HOME>/profiles/<name>/node_modules/dsh-zdd-pet；反推不出来（link: 安装到别处、
  * 或装在 profiles/node_modules 共享层）返回 undefined，由客户端退回占位符——宁可不给名字，也不猜错。
  * @param packageRoot - 本包根目录。
  * @returns profile 名，或 undefined。

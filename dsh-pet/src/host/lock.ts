@@ -8,7 +8,7 @@
  * 始终成立：不传 lock = 现状零变化；传了编号却查不到锁必须回 lock-lost；只有用户能抢占。
  * 契约见 API.md 与 openapi.yaml。
  *
- * @module dsh-pet/src/host/lock
+ * @module dsh-zdd-pet/src/host/lock
  */
 
 /**

@@ -3,7 +3,7 @@
  * 不写 DOM、不读时钟：包围盒、轨迹与时刻都由调用方传入，便于单测与两端共用同一口径。
  * 依赖 shared/physics 的初速估算与弹弓换算。
  * 不变量：弹弓只看拉距（与手速无关）；非弹弓时轨迹估算不出速度就是原地放下。
- * @module dsh-pet/src/client/pet/motion/drag-release
+ * @module dsh-zdd-pet/src/client/pet/motion/drag-release
  */
 import {
   estimateReleaseVelocity,

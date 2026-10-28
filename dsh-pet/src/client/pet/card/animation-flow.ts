@@ -3,7 +3,7 @@
  * 不负责判定本身（播完分支在 animation/cues，选下一段在 animation/next-animation），也不持有动画链。
  * 依赖卡运行时与当前工作状态；工作状态用 ref 镜像，因为播完回调晚于状态更新。
  * 不变量：冻结期间随机链与档位恢复都不动手；换源后必须递增序号，否则同段重播不会生效。
- * @module dsh-pet/src/client/pet/card/animation-flow
+ * @module dsh-zdd-pet/src/client/pet/card/animation-flow
  */
 import { pick, pickSlot, rollKind } from '../../../shared/pickers.ts';
 import { WORK_STATUS_INDEX } from '../../../shared/work-status.ts';
@@ -36,7 +36,7 @@ const stamp = (): string => new Date().toTimeString().slice(0, 8);
 
 /** 一行带时刻与宠物 id 的日志。 */
 const log = (petId: string, message: string): void => {
-  console.log('[dsh-pet] ' + stamp() + ' pet=' + petId + ' ' + message);
+  console.log('[dsh-zdd-pet] ' + stamp() + ' pet=' + petId + ' ' + message);
 };
 
 /**
@@ -153,7 +153,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
       if (anim !== false) {
         const pool = hub.anims().events?.whisper;
         if (!pool || pool.length === 0) {
-          console.error('[dsh-pet] 配置缺少 animations.events.whisper，无法播放碎碎念动画');
+          console.error('[dsh-zdd-pet] 配置缺少 animations.events.whisper，无法播放碎碎念动画');
           return;
         }
         // 整池随机抽 1 槽并避开当前正播动画；槽位为数组时再在档内随机。

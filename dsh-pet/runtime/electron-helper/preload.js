@@ -4,7 +4,7 @@
  * 只做 IPC 转发，不持有状态、不做判定；翻转与判定都在主进程。依赖 Electron 的
  * contextBridge/ipcRenderer，频道名必须与主进程逐字一致。
  *
- * @module dsh-pet/runtime/electron-helper/preload
+ * @module dsh-zdd-pet/runtime/electron-helper/preload
  */
 const { contextBridge, ipcRenderer } = require('electron');
 

@@ -2,7 +2,7 @@
  * 一张宠物卡的运动装配：包围盒、几何、自主走位、抛掷飞行、位置跟随与碰撞站场。
  * 不负责指针与菜单：拖拽驱动经迟绑槽回读，避免与运动驱动形成构造期环。
  * 三套驱动都只建一次，rAF 句柄与世代号在驱动内部，跨渲染存活。
- * @module dsh-pet/src/client/pet/card/motion
+ * @module dsh-zdd-pet/src/client/pet/card/motion
  */
 import { createFlight, type Flight, type FlightMetrics } from '../motion/flight.ts';
 import { createPositionFollow, type PositionFollow } from '../motion/position-follow.ts';

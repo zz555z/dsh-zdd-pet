@@ -3,7 +3,7 @@
  *
  * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
  * 只读实例状态，除 DOM 与 syncInputBusy() 之外不写任何字段。
- * @module dsh-pet/runtime/electron-helper/sprite-bubble
+ * @module dsh-zdd-pet/runtime/electron-helper/sprite-bubble
  */
 'use strict';
 
@@ -55,11 +55,28 @@ Object.assign(PetSprite.prototype, {
     // 工作气泡与碎碎念同款样式（宽度自适应 + 自动换行）；配图标记交给 CSS（带图时取消 min-width）。
     // 图片 URL 与视频同规则：传 BASE 前缀（桌面是 file:// 页面，必须绝对地址），素材根同理。
     const workOn = !!(this.workOn && this.workText);
+    // 有任务（清单进度或任务文案）→ 进度气泡优先，碎碎念/余额让位：用户要看的是进度，
+    // 只有没任务时它们才照常占用气泡。终态（success/error）不参与让位，仍排在后面——
+    // 完成/失败气泡只活 10s，被顶掉就彻底看不到了。与浏览器端 bubble-slots.ts 同一套判据。
+    const taskLive = workOn && S.hasTask(this.workStatusSnap);
     const whisperOn = !!(this.whisperOn && this.whisperView);
     const balanceOn = !!(this.bubbleOn && this.balanceView);
     const workTerminal = this.workState === 'success' || this.workState === 'error';
-    const slot =
-      workTerminal && workOn ? 'work' : whisperOn ? 'whisper' : balanceOn ? 'balance' : workOn ? 'work' : 'none';
+    const slot = taskLive
+      ? 'work'
+      : workTerminal && workOn
+        ? 'work'
+        : whisperOn
+          ? 'whisper'
+          : balanceOn
+            ? 'balance'
+            : workOn
+              ? 'work'
+              : 'none';
+    // 气泡弹出方向：顶部角气泡改到侧边弹（左上→右侧、右上→左侧），宠物才能贴顶且气泡不被屏幕顶裁；
+    // 底部角气泡照旧在上方弹。方向写进 data-side 由 CSS 决定定位与尾巴朝向。
+    const corner = this.pet.position.corner;
+    this.bubble.dataset.side = corner === 'top-left' ? 'right' : corner === 'top-right' ? 'left' : 'up';
     // 配图两种形态二选一：url 用完整地址，image 按素材根拼表情包路径；样式/class 共用。
     const whisperImg =
       slot === 'whisper'
@@ -89,6 +106,15 @@ Object.assign(PetSprite.prototype, {
     }
     this.bubble.innerHTML = '';
     if (slot === 'work') {
+      // 进度角标（如「▰▰▱▱▱  2/5」）：先看「第几步」，再看这步在做什么。与浏览器端 bubble.ts 的
+      // .pet-bub-prog 同一位置、同一套样式与同一份文案（shared 的 progressText）。
+      const badge = S.progressText(this.workStatusSnap);
+      if (badge) {
+        const prog = document.createElement('div');
+        prog.className = 'pet-bub-prog';
+        prog.textContent = badge;
+        this.bubble.appendChild(prog);
+      }
       const line = document.createElement('div');
       line.className = 'pet-bub-row';
       line.textContent = this.workText;

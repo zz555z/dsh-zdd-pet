@@ -36,14 +36,14 @@ function makeDeps(sink?: PetImageSink): PetRouteDeps {
 
 /** 一次取图请求；id 缺省时连查询参数都不带。 */
 function request(id: string | undefined, method = 'GET'): RouteInput {
-  const url = new URL('http://127.0.0.1/dsh-pet-7340/attachment');
+  const url = new URL('http://127.0.0.1/dsh-zdd-pet-7340/attachment');
   if (id !== undefined) url.searchParams.set('id', id);
   return { url, rest: 'attachment', method };
 }
 
 /** 把字节写成临时对象文件，返回其路径与服务桩（imageHostPath 回这个路径）。 */
 function objectFile(bytes: Buffer): { file: string; sink: PetImageSink; clean: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-attachment-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-attachment-test-'));
   const file = join(dir, 'object');
   writeFileSync(file, bytes);
   const sink: PetImageSink = {
@@ -90,11 +90,11 @@ describe('handleAttachmentRoutes —— 取图端点', () => {
       },
     } as PetImageSink;
     const res = await handleAttachmentRoutes(makeDeps(throwing), request(ID));
-    assert.equal((res as { kind: 'text'; body: string }).body, 'dsh-pet: attachment not found');
+    assert.equal((res as { kind: 'text'; body: string }).body, 'dsh-zdd-pet: attachment not found');
   });
 
   test('对象已被清掉（路径存在但文件不在）→ 404', async () => {
-    const sink: PetImageSink = { saveImages: async () => [], imageHostPath: () => '/nonexistent/dsh-pet/object' };
+    const sink: PetImageSink = { saveImages: async () => [], imageHostPath: () => '/nonexistent/dsh-zdd-pet/object' };
     const res = await handleAttachmentRoutes(makeDeps(sink), request(ID));
     assert.equal((res as { status: number }).status, 404);
   });

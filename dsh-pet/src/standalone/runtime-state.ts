@@ -3,7 +3,7 @@
  *
  * 只服务本机启动器，不进入 /health 响应，也不参与路由。
  * 必须始终成立：权限沿用私有 JSON 写入；清理时只删自己写的那一份。
- * @module dsh-pet/src/standalone/runtime-state
+ * @module dsh-zdd-pet/src/standalone/runtime-state
  */
 import { mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,12 +30,12 @@ interface RuntimeDetails {
  * @throws 无法安全写入时抛出。
  */
 export function writeStandaloneRuntime(home: string, details: RuntimeDetails): () => void {
-  const directory = join(home, 'dsh-pet');
+  const directory = join(home, 'dsh-zdd-pet');
   mkdirSync(directory, { recursive: true });
   const file = join(directory, 'standalone-runtime.json');
   try {
     writePrivateJson(file, {
-      name: 'dsh-pet-standalone',
+      name: 'dsh-zdd-pet-standalone',
       pid: process.pid,
       startedAt: new Date().toISOString(),
       ...details,

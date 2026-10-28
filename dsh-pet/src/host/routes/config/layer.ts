@@ -4,7 +4,7 @@
  * 两条写端点（单只 display、整条目实例）共用这一份归属规则，否则「main 写用户层、文件宠物写
  * 自己的配置文件」会被各写一遍，改一处漏一处。
  * 不读合并成品、不校验宠物字段：entry 是否合法、找不到文件该报什么 reason，都由调用方决定。
- * @module dsh-pet/src/host/routes/config/layer
+ * @module dsh-zdd-pet/src/host/routes/config/layer
  */
 import { readPetConfigEntry, readUserConfig } from '../../config.ts';
 import type { PetRouteDeps } from '../types.ts';

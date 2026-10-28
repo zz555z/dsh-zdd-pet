@@ -3,7 +3,7 @@
  *
  * 不负责启动进程（归 ./child）；下载失败记日志后返回 undefined，由调用方降级为仅浏览器模式。
  * 必须始终成立：解析结果必须落在包内或用户数据目录，不接受任意路径。
- * @module dsh-pet/src/host/helper/electron
+ * @module dsh-zdd-pet/src/host/helper/electron
  */
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
@@ -151,8 +151,8 @@ export async function ensureElectronDownload(options: EnsureElectronOptions = {}
   // 下载日志默认走 console；宿主会把它自己的统一日志器传进来——桌面版没有控制台，console 直出
   // 等于丢失（ctx.logger 在部分宿主也不映射到终端）。
   const sink = options.logger ?? console;
-  const log = (message: string): void => sink.info?.(`[dsh-pet] ${message}`);
-  const warn = (message: string): void => sink.warn?.(`[dsh-pet] ${message}`);
+  const log = (message: string): void => sink.info?.(`[dsh-zdd-pet] ${message}`);
+  const warn = (message: string): void => sink.warn?.(`[dsh-zdd-pet] ${message}`);
   // 同一件事两个出口（见 EnsureElectronOptions.onLog）：console 原文 + 给用户看的一句。
   // 文案刻意分成两套——版本号 / 路径 / 耗时对开发者有用，对用户是噪音，不合并成同一句。
   const info = (consoleText: string, text: string, done = false): void => {
@@ -237,7 +237,7 @@ export async function ensureElectronDownload(options: EnsureElectronOptions = {}
 export function defaultLaunch(options: HelperOptions = {}): { command: string; args: string[] } {
   const electronPath = resolveElectronPath([options.electronPath]);
   if (!electronPath) {
-    throw new Error('dsh-pet: cannot resolve Electron executable. Set DSH_PET_ELECTRON_PATH or install electron.');
+    throw new Error('dsh-zdd-pet: cannot resolve Electron executable. Set DSH_PET_ELECTRON_PATH or install electron.');
   }
   const helperPath = options.helperPath || defaultHelperMain;
   return { command: electronPath, args: [helperPath] };

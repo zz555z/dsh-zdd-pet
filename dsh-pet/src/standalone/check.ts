@@ -4,7 +4,7 @@
  * 不启动宿主、不建窗口、不发网络请求，因此不会掩盖桌宠没出现的现场。
  * 依赖插件自己的纯模块，与运行时读的是同一份配置和同一套解析规则。
  * 必须始终成立：报告只描述事实，缺包内默认配置时以非零码退出。
- * @module dsh-pet/src/standalone/check
+ * @module dsh-zdd-pet/src/standalone/check
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,7 +41,7 @@ export function runCheck(logger: StandaloneLogger): number {
   const electron = resolveElectronPath();
   const lines: string[] = [
     `Node            ${process.version}（${process.platform}-${process.arch}）`,
-    `插件            dsh-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
+    `插件            dsh-zdd-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
     `DSH_HOME        ${home}`,
     `用户配置        ${paths.userFile}${existsSync(paths.userFile) ? '' : '（不存在 → 用包内默认）'}`,
     `文件宠物目录    ${paths.petDir}${existsSync(paths.petDir) ? '' : '（不存在）'}`,

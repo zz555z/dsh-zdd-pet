@@ -2,7 +2,7 @@
  * 设置页的双语字典（locale 命名空间 `pet.config`）：宿主在 client apply 时整包注册进 `ctx.locale`。
  * zh 是键集真源，en 以 `Record<Key, string>` 声明，键多键少都在类型检查期报错，不靠运行时兜底。
  * 文案里的 `{name}` 是插值占位符，中英两份必须一一对应，否则翻译后会丢数据。
- * @module dsh-pet/src/client/settings/locales
+ * @module dsh-zdd-pet/src/client/settings/locales
  */
 
 /** 字典命名空间。 */
@@ -146,6 +146,15 @@ export const zh = {
   fontFollowToggleHint:
     '开启（默认）：宠物调大时字号等比放大，462 宽时正好是上面设定的字号；关闭：字号恒定，不随宠物大小变化。',
   invalidFont: '请检查字体设置：字体需在下拉列表内，字号需为 4~200 的数字。',
+  // ===================== 番茄钟 / 久坐提醒 =====================
+  pomodoroTitle: '番茄钟 / 久坐提醒',
+  pomodoroHint:
+    '固定间隔到点让桌宠说一句（零 token）。全局默认，所有宠物共用（pet pack 可在自己种类文件里单独覆盖）；随「保存」写入用户配置，浏览器保存后即时生效，桌面端由保存重载后生效。',
+  pomodoroLabel: '久坐提醒',
+  pomodoroLabelHint: '选「关闭」停用；选某个分钟数即开启，并每隔这么久让桌宠提醒你起来动动。',
+  pomodoroOff: '关闭',
+  pomodoroEvery: '每 {n} 分钟',
+  invalidPomodoro: '请检查番茄钟：间隔需为 1~1440 的数字。',
   'font.candy': '软糖体（内置）',
   'font.yahei': '微软雅黑 / 苹方',
   'font.youyuan': '幼圆',
@@ -191,14 +200,17 @@ export const zh = {
   'storage.electron': '桌面宠物用的 Electron 运行时（体积较大；删除后下次启用桌面模式会自动重新下载）',
   'storage.desktopCache': '桌面宠物窗口的缓存与主屏缩放缓存（可删，会自动重建）',
   'storage.electronCache': 'Electron 安装包下载缓存（可删，需要时会重新下载）',
-  'storage.package': '插件本体（由 DSH 管理，用下面的卸载命令移除，不要手删）',
+  'storage.package': '插件本体（本地源码安装：profile 依赖指向本地 dsh-zdd-pet-install 目录；卸载方式见下）',
   storageMissing: '（尚未创建）',
   uninstallTitle: '卸载方法',
   uninstallStep1: '1. 先退出 DSH（桌面宠物随之退出）；不要在桌宠运行时删除上面的文件。',
-  uninstallStep2: '2. 卸载插件本体（终端执行，会同时从 profile 的 bundle 层移除）：',
+  uninstallStep2:
+    '2. 卸载插件本体——优先在 DSH 的「插件管理」页里卸载 {name}（最省事，会同时从 profile 的依赖与 bundle 层移除）。',
   uninstallStep3:
-    '3. 按需删除上面的位置：缓存类删了无影响；「插件用户数据」删了会丢配置与对话记忆（想保留就先备份其中的 main-config.jsonc）。',
-  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet',
+    '3. 若本机没有可用的 dsh 命令（桌面应用内嵌运行时常如此），可手动卸载：编辑 {profileDir}/package.json，从 dependencies 删掉 "{name}"、从 dsh.profile.bundles 删掉 "{name}"；再删除 node_modules/{name} 目录；然后重启 DSH。',
+  uninstallStep4:
+    '4. 按需删除上面的位置：缓存类（Electron 运行时 / 桌面缓存 / 下载缓存）删了无影响，下次自动重下或重建；「插件用户数据」删了会丢配置与对话记忆（想保留请先备份其中的 main-config.jsonc）。',
+  uninstallCmd: 'dsh plugin --profile {profile} remove {name}',
 };
 
 /** 文案键；zh 的键集即全集，en 必须与它一致。 */
@@ -354,6 +366,16 @@ export const en: Record<Key, string> = {
     'On (default): the font grows with the pet — at 462 px width it is exactly the size above. Off: the size stays fixed regardless of pet size.',
   invalidFont:
     'Check the font settings: the family must be in the list and the size must be a number between 4 and 200.',
+  // ===================== Pomodoro / sit reminder =====================
+  pomodoroTitle: 'Pomodoro / sit reminder',
+  pomodoroHint:
+    'At a fixed interval the pet says something (zero tokens). Global default shared by all pets (a pet pack can override it in its own kind file); written on Save — instant in the browser, applied after reload on desktop.',
+  pomodoroLabel: 'Sit reminder',
+  pomodoroLabelHint:
+    'Pick "Off" to disable; pick a minutes value to enable and have the pet remind you to stretch that often.',
+  pomodoroOff: 'Off',
+  pomodoroEvery: 'Every {n} min',
+  invalidPomodoro: 'Check the Pomodoro setting: the interval must be a number between 1 and 1440.',
   'font.candy': 'Candy (bundled)',
   'font.yahei': 'Microsoft YaHei / PingFang',
   'font.youyuan': 'YouYuan',
@@ -406,13 +428,17 @@ export const en: Record<Key, string> = {
   'storage.desktopCache':
     'Desktop pet window cache and primary-monitor scale cache (safe to delete, rebuilt automatically)',
   'storage.electronCache': 'Electron installer download cache (safe to delete, re-downloaded when needed)',
-  'storage.package': 'The plugin itself (managed by DSH — remove it with the command below instead of deleting it)',
+  'storage.package':
+    'The plugin itself (installed from local source: the profile dependency points to a local dsh-zdd-pet-install dir; see how to uninstall below)',
   storageMissing: ' (not created yet)',
   uninstallTitle: 'How to uninstall',
   uninstallStep1:
     '1. Quit DSH first (the desktop pet exits with it); do not delete these files while the pet is running.',
-  uninstallStep2: '2. Remove the plugin itself (run in a terminal; this also drops it from the profile bundle layer):',
+  uninstallStep2:
+    '2. Remove the plugin — preferably via DSH\'s "Plugin manager" page, uninstalling {name} (easiest; also drops it from the profile dependencies and bundle layer).',
   uninstallStep3:
-    '3. Delete the locations above as needed: cache folders are harmless; deleting "plugin user data" loses your config and chat memory (back up main-config.jsonc first if you want to keep it).',
-  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet',
+    '3. If no usable dsh command is available (common when DSH runs inside the desktop app), uninstall manually: edit {profileDir}/package.json — remove "{name}" from dependencies and from dsh.profile.bundles; delete the node_modules/{name} directory; then restart DSH.',
+  uninstallStep4:
+    '4. Delete the locations above as needed: cache folders (Electron runtime / desktop cache / download cache) are harmless and re-download or rebuild automatically; deleting "plugin user data" loses your config and chat memory (back up main-config.jsonc first if you want to keep it).',
+  uninstallCmd: 'dsh plugin --profile {profile} remove {name}',
 };

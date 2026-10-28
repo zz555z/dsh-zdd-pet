@@ -122,13 +122,13 @@ describe('取图地址', () => {
   test('attachmentUrl 对 attachmentId 做 URL 编码', () => {
     assert.equal(
       attachmentUrl({ attachmentId: 'sha256:a b', mediaType: 'image/png', bytes: 1, width: 1, height: 1 }),
-      '/dsh-pet-7340/attachment?id=sha256%3Aa%20b',
+      '/dsh-zdd-pet-7340/attachment?id=sha256%3Aa%20b',
     );
   });
 
   test('memeUrl 带素材根；素材根为空时退回两段形式', () => {
-    assert.equal(memeUrl('可爱', 'main'), '/dsh-pet-7340/pic/memes/main/%E5%8F%AF%E7%88%B1.png');
-    assert.equal(memeUrl('可爱', '  '), '/dsh-pet-7340/pic/memes/%E5%8F%AF%E7%88%B1.png');
+    assert.equal(memeUrl('可爱', 'main'), '/dsh-zdd-pet-7340/pic/memes/main/%E5%8F%AF%E7%88%B1.png');
+    assert.equal(memeUrl('可爱', '  '), '/dsh-zdd-pet-7340/pic/memes/%E5%8F%AF%E7%88%B1.png');
   });
 });
 
@@ -153,13 +153,13 @@ describe('删除对话记忆 —— 请求形状与失败归一', () => {
 
   test('deleteRounds 用 DELETE，并把每个 ts 作为重复的 query 参数', async () => {
     const { calls, value } = await withFetch({ ok: true, removed: 2 }, () => deleteRounds('main', [1000, 2000]));
-    assert.deepEqual(calls, [{ url: '/dsh-pet-7340/chat?pet=main&ts=1000&ts=2000', method: 'DELETE' }]);
+    assert.deepEqual(calls, [{ url: '/dsh-zdd-pet-7340/chat?pet=main&ts=1000&ts=2000', method: 'DELETE' }]);
     assert.deepEqual(value, { ok: true, removed: 2 });
   });
 
   test('clearHistory 不带 ts（= 清空整只）', async () => {
     const { calls } = await withFetch({ ok: true, removed: 0 }, () => clearHistory('main'));
-    assert.deepEqual(calls, [{ url: '/dsh-pet-7340/chat?pet=main', method: 'DELETE' }]);
+    assert.deepEqual(calls, [{ url: '/dsh-zdd-pet-7340/chat?pet=main', method: 'DELETE' }]);
   });
 
   test('空选择不发请求（没有可删的轮）', async () => {

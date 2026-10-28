@@ -3,6 +3,6 @@
  *
  * 只做再导出，数据在 ./tool-detail/copy，解析在 ./tool-detail/target。
  * 必须始终成立：气泡是上屏内容，参数值一律不出现。
- * @module dsh-pet/src/host/tool-detail
+ * @module dsh-zdd-pet/src/host/tool-detail
  */
 export { toolDetailFromEvent } from './tool-detail/detail.ts';

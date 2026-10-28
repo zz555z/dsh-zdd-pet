@@ -6,7 +6,7 @@
  * package.json 的 dsh.bundle 与 dsh.client 声明、表情包图片与配置键是否对齐、包体积上限，
  * 以及构建产物有没有引入未声明的 @oxc-project/runtime helper。
  * 只读检查，不构建、不打包、不改任何文件，依赖已构建好的 lib 与 assets。
- * @module dsh-pet/scripts/prepack-check
+ * @module dsh-zdd-pet/scripts/prepack-check
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';

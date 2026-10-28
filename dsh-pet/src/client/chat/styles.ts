@@ -4,12 +4,12 @@
  * 只放样式与注入入口：颜色、字号、圆角全部取 `--dsw-*` token，不写字面色值——
  * 浅色/深色主题由 DSH 的变量切换，这里不做第二套配色。
  * 内联样式写不出 `:hover` / `:focus`，所以面板统一走这份 CSS。
- * @module dsh-pet/src/client/chat/styles
+ * @module dsh-zdd-pet/src/client/chat/styles
  */
 import { PANEL_CSS } from './panel-css.ts';
 
 /** 样式标签的归属标记；同一 key 只注入一次。 */
-const STYLE_KEY = 'dsh-pet-chat-panel';
+const STYLE_KEY = 'dsh-zdd-pet-chat-panel';
 
 /** 当前挂载数：多个 pane 可能同时挂载面板，靠引用计数决定何时移除样式标签。 */
 let mountedCount = 0;

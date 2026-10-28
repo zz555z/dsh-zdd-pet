@@ -3,7 +3,7 @@
  *
  * 只做路径计算，不读盘、不判断存在性；解析出的目录是否可用由调用方决定。
  * 必须始终成立：所有素材路径都从 PACKAGE_ROOT 派生，不得在别处另算一份 `new URL('..', import.meta.url)`。
- * @module dsh-pet/src/host/paths
+ * @module dsh-zdd-pet/src/host/paths
  */
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

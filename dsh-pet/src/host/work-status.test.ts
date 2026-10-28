@@ -13,13 +13,17 @@ import assert from 'node:assert/strict';
 
 import {
   completedState,
-  currentTaskFromTodo,
   goalUpdateAction,
   reduceWorkStatus,
   TASK_TEXT_MAX,
+  todoViewFromTodo,
   WorkStatusStore,
   type HostWorkStatusState,
 } from './work-status.ts';
+
+/** 任务详情文案的便捷取值：测试沿用旧签名只关心文案，这里从 todoViewFromTodo 取 task 字段。 */
+const currentTaskFromTodo = (event: Parameters<typeof todoViewFromTodo>[0]): string | null =>
+  todoViewFromTodo(event).task;
 
 describe('goalUpdateAction —— update_goal arguments 解析', () => {
   test('complete / blocked 识别', () => {
@@ -135,6 +139,65 @@ describe('currentTaskFromTodo —— 任务详情文案（issue #59）', () => {
     assert.equal(Array.from(cut).length, TASK_TEXT_MAX + 1); // 40 个 emoji + 省略号
     assert.equal(cut.includes('\uFFFD'), false);
     assert.equal(/[\uD800-\uDBFF]$/.test(cut), false, '不得以孤立高位代理结尾');
+  });
+});
+
+describe('todoViewFromTodo —— 任务文案 + 清单进度', () => {
+  const todo = (...items: Array<[string, string]>) => ({
+    data: { todos: items.map(([status, content]) => ({ status, content })) },
+  });
+
+  test('done = completed 条数，total = 全部条数（in_progress 不计入 done）', () => {
+    const view = todoViewFromTodo(
+      todo(['completed', '第一步'], ['completed', '第二步'], ['in_progress', '第三步'], ['pending', '第四步']),
+    );
+    assert.equal(view.task, '第三步');
+    assert.deepEqual(view.progress, { done: 2, total: 4 });
+  });
+
+  test('清单跑完（无 in_progress/pending）→ task 与 progress 一起归 null', () => {
+    assert.deepEqual(todoViewFromTodo(todo(['completed', 'a'], ['completed', 'b'])), { task: null, progress: null });
+  });
+
+  test('空清单 / 全空 → 两者 null（不会残留一个 5/5）', () => {
+    assert.deepEqual(todoViewFromTodo(todo()), { task: null, progress: null });
+    assert.deepEqual(todoViewFromTodo({}), { task: null, progress: null });
+  });
+});
+
+describe('WorkStatusStore —— progress 维度', () => {
+  test('setTask 带 progress 写入；同进度不重复更新', () => {
+    const s = new WorkStatusStore();
+    s.setState('a', 'working', 1);
+    assert.equal(s.setTask('a', '第二步', { done: 1, total: 3 }), true);
+    assert.deepEqual(s.snapshot().progress, { done: 1, total: 3 });
+    assert.equal(s.setTask('a', '第二步', { done: 1, total: 3 }), false, '同文案同进度 → 无变化');
+    assert.equal(s.setTask('a', '第二步', { done: 2, total: 3 }), true, '只有进度变也要刷新');
+  });
+
+  test('setState 保留该会话已有的 progress', () => {
+    const s = new WorkStatusStore();
+    s.setState('a', 'working', 1);
+    s.setTask('a', '干活', { done: 1, total: 2 });
+    s.setState('a', 'result', 2);
+    assert.deepEqual(s.snapshot().progress, { done: 1, total: 2 });
+  });
+
+  test('clear 会话 → progress 一并消失', () => {
+    const s = new WorkStatusStore();
+    s.setState('a', 'working', 1);
+    s.setTask('a', '干活', { done: 1, total: 2 });
+    assert.equal(s.clear('a'), true);
+    assert.equal(s.snapshot().progress, null);
+  });
+
+  test('setTask 默认 progress=null：清文案时进度一起清（回落档位文案）', () => {
+    const s = new WorkStatusStore();
+    s.setState('a', 'working', 1);
+    s.setTask('a', '干活', { done: 1, total: 2 });
+    s.setTask('a', null);
+    assert.equal(s.snapshot().task, null);
+    assert.equal(s.snapshot().progress, null);
   });
 });
 

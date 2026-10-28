@@ -3,9 +3,9 @@
  * 帧由宿主半侧监听 DSH 宿主事件生成（见 host/notify-events.ts），浏览器轮询 /notify 的增量队列消费本映射。
  * 桌面模式是宠物本体，不重复实现通知（宠物不等于通知，「两端一致」只约束宠物行为）。
  * 纯函数无副作用：帧形状不匹配或不认识的类型一律返回 null，不弹也不报错。
- * @module dsh-pet/src/shared/notify
+ * @module dsh-zdd-pet/src/shared/notify
  */
-/** 通知图标文件名（不含扩展名）；浏览器半侧拼完整 URL：/dsh-pet-7340/pic/<name>.png。 */
+/** 通知图标文件名（不含扩展名）；浏览器半侧拼完整 URL：/dsh-zdd-pet-7340/pic/<name>.png。 */
 export const NOTIFY_ICONS = {
   done: 'notify-done',
   error: 'notify-error',

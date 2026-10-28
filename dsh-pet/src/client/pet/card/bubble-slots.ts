@@ -3,7 +3,7 @@
  * 不负责何时点亮与动画联动：tick 判定、抽动画、打日志都在 PetCard；也不负责外观，哑组件在 client/bubble.ts。
  * 依赖注入的 react 与两个气泡组件；三个停留计时器都归本模块清理。
  * 不变量：同一时刻只渲染一个气泡，优先级依次为终态任务、说话、余额、非终态任务。
- * @module dsh-pet/src/client/pet/card/bubble-slots
+ * @module dsh-zdd-pet/src/client/pet/card/bubble-slots
  */
 import { customViews, type BalanceState } from '../../../shared/balance/index.ts';
 import { BUBBLE_DURATION_MS } from '../timings.ts';
@@ -22,6 +22,8 @@ export interface BubbleSlotInput {
   workOn: boolean;
   /** 工作气泡文本。 */
   workText: string | null;
+  /** 当前是否有任务详情/进度（有则进度气泡优先，碎碎念与余额让位）。 */
+  workHasTask: boolean;
   /** 配置是否启用工作状态联动。 */
   workStatusEnabled: boolean;
   /** 说话气泡是否点亮。 */
@@ -41,13 +43,15 @@ export interface BubbleSlotInput {
 /**
  * 决定当前挂哪个气泡。
  *
- * 终态任务只活 10s，所以不让位；非终态常驻，让位 10s 没有损失。
+ * 终态任务只活 10s，所以不让位；有任务（文案或清单进度）时进度气泡常驻，碎碎念与余额让它位
+ * （否则碎碎念会顶掉用户正想看的「2/5」）；没任务时才轮到大吼/余额。
  *
  * @param input - 三种气泡的显隐与开关。
  * @returns 命中的槽位；都不成立时为 `none`。
  */
 export function decideBubbleSlot(input: BubbleSlotInput): BubbleSlot {
   if (input.workTerminal && input.workOn && input.workText && input.workStatusEnabled) return 'work-terminal';
+  if (input.workOn && input.workHasTask && input.workStatusEnabled) return 'work';
   if (input.whisperOn && input.whisperText) return 'whisper';
   if (input.balanceOn && input.balanceAvailable && (input.balanceEnabled || input.balanceManual)) return 'balance';
   if (input.workOn && input.workText && input.workStatusEnabled) return 'work';
@@ -117,6 +121,10 @@ export interface BubbleSlotsInput {
   workStatusEnabled: boolean;
   /** 工作状态是否处于终态。 */
   workTerminal: boolean;
+  /** 当前是否有任务详情/进度（有则进度气泡优先，碎碎念/余额让位）。 */
+  workHasTask: boolean;
+  /** 任务进度角标文案（「▰▰▱▱▱  2/5」）；null = 无清单进度。 */
+  workProgress: string | null;
   /** 说话气泡配图的素材根。 */
   assetRoot?: string;
 }
@@ -241,6 +249,7 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
         workTerminal: input.workTerminal,
         workOn,
         workText,
+        workHasTask: input.workHasTask,
         workStatusEnabled: input.workStatusEnabled,
         whisperOn,
         whisperText,
@@ -265,9 +274,11 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
               on: whisperOn,
             });
       }
-      // 终态与非终态共用同一个组件，差别只在停留时长与优先级。
+      // 终态与非终态共用同一个组件，差别只在停留时长与优先级；工作气泡带任务进度角标。
       if (slot === 'work' || slot === 'work-terminal') {
-        return workText === null ? null : h(WhisperBubble, { text: workText, on: workOn });
+        return workText === null
+          ? null
+          : h(WhisperBubble, { text: workText, progress: input.workProgress, on: workOn });
       }
       return null;
     };

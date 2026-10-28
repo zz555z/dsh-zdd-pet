@@ -4,7 +4,7 @@
  * 顺序即语义——素材路由是末端兜底（任何未知路径都会落到它并回 400），必须排在最后；
  * 其余领域按 `rest` 精确匹配，彼此不重叠，顺序只影响可读性。
  * 不解析 URL、不判断业务：`rest` 由调用方切好，处理器各自定义匹配条件。
- * @module dsh-pet/src/host/routes/index
+ * @module dsh-zdd-pet/src/host/routes/index
  */
 import type { RouteResult } from '../http.ts';
 import { handleAssetsRoutes } from './assets.ts';
@@ -49,6 +49,6 @@ export function createPetRouter(
       if (result !== undefined) return result;
     }
     // 素材处理器总会给出应答，这条只在新增领域处理器漏掉兜底时才会走到。
-    return { kind: 'text', status: 404, body: 'dsh-pet: not found' };
+    return { kind: 'text', status: 404, body: 'dsh-zdd-pet: not found' };
   };
 }

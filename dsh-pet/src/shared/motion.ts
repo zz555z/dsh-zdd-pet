@@ -3,7 +3,7 @@
  * 移动规划归一化为视口比例，px 换算由调用方完成；角落定位返回宠物根节点左上角的像素坐标。
  * 不负责 rAF 驱动与样式写入，那些在各端的薄壳里。
  * 依赖共享层的选择函数与显示器几何，保证两端算出同一条路线。
- * @module dsh-pet/src/shared/motion
+ * @module dsh-zdd-pet/src/shared/motion
  */
 import { randomBetween } from './pickers.ts';
 import { rectAtPoint } from './displays.ts';
@@ -62,6 +62,10 @@ export const planMove = (o: {
  * 角落 + 边距 → 宠物根节点左上角像素坐标，与浏览器半侧 overlay 的 CSS 角落语义一致。
  * area 传入时角落取那块屏而不是视口外接矩形：不规则布局下外接矩形的角落可能不属于任何屏，
  * 配了该角落的宠物会开机即隐身，所以桌面端必须传主屏工作区。不传时按 W/H，overlay 行为不变。
+ *
+ * sideAllow（宠物身体在盒子里的左右透明留白，通常 = HIT_BOX.x0/640×size）传入后，水平方向按
+ * **身体边缘**贴边而不是盒子边缘：右/左角的 marginX 变成「身体到屏边的距离」。否则盒子宽 = size，
+ * 身体居中，marginX 加在盒子右缘，身体实际离屏还多出一段透明留白（size 越大越明显）。
  */
 export const anchorPixel = (o: {
   corner: Corner;
@@ -72,12 +76,17 @@ export const anchorPixel = (o: {
   H: number;
   /** 可选：角落所属的工作区矩形（与调用方同坐标系）；缺省用 {0,0,W,H} */
   area?: Rect;
+  /** 可选：身体相对盒子左右的内缩留白（px）。传入则水平方向按身体贴边；缺省 0 = 按盒子贴边（旧行为） */
+  sideAllow?: number;
 }): { x: number; y: number } => {
   const height = (o.size * 9) / 16;
   const a = o.area ?? { x: 0, y: 0, width: o.W, height: o.H };
-  const left = a.x + o.marginX;
+  // 身体左右内缩量：右角要让身体离屏 = marginX，则盒子左边要多往右推 sideAllow；
+  // 左角要让身体离屏 = marginX，则盒子左边要多往左退 sideAllow。
+  const side = o.sideAllow ?? 0;
+  const left = a.x + o.marginX - side;
   const top = a.y + o.marginY;
-  const right = a.x + a.width - o.size - o.marginX;
+  const right = a.x + a.width - o.size - o.marginX + side;
   const bottom = a.y + a.height - height - o.marginY;
   switch (o.corner) {
     case 'top-left':

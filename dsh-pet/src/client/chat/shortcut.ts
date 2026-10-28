@@ -3,7 +3,7 @@
  *
  * 注册后自动出现在 设置 → 通用 → 快捷键（可改绑、有冲突提示），
  * 侧栏 guide 卡片通过 `commandId` 显示键帽。服务缺失（旧宿主）只告警，不影响面板本身。
- * @module dsh-pet/src/client/chat/shortcut
+ * @module dsh-zdd-pet/src/client/chat/shortcut
  */
 
 /** 命令 id：guide 卡片的 `commandId` 与注册都用它。 */
@@ -56,7 +56,7 @@ export function registerPetChatShortcut(
 ): { registered: boolean; dispose: () => void } {
   const shortcuts = ctx.get?.('shortcuts') as ShortcutsService | undefined;
   if (shortcuts === undefined || typeof shortcuts.register !== 'function') {
-    console.warn('[dsh-pet] 快捷键服务不可用，「桌宠对话」未注册快捷键');
+    console.warn('[dsh-zdd-pet] 快捷键服务不可用，「桌宠对话」未注册快捷键');
     return { registered: false, dispose: () => {} };
   }
   try {
@@ -74,7 +74,7 @@ export function registerPetChatShortcut(
     return { registered: true, dispose: () => dispose() };
   } catch (error) {
     // 注册被拒（键位不被接受 / id 冲突）：只丢快捷键，不影响面板
-    console.warn('[dsh-pet] 快捷键注册失败：' + (error instanceof Error ? error.message : String(error)));
+    console.warn('[dsh-zdd-pet] 快捷键注册失败：' + (error instanceof Error ? error.message : String(error)));
     return { registered: false, dispose: () => {} };
   }
 }

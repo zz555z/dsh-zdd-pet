@@ -8,7 +8,7 @@
  * 始终成立：档位顺序与 animations.events.workStatus 数组索引严格一致，不在中间插入。
  * 契约见 API.md 与 openapi.yaml。
  *
- * @module dsh-pet/src/host/work-status
+ * @module dsh-zdd-pet/src/host/work-status
  */
 
 /** 工作状态档位（数组索引 = events.workStatus 档位；顺序与 shared/work-status.ts 一致）。 */
@@ -106,32 +106,72 @@ export function reduceWorkStatus(
 export const TASK_TEXT_MAX = 40;
 
 /**
- * todo/write 的 in_progress/pending 项文本 → 任务详情；null = 清单已全部完成。
- *
- * 取最后一个 in_progress 而不是第一个：agent 常把新步骤标成 in_progress 却忘了把上一步标
- * completed，取第一个会永远停在最早那步。没有进行中的项时回落到第一个 pending（下一步要做的）。
+ * 一步任务文案 → 展示文案（trim + 按码点截断加省略号）；空 → null。
+ * 截断规则只此一份：任务详情与清单摘要共用，浏览器与桌面两端天然一致。
  */
-export function currentTaskFromTodo(event: {
-  data?: { todos?: Array<{ status?: string; content?: string }> };
-}): string | null {
+export function taskStepText(content: unknown): string | null {
+  const text = String(content ?? '').trim();
+  if (!text) return null;
+  // 按码点切，避免把代理对（emoji 等）截成半个字符
+  const points = Array.from(text);
+  return points.length > TASK_TEXT_MAX ? `${points.slice(0, TASK_TEXT_MAX).join('')}…` : text;
+}
+
+/** 清单摘要：done 已勾选 / total 总条数（两者都有才算有清单，否则 null）。 */
+export interface TaskProgress {
+  done: number;
+  total: number;
+}
+
+/** todo/write 清单压缩出的展示数据：任务详情文案 + 清单进度。 */
+export interface TodoView {
+  task: string | null;
+  progress: TaskProgress | null;
+}
+
+/**
+ * todo/write 清单 → { task, progress }；两者都是 null = 无清单（或清单已全部完成）。
+ *
+ * task 取**最后一个** in_progress（最近开始的那一步），而不是第一个：agent 常把新步骤标成
+ * in_progress 却忘了把上一步标 completed，取第一个就会永远停在最早那步。没有进行中的项时
+ * 回落到第一个 pending（= 下一步要做的）。
+ *
+ * progress 是「气泡显示具体进度」的量化口径：done = status==='completed' 的条数、total = 全部条数。
+ * 与 state 同生共死——清清单 / 清单跑完都归 null（气泡回落到档位文案），不会残留一个 "5/5" 挂在
+ * 之后的无关会话上。in_progress 不计入 done（它还没勾完），故「2/5 + 正在做第 3 项」读得通。
+ */
+export function todoViewFromTodo(event: { data?: { todos?: Array<{ status?: string; content?: string }> } }): TodoView {
   const todos = Array.isArray(event?.data?.todos) ? event.data.todos : [];
+  if (todos.length === 0) return { task: null, progress: null };
   let current: { status?: string; content?: string } | undefined;
   for (const t of todos) {
     if (t?.status === 'in_progress') current = t;
   }
   if (!current) current = todos.find((t) => t?.status === 'pending');
-  const content = String(current?.content ?? '').trim();
-  if (!content) return null;
-  // 按码点切，避免把代理对（emoji 等）截成半个字符
-  const points = Array.from(content);
-  return points.length > TASK_TEXT_MAX ? `${points.slice(0, TASK_TEXT_MAX).join('')}…` : content;
+  const task = taskStepText(current?.content);
+  // 清单跑完（没有进行中/待办）= 任务已结束：不展示进度，气泡回落到档位文案
+  if (!task) return { task: null, progress: null };
+  return {
+    task,
+    progress: { done: todos.filter((t) => t?.status === 'completed').length, total: todos.length },
+  };
 }
 
-/** 工作状态快照（/work-status 端点响应体）：state 为主状态；task 为 todo 详情（可 null）。 */
+/** 工作状态快照（/work-status 端点响应体）：state 为主状态；task/progress 为 todo 详情（可 null）。 */
 export interface WorkStatusSnapshot {
   state: HostWorkStatusState | null; // null = 尚无会话活动（空闲）
   task: string | null; // 当前任务详情（todo/write 提供，可 null）
+  progress: TaskProgress | null; // 清单进度 done/total（todo/write 提供，可 null）
   ts: number; // 最近一次变化的时间戳（轮询侧据此检测变化）
+}
+
+/**
+ * 任务详情是否「正在展示」：有清单进度或有任务文案。
+ * 两端气泡槽位用它判定「有任务」——有任务时碎碎念/余额一律让位（进度气泡优先），
+ * 只有没任务时它们才能占用气泡。判据只看快照本身，不看档位。
+ */
+export function hasTask(ws: { task?: string | null; progress?: TaskProgress | null } | null): boolean {
+  return Boolean(ws && ((ws.task ?? null) !== null || (ws.progress ?? null) !== null));
 }
 
 /** 每会话聚合条目。 */
@@ -142,6 +182,8 @@ export interface SessionWorkEntry {
   seq: number;
   /** 任务详情文案；null = 该会话没有清单。 */
   task: string | null;
+  /** 清单进度；null = 该会话没有清单。 */
+  progress: TaskProgress | null;
 }
 
 /** 展示优先级：waiting > error > working > thinking > result > success。
@@ -170,13 +212,19 @@ export function pickDisplayed(entries: Iterable<SessionWorkEntry>): SessionWorkE
   return best;
 }
 
+/** 清单进度比较：都无 → 相等；一方无 → 不等；否则逐字段比。 */
+function sameProgress(a: TaskProgress | null, b: TaskProgress | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.done === b.done && a.total === b.total;
+}
+
 /**
- * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task，对外只暴露一个展示快照。
+ * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task / progress，对外只暴露一个展示快照。
  *
- * task 必须挂在会话条目上：挂成全局单值就没有独立于 todo/write 的生命周期，写过一次会跟着此后
- * 所有会话活动一直显示，连配置里的 workStatusTexts 档位文案也被永久屏蔽。挂进条目后文案与它的
- * 会话同生共死：条目被清、新一轮 turn/start、清单里再无进行中项，文案都会消失。
- * 展示时 state 与 task 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案。
+ * task/progress 必须挂在会话条目上：挂成全局单值就没有独立于 todo/write 的生命周期，写过一次会跟着
+ * 此后所有会话活动一直显示，连配置里的 workStatusTexts 档位文案也被永久屏蔽。挂进条目后文案与它的
+ * 会话同生共死：条目被清、新一轮 turn/start、清单里再无进行中项，文案都会消失。展示时
+ * state / task / progress 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案。
  */
 export class WorkStatusStore {
   // 类字段一律 declare + 构造器赋值：带初始化器的类字段在 target es2020 下要被降级，
@@ -187,7 +235,7 @@ export class WorkStatusStore {
 
   constructor() {
     this.sessions = new Map();
-    this.snap = { state: null, task: null, ts: 0 };
+    this.snap = { state: null, task: null, progress: null, ts: 0 };
   }
 
   /** 该会话当前是否有活动条目（决定 todo/write 是否还值得更新它的文案）。 */
@@ -205,25 +253,34 @@ export class WorkStatusStore {
     return this.sessions.get(sessionId)?.task ?? null;
   }
 
-  /** 写会话状态（保留该会话已有的 task）；同状态且 seq 不更新则不写并返回 false（防刷屏）。 */
+  /** 该会话当前清单进度（无条目返回 null）。 */
+  progressOf(sessionId: string): TaskProgress | null {
+    return this.sessions.get(sessionId)?.progress ?? null;
+  }
+
+  /** 写会话状态（保留该会话已有的 task/progress）；同状态且 seq 不更新则不写并返回 false（防刷屏）。 */
   setState(sessionId: string, state: HostWorkStatusState, seq = 0): boolean {
     const prev = this.sessions.get(sessionId);
     if (prev?.state === state && prev.seq >= seq) return false;
-    this.sessions.set(sessionId, { state, seq, task: prev?.task ?? null });
+    this.sessions.set(sessionId, { state, seq, task: prev?.task ?? null, progress: prev?.progress ?? null });
     this.refresh();
     return true;
   }
 
-  /** 写该会话的任务详情（null = 清空）；会话无活动条目 → 不动（它不会被展示）。 */
-  setTask(sessionId: string, task: string | null): boolean {
+  /**
+   * 写该会话的任务详情 + 清单进度（null = 清空）；会话无活动条目 → 不动（它不会被展示）。
+   * 两者同一次写入：它们出自同一条 todo/write，分两次写会让 refresh 在中途看见
+   * 「新 task 配旧 progress」的混合态，并因此多发一拍 ts。
+   */
+  setTask(sessionId: string, task: string | null, progress: TaskProgress | null = null): boolean {
     const prev = this.sessions.get(sessionId);
-    if (!prev || prev.task === task) return false;
-    this.sessions.set(sessionId, { ...prev, task });
+    if (!prev || (prev.task === task && sameProgress(prev.progress, progress))) return false;
+    this.sessions.set(sessionId, { ...prev, task, progress });
     this.refresh();
     return true;
   }
 
-  /** 清掉某会话（回合结束 / 终态过期）：它的 task 一并消失，不会残留到后续活动里。 */
+  /** 清掉某会话（回合结束 / 终态过期）：它的 task/progress 一并消失，不会残留到后续活动里。 */
   clear(sessionId: string): boolean {
     if (!this.sessions.delete(sessionId)) return false;
     this.refresh();
@@ -235,14 +292,22 @@ export class WorkStatusStore {
     return this.snap;
   }
 
-  /** 重算展示：state 与 task 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
+  /** 重算展示：state / task / progress 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
   private refresh(): void {
     const best = pickDisplayed(this.sessions.values());
     const nextState = best?.state ?? null;
     const nextTask = best?.task ?? null;
-    if (nextState === this.snap.state && nextTask === this.snap.task) return;
+    const nextProgress = best?.progress ?? null;
+    if (
+      nextState === this.snap.state &&
+      nextTask === this.snap.task &&
+      sameProgress(nextProgress, this.snap.progress)
+    ) {
+      return;
+    }
     this.snap.state = nextState;
     this.snap.task = nextTask;
+    this.snap.progress = nextProgress;
     this.snap.ts = Date.now();
   }
 }

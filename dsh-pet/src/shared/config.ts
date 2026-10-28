@@ -3,7 +3,7 @@
  * 不负责读取、合并与校验——那是宿主半侧 readAllConfig 的职责，本层只消费其结果。
  * 不依赖 React / DOM；宿主半侧不 import 本目录，其配置实现自包含、规则须与本层同步。
  * 条目级字段必须吹进每只实例：多实例共享所属条目的同一份值。
- * @module dsh-pet/src/shared/config
+ * @module dsh-zdd-pet/src/shared/config
  */
 import type { Animations, FontConfig, ModelSelection, Pet, PetDisplay, PhysicsParams, Weights } from './types.ts';
 

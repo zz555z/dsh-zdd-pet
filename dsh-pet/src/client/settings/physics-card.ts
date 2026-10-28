@@ -2,7 +2,7 @@
  * 物理卡（全局）：重力、弹性、地面摩擦、抛掷力度，以及天花板反弹与宠物互撞两个开关。
  * 只改本地状态，随「保存」整包写入；浏览器保存后即时生效，桌面端由保存触发的 Helper 重启重读——
  * physics 在 sprite 构造时只读一次，所以这里不做即时写入。
- * @module dsh-pet/src/client/settings/physics-card
+ * @module dsh-zdd-pet/src/client/settings/physics-card
  */
 import type { ChangeEvent, FunctionComponent } from 'react';
 import type { PhysicsParams } from '../../shared/types.ts';
@@ -55,11 +55,11 @@ export function makePhysicsCard(rt: SettingsRuntime): FunctionComponent<PhysicsC
       );
 
     return h('div', {
-      className: 'dsh-pet-cfg__card',
+      className: 'dsh-zdd-pet-cfg__card',
       children: [
         cardHead(t('physicsTitle'), t('physicsHint')),
         h('div', {
-          className: 'dsh-pet-cfg__grid4',
+          className: 'dsh-zdd-pet-cfg__grid4',
           children: [
             physField('gravity', '50', '0'),
             physField('restitution', '0.01', '0'),
@@ -68,7 +68,7 @@ export function makePhysicsCard(rt: SettingsRuntime): FunctionComponent<PhysicsC
           ],
         }),
         h('div', {
-          className: 'dsh-pet-cfg__grid2',
+          className: 'dsh-zdd-pet-cfg__grid2',
           children: [
             toggleCell('physicsCeilingBounce', physics.ceilingBounce, busy, (v) =>
               props.onChange({ ceilingBounce: v }),

@@ -6,7 +6,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self' http: https: data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http: https: data:; media-src 'self' http: https: blob:; font-src 'self' http: https: data:"
     />
-    <title>dsh-pet 桌宠（桌面模式）</title>
+    <title>dsh-zdd-pet 桌宠（桌面模式）</title>
     <style>
       * {
         box-sizing: border-box;
@@ -87,7 +87,7 @@
         /* 字体族走全局配置变量（renderer.js 注入到 documentElement）：对话窗/得分弹窗挂在 body 下、
            继承不到宠物根容器，气泡也统一从这里取；回退参数是变量未注入时的默认字体栈 */
         font-family: var(
-          --dsh-pet-font-family,
+          --dsh-zdd-pet-font-family,
           'ShangshouSoftCandy',
           'Yuanti SC',
           'YouYuan',
@@ -97,9 +97,9 @@
           'Microsoft YaHei',
           sans-serif
         );
-        /* 字号：正文取 --dsh-pet-font-bubble（sprite.js 按本宠物尺寸算好注入）；--f0 是收起态的字号，
+        /* 字号：正文取 --dsh-zdd-pet-font-bubble（sprite.js 按本宠物尺寸算好注入）；--f0 是收起态的字号，
            --f 是当前生效值（展开态在 .is-expanded 里按 --f0 折算 60%），气泡内其余层级都从 --f 派生 */
-        --f0: var(--dsh-pet-font-bubble, calc(var(--pet-size, 462px) * 0.0455));
+        --f0: var(--dsh-zdd-pet-font-bubble, calc(var(--pet-size, 462px) * 0.0455));
         --f: var(--f0);
         font-size: var(--f);
         line-height: 1.6;
@@ -128,12 +128,65 @@
       .pet-bubble.is-on {
         opacity: 1;
       }
+      /* ---- 气泡方向（data-side）----
+         默认（data-side="up"，底部角）：气泡在宠物上方居中、尾巴朝下 —— 即上面的 .pet-bubble 基础样式。
+         顶部角时改为侧弹，让宠物能贴屏幕顶且气泡不被裁。注意气泡要贴「身体」而不是「盒子」：
+         宠物身体在盒子里左右各留 0.3125×size（HIT_BOX 200/640）透明边，所以定位从盒子边缘再收回
+         这一段的宽度，气泡才紧贴身体（否则会离身体很远，中间隔着一大块透明）。
+           data-side="right"：气泡在宠物右侧，左缘贴身体右缘、垂直居中，尾巴在左侧朝左指向宠物。
+           data-side="left" ：气泡在宠物左侧，右缘贴身体左缘、垂直居中，尾巴在右侧朝右指向宠物。 */
+      .pet-bubble[data-side='right'] {
+        left: calc(100% - var(--pet-size, 462px) * 0.3125);
+        right: auto;
+        bottom: auto;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-left: calc(var(--f) * 0.3736);
+      }
+      .pet-bubble[data-side='right']::after {
+        left: calc(var(--f) * -0.3736);
+        right: auto;
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
+        border: calc(var(--f) * 0.3736) solid transparent;
+        border-right-color: rgba(255, 255, 255, 0.92);
+        border-left: none;
+      }
+      .pet-bubble[data-side='left'] {
+        right: calc(100% - var(--pet-size, 462px) * 0.3125);
+        left: auto;
+        bottom: auto;
+        top: 50%;
+        transform: translateY(-50%);
+        margin-right: calc(var(--f) * 0.3736);
+      }
+      .pet-bubble[data-side='left']::after {
+        right: calc(var(--f) * -0.3736);
+        left: auto;
+        top: 50%;
+        bottom: auto;
+        transform: translateY(-50%);
+        border: calc(var(--f) * 0.3736) solid transparent;
+        border-left-color: rgba(255, 255, 255, 0.92);
+        border-right: none;
+      }
       /* 碎碎念变体：与浏览器 overlay 一致 —— 字号缩到余额气泡的 0.75、宽度下限更窄（0.10 → 2.1978），
          上限与余额气泡相同；宽度取宽/折行规则继承 .pet-bubble，高度随行数自然增长 */
       .pet-bubble.is-whisper {
         font-size: calc(var(--f) * 0.7473);
         min-width: calc(var(--f) * 2.1978);
         max-width: min(calc(var(--f) * 10.989), 100%);
+      }
+      /* 工作状态气泡的进度角标（如「▰▰▱▱▱  2/5」）：正文字号的 0.7692 倍、加粗、等宽数字。
+         与浏览器端 src/client/bubble.ts 的 .dsh-zdd-pet-bubble .pet-bub-prog 同一套数值，两端不许走样 */
+      .pet-bub-prog {
+        font-size: calc(var(--f) * 0.7692);
+        font-weight: 700;
+        color: rgba(43, 43, 43, 0.55);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: calc(var(--f) * 0.03);
+        margin-bottom: calc(var(--f) * 0.1);
       }
       .pet-bub-row {
         display: flex;

@@ -4,7 +4,7 @@
  * 不组装请求（归 ./request）、不定义限额（归 ./limits）、不管服务生命周期（归 ./create）。
  * 失败一律归一成固定文案：SDK 错误可能带地址、请求头或正文，只能进 cause 与日志。
  * 必须始终成立：同一时刻只有一个在途请求；返回或抛错前一定释放控制器并关闭传输。
- * @module dsh-pet/src/standalone/ai-provider/stream
+ * @module dsh-zdd-pet/src/standalone/ai-provider/stream
  */
 import { isAuthenticationFailure, isRateLimitFailure, sdkTextStream, type AiTransportEvent } from '../ai-transport.ts';
 import { MAX_EVENTS, MAX_OUTPUT_CHARS, RATE_WINDOW_MS, REQUESTS_PER_MINUTE } from './limits.ts';

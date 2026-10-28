@@ -6,7 +6,7 @@
  * 依赖由调用方注入的策略对象，不读配置、不碰 HTTP，可完全离线单测。
  * 始终成立：没有策略对象（DSH 宿主模式）时，必须逐字退回宠物配置原有的行为。
  *
- * @module dsh-pet/src/host/whisper-policy
+ * @module dsh-zdd-pet/src/host/whisper-policy
  */
 
 export interface StandaloneWhisperPolicy {

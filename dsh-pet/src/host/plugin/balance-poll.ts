@@ -3,15 +3,24 @@
  *
  * 不实现各服务商的取数协议（归 ./balance/providers）。
  * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
- * @module dsh-pet/src/host/plugin/balance-poll
+ * @module dsh-zdd-pet/src/host/plugin/balance-poll
  */
 import { flattenPetList, readAllConfig } from '../config.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PACKAGE_ROOT } from '../paths.ts';
 import { queryBalance } from '../balance/index.ts';
+import { balancePercent } from '../../shared/balance/percent.ts';
+import {
+  newBalanceGagState,
+  parseBalanceGag,
+  pickBalanceGag,
+  shouldFireBalanceGag,
+  type BalanceGagState,
+} from '../balance-gag.ts';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import type { ChatMemory } from './chat-memory.ts';
+import type { Extras } from './extras.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 
@@ -22,13 +31,52 @@ export type BalancePollInput = {
 } & Pick<HostSetup, 'configPaths'> &
   Pick<ChatMemory, 'getActivePetId'> &
   Pick<HostSetup, 'log'> &
-  Pick<HostSetup, 'state'>;
+  Pick<HostSetup, 'state'> &
+  Pick<Extras, 'deliverCue' | 'memeValid'>;
 
 /**
  * 创建余额与周期。
  */
 export function createBalancePoll(deps: BalancePollInput) {
-  const { ctx, configPaths, getActivePetId, log, state } = deps;
+  const { ctx, configPaths, deliverCue, getActivePetId, log, memeValid, state } = deps;
+
+  // 余额告急演出的内存态（按宠物）：{ lastFireAt, armed }。进程内，重启即清空。
+  const gagStates = new Map<string, BalanceGagState>();
+
+  /**
+   * 余额告急演出：额度快用光时让桌宠跳出来演一段（带表情包）。
+   * 阈值 + 冷却 + armed 三层防刷屏（详见 balance-gag.ts）。只对配了 balanceGag.enabled 的宠物演。
+   * percent = 已用百分比（balancePercent 的语义，90 = 剩余不到 10%）。
+   */
+  const runBalanceGag = (percent: number | undefined): void => {
+    if (percent === undefined) return;
+    let cfg: Record<string, Record<string, unknown>>;
+    try {
+      cfg = readAllConfig(configPaths);
+    } catch {
+      return; // 配置读坏了不演，不打扰
+    }
+    const now = Date.now();
+    for (const entry of Object.keys(cfg)) {
+      const conf = cfg[entry];
+      const gag = parseBalanceGag(conf?.balanceGag);
+      if (!gag) continue;
+      const pets = Array.isArray(conf?.pets) ? (conf.pets as Record<string, unknown>[]) : [];
+      for (const pet of pets) {
+        const petId = String(pet.id ?? '');
+        if (!petId) continue;
+        let st = gagStates.get(petId);
+        if (!st) gagStates.set(petId, (st = newBalanceGagState()));
+        if (!shouldFireBalanceGag(gag, st, percent, now)) continue;
+        const gagCue = pickBalanceGag(gag);
+        // 配图名必须命中该宠物表情包池，否则退回纯文字（不破图）。
+        const image = gagCue.image && memeValid(petId, gagCue.image) ? gagCue.image : undefined;
+        if (deliverCue(petId, image ? { text: gagCue.text, image } : { text: gagCue.text })) {
+          log.info(`[dsh-zdd-pet] 余额告急演出 pet=${petId} 已用 ${percent.toFixed(1)}%`);
+        }
+      }
+    }
+  };
   /** 当前生效宠物列表：成品配置拍平（合并器已保证 id 唯一、字段填满），命令与桌面模式共用。 */
   const effectivePetList = (): Record<string, unknown>[] => flattenPetList(readAllConfig(configPaths));
 
@@ -72,7 +120,7 @@ export function createBalancePoll(deps: BalancePollInput) {
    */
   const refreshBalance = async (manual = false): Promise<void> => {
     // 开始 + 结果各一行：否则 logs.txt 里既看不出「有没有查」，也看不出「查了但余额没变」。
-    log.info(`[dsh-pet] 余额刷新开始（${manual ? '手动' : '周期'}）`);
+    log.info(`[dsh-zdd-pet] 余额刷新开始（${manual ? '手动' : '周期'}）`);
     const mark = <T>(v: T): T | (T & { manual: true }) => (manual ? { ...v, manual: true } : v);
     try {
       const sel = ctx.agentDefaultModel.currentSelection();
@@ -95,10 +143,12 @@ export function createBalancePoll(deps: BalancePollInput) {
       // 失败也写 S（前端弹文字说明），日志同样留一条：否则「查了、失败了」与「根本没查」
       // 在文件里长得一模一样。成功用 info，失败用 warn（亮度不同，扫一眼就能分辨）。
       if (result.ok) {
-        log.info(`[dsh-pet] 余额刷新成功 provider=${result.provider}（${result.shape}）`);
+        log.info(`[dsh-zdd-pet] 余额刷新成功 provider=${result.provider}（${result.shape}）`);
+        // 余额告急演出：拿到已用百分比，交给三层防刷屏判定（只弹一次）。
+        if (result.shape !== 'custom') runBalanceGag(balancePercent(result));
       } else {
         log.warn(
-          `[dsh-pet] 余额刷新失败 provider=${result.provider} reason=${result.reason}` +
+          `[dsh-zdd-pet] 余额刷新失败 provider=${result.provider} reason=${result.reason}` +
             (result.message ? ' ' + result.message : ''),
         );
       }
@@ -113,7 +163,7 @@ export function createBalancePoll(deps: BalancePollInput) {
           message,
         }),
       );
-      log.warn('[dsh-pet] 余额刷新异常：' + message);
+      log.warn('[dsh-zdd-pet] 余额刷新异常：' + message);
     }
   };
 

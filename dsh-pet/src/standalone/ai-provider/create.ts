@@ -3,7 +3,7 @@
  *
  * 不解析请求（归 ./request）、不定义限额（归 ./limits）、不写通道细节（归 ./stream 与 ./test-connection）。
  * 必须始终成立：设置读不安全时整体失败，不顺势启用环境里的旧凭据。
- * @module dsh-pet/src/standalone/ai-provider/create
+ * @module dsh-zdd-pet/src/standalone/ai-provider/create
  */
 import { type StandaloneLogger } from '../context.ts';
 import { createAiConfig, type StandaloneAiPublicSettings } from '../ai-config.ts';

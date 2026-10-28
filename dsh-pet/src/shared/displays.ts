@@ -3,7 +3,7 @@
  * 摆放不规则时会留下大片不属于任何屏的空洞（实测右倒 T 型双屏近四分之一面积），
  * 以外接矩形为边界会把宠物放进用户看不见的地方。
  * 坐标系由调用方决定，本文件不假定原点在 0；浏览器半侧 overlay 只有一块屏，退化为单矩形。
- * @module dsh-pet/src/shared/displays
+ * @module dsh-zdd-pet/src/shared/displays
  */
 import type { Rect } from './types.ts';
 

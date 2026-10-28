@@ -1,5 +1,5 @@
 /**
- * 第三方投喂（`POST /dsh-pet-7340/broadcast`，issue #76）的决策层单测。
+ * 第三方投喂（`POST /dsh-zdd-pet-7340/broadcast`，issue #76）的决策层单测。
  *
  * 为什么测这一层而不是只测 HTTP：本功能的契约就是这几条校验规则（文本非空、宠物存在、
  * 配图给名称时必须在包内表情包池内、给 url 时必须是 http/https 完整地址、两种形态不得同时给）。
@@ -48,7 +48,7 @@ const decide = (over: Partial<Parameters<typeof decideBroadcast>[0]> = {}) =>
   });
 
 before(() => {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-pet-broadcast-'));
+  const root = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-broadcast-'));
   memesDir = join(root, 'memes');
   mkdirSync(memesDir, { recursive: true });
   writeFileSync(join(memesDir, `${IN_POOL}.png`), 'x');
@@ -313,7 +313,7 @@ describe('decideBroadcast —— 配图的 url 形态（第三方自带素材，
   });
 
   test('同源相对地址不行——必须是完整 URL', () => {
-    const d = decide({ url: '/dsh-pet-wallpaper/asset/x.png' });
+    const d = decide({ url: '/dsh-zdd-pet-wallpaper/asset/x.png' });
     assert.equal(d.ok, false);
     assert.equal(d.ok === false && d.reason, 'bad-request');
   });

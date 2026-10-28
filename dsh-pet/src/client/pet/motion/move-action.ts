@@ -2,7 +2,7 @@
  * 一次自主走位的规划：选动作、算方向与距离、交给共享层的 `planMove` 判可达性。
  * 距离按宠物尺寸等比缩放（`minDist`/`maxDist` 是基准宽度下的像素），越界就返回 `null` 让调用方退回原地动作。
  * 纯规划：占用判定（rAF 是否在跑）留在调用方，因为那是 ref 状态。
- * @module dsh-pet/src/client/pet/motion/move-action
+ * @module dsh-zdd-pet/src/client/pet/motion/move-action
  */
 import { planMove, type MovePlan } from '../../../shared/motion.ts';
 import { PET_REF_WIDTH } from '../../../shared/constants.ts';

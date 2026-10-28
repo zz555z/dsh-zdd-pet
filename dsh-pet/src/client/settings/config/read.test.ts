@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { readConfigEntries, readMainConfig } from './read.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_FONT } from '../../../shared/fonts.ts';
+import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
 
 describe('readMainConfig —— 成品聚合 → 表单补丁', () => {
   test('main.pets 缺失或不是数组：返回 null（响应坏了）', () => {
@@ -34,6 +35,11 @@ describe('readMainConfig —— 成品聚合 → 表单补丁', () => {
     const patch = readMainConfig({ main: { pets: [], physics: { gravity: 3 }, font: { size: 20 } } });
     assert.deepEqual(patch?.physics, { ...DEFAULT_PHYSICS, gravity: 3 });
     assert.deepEqual(patch?.font, { ...DEFAULT_FONT, size: 20 });
+  });
+
+  test('番茄钟：成品缺子键时用内置默认补满', () => {
+    const patch = readMainConfig({ main: { pets: [], pomodoro: { enabled: true } } });
+    assert.deepEqual(patch?.pomodoro, { ...DEFAULT_POMODORO, enabled: true });
   });
 
   test('模型选择只写一半：整对都当没写（宿主会按非法拒绝）', () => {

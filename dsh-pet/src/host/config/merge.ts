@@ -3,7 +3,7 @@
  *
  * 不读盘、不写盘；输入是已解析的对象，输出是字段已填满的新对象。
  * 必须始终成立：只填缺省、不覆盖显式值；未知字段不透传。
- * @module dsh-pet/src/host/config/merge
+ * @module dsh-zdd-pet/src/host/config/merge
  */
 import { CORNER_SET, GLOBAL_DEFAULT_KEYS, isValidPetId, PET_DISPLAY_SET, warnOnce } from './constants.ts';
 import { topFieldValid } from './validate.ts';

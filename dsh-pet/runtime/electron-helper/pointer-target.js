@@ -3,7 +3,7 @@
  * 窗口默认整窗穿透，常规链路只有 Electron 的 forward 鼠标钩子一个入口，而该钩子在 Windows 上会静默失效
  * ——失效后悬浮、拖拽、点击与右键全无反应。本模块只算「该不该可交互」，主进程负责取光标并翻转窗口；
  * 坐标一律 DIP（窗口矩形与光标同单位）。
- * @module dsh-pet/runtime/electron-helper/pointer-target
+ * @module dsh-zdd-pet/runtime/electron-helper/pointer-target
  */
 
 'use strict';

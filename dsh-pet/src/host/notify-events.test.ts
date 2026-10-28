@@ -131,7 +131,7 @@ describe('agentErrorFrame —— agent/error → host/agent-error 帧', () => {
 });
 
 describe('shouldNotifySession —— 会话门（issue #82）', () => {
-  // 下面三条 header 都是本机实测真值（dsh-pet 仓库工作区、DSH 会话格式 v4）。
+  // 下面三条 header 都是本机实测真值（dsh-zdd-pet 仓库工作区、DSH 会话格式 v4）。
   const subagent = {
     id: '7590c092-5e81-4d0b-92de-4c85e65fef61',
     header: {

@@ -3,7 +3,7 @@
  *
  * 不自己停拉进程（归 ./spawn），不重算配置（归 ./pets）。
  * 依赖显式传入（见输入类型），模块内不读全局。
- * @module dsh-pet/src/host/plugin/desktop/sync
+ * @module dsh-zdd-pet/src/host/plugin/desktop/sync
  */
 import type { DesktopHelperDeps } from './types.ts';
 import type { DesktopPets } from './pets.ts';
@@ -31,7 +31,7 @@ export function createDesktopSync(deps: DesktopSyncInput) {
         startHelper();
       })
       .catch((e: unknown) => {
-        log.warn(`[dsh-pet] 重启桌面 Helper 失败：${e instanceof Error ? e.message : String(e)}`);
+        log.warn(`[dsh-zdd-pet] 重启桌面 Helper 失败：${e instanceof Error ? e.message : String(e)}`);
       });
     return desktopSyncQueue;
   };

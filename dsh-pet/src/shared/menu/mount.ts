@@ -3,7 +3,7 @@
  *
  * 不决定菜单内容（归 ./tree），只负责呈现与事件。
  * 必须始终成立：卸载时必须摘掉全部监听，不留悬挂元素。
- * @module dsh-pet/src/shared/menu/mount
+ * @module dsh-zdd-pet/src/shared/menu/mount
  */
 import type { ContextMenuMount, MenuBranch, MenuLeaf, MenuNode } from './types.ts';
 import { pickPanelPosition } from './position.ts';
@@ -35,7 +35,7 @@ export function mountContextMenu(opts: {
       ? clamp
       : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
   const root = document.createElement('div');
-  root.className = 'dsh-pet-menu';
+  root.className = 'dsh-zdd-pet-menu';
   root.style.left = '0px';
   root.style.top = '0px';
   root.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -70,7 +70,7 @@ export function mountContextMenu(opts: {
       panel: { w: panel.offsetWidth, h: panel.offsetHeight },
       item: { left: rect.left, right: rect.right, top: rect.top },
       parent: { left: pr.left, right: pr.right, top: pr.top },
-      others: Array.from(root.querySelectorAll<HTMLElement>('.dsh-pet-menu-column'))
+      others: Array.from(root.querySelectorAll<HTMLElement>('.dsh-zdd-pet-menu-column'))
         .filter((p) => p !== panel && p.style.display !== 'none')
         .map((p) => {
           const b = p.getBoundingClientRect();
@@ -86,20 +86,20 @@ export function mountContextMenu(opts: {
    *  面板先入 DOM、子面板后入，层级越深绘制越靠上（子菜单盖在父菜单上层）。 */
   const buildPanel = (nodes: MenuNode[]): HTMLElement => {
     const panel = document.createElement('div');
-    panel.className = 'dsh-pet-menu-column';
+    panel.className = 'dsh-zdd-pet-menu-column';
     panel.style.display = 'none';
     // 桌面 clamp：把列高封顶到可视矩形内（否则 62vh 相对的是窗口高度，可视区更小时仍会溢出被裁）
     if (clamp) panel.style.maxHeight = Math.min(460, Math.max(120, c.h - 16)) + 'px';
     root.appendChild(panel);
     for (const node of nodes) {
       const item = document.createElement('div');
-      item.className = 'dsh-pet-menu-item';
+      item.className = 'dsh-zdd-pet-menu-item';
       if (isBranchNode(node)) {
-        item.classList.add('dsh-pet-menu-branch');
+        item.classList.add('dsh-zdd-pet-menu-branch');
         const label = document.createElement('span');
         label.textContent = node.label;
         const arrow = document.createElement('span');
-        arrow.className = 'dsh-pet-menu-arrow';
+        arrow.className = 'dsh-zdd-pet-menu-arrow';
         arrow.textContent = '▸';
         item.appendChild(label);
         item.appendChild(arrow);
@@ -119,7 +119,7 @@ export function mountContextMenu(opts: {
         // 右侧灰色提示（如快捷键）：与 label 同一 flex 行，space-between 自动贴右
         if (node.hint) {
           const hint = document.createElement('span');
-          hint.className = 'dsh-pet-menu-hint';
+          hint.className = 'dsh-zdd-pet-menu-hint';
           hint.textContent = node.hint;
           item.appendChild(hint);
         }

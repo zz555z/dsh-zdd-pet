@@ -4,7 +4,7 @@
  * 不负责设置校验与限流（见 ai-provider），也不负责选择模型。
  * 必须始终成立：请求只能发往配置推导出的那个端点；鉴权头由本层重建，
  * 绝不沿用 SDK 从环境或配置目录推断出的凭据。
- * @module dsh-pet/src/standalone/ai-transport
+ * @module dsh-zdd-pet/src/standalone/ai-transport
  */
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';

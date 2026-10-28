@@ -4,7 +4,7 @@
  * 只碰 video 元素与自己的内部状态；React 状态（anim / once / seq / 气泡 / 朝向）不在本模块里改，
  * 需要改的地方以 {@link EndedCue} / {@link FreezeCue} 的形式返回，由组件执行。
  * 必须始终成立：同一时刻只有一个 pending 换源（世代号丢弃迟到的加载），且回执先于任何 return 上报。
- * @module dsh-pet/src/client/pet/animation/animation
+ * @module dsh-zdd-pet/src/client/pet/animation/animation
  */
 import { isEventAnim } from '../../../shared/pickers.ts';
 import { decideEndedCue, type EndedCue, type FreezeCue } from './cues.ts';
@@ -143,7 +143,7 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
       return;
     }
     if (isEventAnim(cfg.animations.events, next)) {
-      console.log('[dsh-pet] ' + stamp(cfg.id) + ' switch ' + next + ' once=' + nextOnce);
+      console.log('[dsh-zdd-pet] ' + stamp(cfg.id) + ' switch ' + next + ' once=' + nextOnce);
     }
     const swapGen = (gen += 1);
     pending = { anim: next, once: nextOnce, gen: swapGen };
@@ -188,7 +188,7 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
         pending = null; // 释放挂起的换源，避免后续点击困在防重循环里。
         if (cuePlaybackId !== null) reportOnce(cuePlaybackId, 'failed', REASON_ASSET_LOAD);
         console.warn(
-          '[dsh-pet] 素材加载失败 pet=' +
+          '[dsh-zdd-pet] 素材加载失败 pet=' +
             cfg.id +
             ' anim=' +
             next +
@@ -249,11 +249,11 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
     });
     const petId = deps.cfg().id;
     if (cue.kind === 'work-rotate') {
-      console.log('[dsh-pet] ' + stamp(petId) + ' workStatus 档内轮换: ' + deps.currentAnim() + ' -> ' + cue.anim);
+      console.log('[dsh-zdd-pet] ' + stamp(petId) + ' workStatus 档内轮换: ' + deps.currentAnim() + ' -> ' + cue.anim);
     } else if (cue.kind === 'work-replay') {
-      console.log('[dsh-pet] ' + stamp(petId) + ' workStatus 循环续播: ' + deps.currentAnim());
+      console.log('[dsh-zdd-pet] ' + stamp(petId) + ' workStatus 循环续播: ' + deps.currentAnim());
     } else if (cue.kind === 'event-done') {
-      console.log('[dsh-pet] ' + stamp(petId) + ' 事件动画播完 ended anim=' + deps.currentAnim());
+      console.log('[dsh-zdd-pet] ' + stamp(petId) + ' 事件动画播完 ended anim=' + deps.currentAnim());
     }
     return cue;
   };

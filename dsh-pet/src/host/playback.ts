@@ -3,7 +3,7 @@
  *
  * 只做再导出，逻辑分居 ./playback/。
  * 必须始终成立：记录只由渲染端上报推进，宿主不猜播放结果。
- * @module dsh-pet/src/host/playback
+ * @module dsh-zdd-pet/src/host/playback
  */
 export {
   MAX_PLAYBACK_WAIT_MS,

@@ -3,7 +3,7 @@
  *
  * 不读时钟、不碰 IO；候选由 ./lunar 提供。
  * 必须始终成立：同一日期多次调用结果一致，不依赖调用顺序。
- * @module dsh-pet/src/host/time-context/context
+ * @module dsh-zdd-pet/src/host/time-context/context
  */
 import { MAX_AHEAD, MAX_LOOKBACK, SEASON_ENTRIES } from './entries.ts';
 import type { Candidate, Entry, RankedEntry } from './entries.ts';

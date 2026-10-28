@@ -3,7 +3,7 @@
  *
  * 只解析、不渲染；解析不出就返回 undefined，由上层回落到氛围短句。
  * 必须始终成立：命令只看命令名与参数形状，参数值一律不进气泡。
- * @module dsh-pet/src/host/tool-detail/target
+ * @module dsh-zdd-pet/src/host/tool-detail/target
  */
 import { TASK_TEXT_MAX } from '../work-status.ts';
 import type { CopyLine } from './copy.ts';

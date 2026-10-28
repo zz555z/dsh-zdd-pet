@@ -3,7 +3,7 @@
  *
  * 不解析 URL（归 ./parse），不判状态合法性（归 ./status）。
  * 必须始终成立：迟到的 ended 不得覆盖 cancelled；等待者只被唤醒一次。
- * @module dsh-pet/src/host/playback/store
+ * @module dsh-zdd-pet/src/host/playback/store
  */
 import { PLAYBACK_KEEP_MS, isReportableStatus, isTerminalStatus } from './status.ts';
 import type { PlaybackStatus } from './status.ts';

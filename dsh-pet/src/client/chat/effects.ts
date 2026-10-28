@@ -2,7 +2,7 @@
  * 面板的副作用：首次装配、贴底滚动、输入框自动长高、跟着桌宠的说话刷新。
  *
  * 四件事都绑 DOM / 外部数据源与生命周期，与状态归约分开放；数据由 ./state 传入，这里不持状态。
- * @module dsh-pet/src/client/chat/effects
+ * @module dsh-zdd-pet/src/client/chat/effects
  */
 import { getStateSnapshot, subscribeStateSnapshot } from '../state-service.ts';
 import { fetchChatConfig, fetchOrphans } from './api.ts';

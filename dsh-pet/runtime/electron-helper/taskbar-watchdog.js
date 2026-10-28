@@ -3,7 +3,7 @@
  * Windows 上 `skipTaskbar` 只是一次 `ITaskbarList::DeleteTab`，不写 `WS_EX_TOOLWINDOW`：shell 一旦
  * 重建任务栏（explorer 崩溃重启、唤醒、显示器拓扑变化），按钮就会重新登记出来，而重建时机不可枚举。
  * 看门狗按固定节拍重新摘一次——`DeleteTab` 幂等、无视觉副作用，重复调用不会打断全屏或抢焦点。
- * @module dsh-pet/runtime/electron-helper/taskbar-watchdog
+ * @module dsh-zdd-pet/runtime/electron-helper/taskbar-watchdog
  */
 
 'use strict';

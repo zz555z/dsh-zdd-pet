@@ -3,7 +3,7 @@
  * 一次拿全文件而不是让 video 流式加载——后者在 DSH WebServer 上偶发 stalled，表现为点了没反应。
  * 只负责「拿到地址」与「释放地址」；播哪一段、A/B 哪个槽位归动画链。
  * cache 用默认策略：服务端给了 max-age，有效期内不走网络；不能用 force-cache，否则换掉同名素材后仍读旧缓存。
- * @module dsh-pet/src/client/pet/animation/asset-loader
+ * @module dsh-zdd-pet/src/client/pet/animation/asset-loader
  */
 /** 一次加载的两个结局。 */
 export interface AssetHandlers {

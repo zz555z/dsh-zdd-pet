@@ -3,7 +3,7 @@
  * 五种场景各有自己的按钮组合：删除要确认、只剩一只（main / 某个种类）只能「知道了」、
  * 同步要确认、配置损坏要确认强行重建。
  * 确认后的动作由设置页外壳执行（它才知道怎么删、怎么带 force 存盘），这里只负责问与答。
- * @module dsh-pet/src/client/settings/dialog
+ * @module dsh-zdd-pet/src/client/settings/dialog
  */
 import type { FunctionComponent } from 'react';
 import type * as ReactNS from 'react';
@@ -103,7 +103,7 @@ export function makeDialog(rt: SettingsRuntime): FunctionComponent<DialogProps> 
                       key: 'ok',
                       type: 'button',
                       onClick: props.onDismiss,
-                      className: 'dsh-pet-cfg__btn is-primary',
+                      className: 'dsh-zdd-pet-cfg__btn is-primary',
                       children: t('ok'),
                     }),
                   ]
@@ -112,14 +112,14 @@ export function makeDialog(rt: SettingsRuntime): FunctionComponent<DialogProps> 
                       key: 'cancel',
                       type: 'button',
                       onClick: props.onDismiss,
-                      className: 'dsh-pet-cfg__btn',
+                      className: 'dsh-zdd-pet-cfg__btn',
                       children: t('cancel'),
                     }),
                     h('button', {
                       key: 'confirm',
                       type: 'button',
                       onClick: props.onConfirm,
-                      className: 'dsh-pet-cfg__btn ' + (confirmable.kind === 'sync' ? 'is-primary' : 'is-danger'),
+                      className: 'dsh-zdd-pet-cfg__btn ' + (confirmable.kind === 'sync' ? 'is-primary' : 'is-danger'),
                       children: confirmLabel(confirmable.kind, t),
                     }),
                   ],

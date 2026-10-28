@@ -3,7 +3,7 @@
  * 不负责飞行与走位；弹簧跟随在 ./drag-follow，松手结算在 ./drag-release。
  * 依赖 PetCard 每帧给出的当帧能力 getter：尺寸、动画池、状态设置器与停/起运动。
  * 不变量：按下后所有位置写入都经包围盒读写；松手必须先停弹簧跟随再结算落点。
- * @module dsh-pet/src/client/pet/motion/drag
+ * @module dsh-zdd-pet/src/client/pet/motion/drag
  */
 import { trimTrail, type DragSample } from '../../../shared/physics.ts';
 import { pick } from '../../../shared/pickers.ts';
@@ -143,7 +143,7 @@ const stamp = (): string => new Date().toTimeString().slice(0, 8);
 
 /** 一行带时刻与宠物 id 的日志：客户端统一前缀，便于按宠物 grep。 */
 const log = (petId: string, message: string): void => {
-  console.log('[dsh-pet] ' + stamp() + ' pet=' + petId + ' ' + message);
+  console.log('[dsh-zdd-pet] ' + stamp() + ' pet=' + petId + ' ' + message);
 };
 
 /**

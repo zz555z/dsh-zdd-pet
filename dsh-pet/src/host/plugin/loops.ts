@@ -2,12 +2,14 @@
  * 轮询循环：余额定时刷新与碎碎念定时触发，随插件卸载一并停止。
  *
  * 不实现取数与文案（归 balance-poll / chat-memory），只负责节奏与生命周期。
- * @module dsh-pet/src/host/plugin/loops
+ * @module dsh-zdd-pet/src/host/plugin/loops
  */
 import { findPetInstance, flattenPetList, readAllConfig } from '../config.ts';
+import { parsePomodoro, pickPomodoroText, pomodoroMs } from '../pomodoro.ts';
 import { automaticWhisperSchedule } from '../whisper-policy.ts';
 import type { BalancePoll } from './balance-poll.ts';
 import type { ChatMemory } from './chat-memory.ts';
+import type { Extras } from './extras.ts';
 import type { PetLookup } from './pet-lookup.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
@@ -24,7 +26,8 @@ export type LoopsInput = {
   Pick<ChatMemory, 'publishWhisper'> &
   Pick<BalancePoll, 'refreshBalance'> &
   Pick<HostSetup, 'standaloneAiPolicy'> &
-  Pick<BalancePoll, 'whisperPeriodSec'>;
+  Pick<BalancePoll, 'whisperPeriodSec'> &
+  Pick<Extras, 'deliverCue' | 'pickPetMeme'>;
 
 /** 注册轮询循环；返回的清理函数由 ctx.effect 收集。 */
 export function registerLoops(deps: LoopsInput): void {
@@ -32,9 +35,11 @@ export function registerLoops(deps: LoopsInput): void {
     ctx,
     balancePeriodSec,
     configPaths,
+    deliverCue,
     lastWhisperAt,
     lock,
     log,
+    pickPetMeme,
     publishWhisper,
     refreshBalance,
     standaloneAiPolicy,
@@ -56,13 +61,13 @@ export function registerLoops(deps: LoopsInput): void {
         sec = balancePeriodSec(cfg);
         // 没有任何启用余额的宠物 → 不查（省外部调用）；配置改了下一拍自然跟上
         if (flattenPetList(cfg).some((p) => p.balanceEnabled === true)) await refreshBalance();
-        else log.info('[dsh-pet] 余额周期跳过：没有启用余额的宠物');
+        else log.info('[dsh-zdd-pet] 余额周期跳过：没有启用余额的宠物');
       } catch (e) {
         // 读配置抛错 = 安装损坏（readAllConfig 只在内置默认缺失/损坏时抛，用户层写坏只会告警回退）：
         // 不再重排——每 30 分钟重试一次没有意义，而且会白占一个常驻定时器。留一行 warn：这条路径
         // 会让余额周期永久停摆，不打日志就与「查了但没变化」无法区分。
         log.warn(
-          '[dsh-pet] 余额周期读配置失败，周期刷新已停止（重启 DSH 后恢复）：' +
+          '[dsh-zdd-pet] 余额周期读配置失败，周期刷新已停止（重启 DSH 后恢复）：' +
             (e instanceof Error ? e.message : String(e)),
         );
         return;
@@ -74,7 +79,7 @@ export function registerLoops(deps: LoopsInput): void {
       disposed = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, 'dsh-pet: balance poll');
+  }, 'dsh-zdd-pet: balance poll');
 
   // 碎碎念周期：host 侧调度。一拍 = 读一次配置 + 给「到点」的宠物各生成一句；下一拍按最短周期排。
   // 用固定拍 + 逐宠物比对 lastWhisperAt，而不是每宠一个定时器：宠物随配置增删、周期随条目改，
@@ -132,7 +137,7 @@ export function registerLoops(deps: LoopsInput): void {
             continue;
           }
           due += 1;
-          log.info(`[dsh-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），开始生成`);
+          log.info(`[dsh-zdd-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），开始生成`);
           lastWhisperAt.set(petId, now);
           // 不 await：生成要几秒，别把调度拍拖住（每只宠物独立生成，互不阻塞）
           void publishWhisper(petId).catch(() => {});
@@ -140,7 +145,7 @@ export function registerLoops(deps: LoopsInput): void {
         if (Number.isFinite(min)) next = min;
         // 每拍一行汇总：调度是否还在跑、下一拍多久、为什么跳过，全在这一行里（300s 一条，量可忽略）
         log.info(
-          `[dsh-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` +
+          `[dsh-zdd-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` +
             (skipped.length > 0 ? `（${skipped.join('；')}）` : '') +
             `；下一拍 ${next}s`,
         );
@@ -148,7 +153,7 @@ export function registerLoops(deps: LoopsInput): void {
         // 读配置抛错 = 安装损坏（同余额定时器）：不再重排，别白占常驻句柄。
         // 但必须留一行 warn：这条路径会让自动碎碎念永久停摆。
         log.warn(
-          '[dsh-pet] 碎碎念调度读配置失败，自动碎碎念已停止（重启 DSH 后恢复）：' +
+          '[dsh-zdd-pet] 碎碎念调度读配置失败，自动碎碎念已停止（重启 DSH 后恢复）：' +
             (e instanceof Error ? e.message : String(e)),
         );
         return;
@@ -160,5 +165,61 @@ export function registerLoops(deps: LoopsInput): void {
       disposed = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, 'dsh-pet: whisper poll');
+  }, 'dsh-zdd-pet: whisper poll');
+
+  // 番茄钟 / 久坐提醒：固定间隔（不看是否在干活，用户显式选的"每 N 分钟一次"）到点让桌宠说一句。
+  // 纯定时器、零 token。按条目读 pomodoro 配置：条目里任一宠物启用就起循环，周期取该条目配置；
+  // 多条目的周期可能不同 → 按**最短**周期排一拍，到点再逐条目比对各自的下次时刻。
+  // 用固定拍 + 逐条目比对 lastFireAt（与碎碎念同一套思路），配置增删天然跟上。
+  ctx.effect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // 每个条目上次投递时刻：key = 条目名（assetRoot）
+    const lastFireAt = new Map<string, number>();
+    function arm(ms: number): void {
+      if (disposed) return;
+      timer = setTimeout(() => tick(), Math.max(60 * 1000, ms));
+    }
+    function tick(): void {
+      let nextMs = Infinity;
+      try {
+        const cfg = readAllConfig(configPaths);
+        const now = Date.now();
+        for (const entry of Object.keys(cfg)) {
+          const conf = cfg[entry];
+          const pomo = parsePomodoro(conf?.pomodoro);
+          if (!pomo) continue; // 该条目未启用番茄钟
+          const periodMs = pomodoroMs(pomo);
+          // 条目下的每只宠物都该收到提醒（多开同屏时各说一句；同一句文案，随机一次即可）
+          const pets = Array.isArray(conf?.pets) ? (conf.pets as Record<string, unknown>[]) : [];
+          const petIds = pets.map((p) => String(p.id ?? '')).filter((id) => id !== '');
+          if (petIds.length === 0) continue;
+          const last = lastFireAt.get(entry) ?? now; // 首次以当前时刻为基线，不立即弹
+          if (!lastFireAt.has(entry)) lastFireAt.set(entry, last);
+          const remain = last + periodMs - now;
+          if (remain > 0) {
+            nextMs = Math.min(nextMs, remain);
+            continue;
+          }
+          const text = pickPomodoroText(pomo);
+          for (const petId of petIds) {
+            // 配图从该宠物自己的表情包池抽（池空 → 纯文字）；提醒文案本身来自 pomodoro 配置。
+            const image = pickPetMeme(petId);
+            void deliverCue(petId, image ? { text, image } : { text });
+          }
+          lastFireAt.set(entry, now);
+          log.info(`[dsh-zdd-pet] 番茄钟到点 entry=${entry}，${petIds.length} 只宠物提醒：「${text}」`);
+          nextMs = Math.min(nextMs, periodMs);
+        }
+      } catch (e) {
+        log.warn('[dsh-zdd-pet] 番茄钟调度读配置失败，本次跳过：' + (e instanceof Error ? e.message : String(e)));
+      }
+      arm(Number.isFinite(nextMs) ? nextMs : 60 * 60 * 1000);
+    }
+    arm(60 * 1000); // 启动后先等一拍（一分钟），不立即打扰
+    return () => {
+      disposed = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, 'dsh-zdd-pet: pomodoro poll');
 }

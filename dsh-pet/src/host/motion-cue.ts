@@ -1,11 +1,11 @@
 /**
- * 位置 / 抛掷指令（`POST /dsh-pet-7340/position`、`POST /dsh-pet-7340/throw`）的纯决策层。
+ * 位置 / 抛掷指令（`POST /dsh-zdd-pet-7340/position`、`POST /dsh-zdd-pet-7340/throw`）的纯决策层。
  *
  * 与 ./anim 同一分工：只判定该不该受理、受理成什么，不碰 HTTP、不碰 S，可完全离线单测。
  * 不负责运动学：抛掷复用渲染端既有的 startThrow，位置的三条路也都是既有运动学，本层只剩参数
  * 校验与坐标夹取。必须始终成立：`?pet=` 必填且必须真实存在，绝不默认退到列表第一只。
  * 契约见 API.md 与 openapi.yaml。
- * @module dsh-pet/src/host/motion-cue
+ * @module dsh-zdd-pet/src/host/motion-cue
  */
 
 import { flattenPetList } from './config.ts';

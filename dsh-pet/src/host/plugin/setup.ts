@@ -2,9 +2,9 @@
  * 宿主环境装配：日志出口、用户目录、配置路径与进程内 store。
  *
  * 只创建对象、算路径、注册可选服务，不启动任何循环，也不碰网络；
- * 需要 ctx 的两处（日志收尾 effect、petApi7340 服务）一并在这里注册。
+ * 需要 ctx 的两处（日志收尾 effect、petApiZdd 服务）一并在这里注册。
  * 必须始终成立：日志只创建一次——复用到 standalone 挂上的 logger 时不得再建第二个。
- * @module dsh-pet/src/host/plugin/setup
+ * @module dsh-zdd-pet/src/host/plugin/setup
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -75,7 +75,7 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
   // 用户数据根：配置与用户素材统一收敛于此（扩展包按 <插件id> 各自建目录）
   const dshHome = resolveDshHome();
 
-  const userRoot = join(dshHome, 'dsh-pet');
+  const userRoot = join(dshHome, 'dsh-zdd-pet');
 
   // 统一日志出口（单文件、按大小截断，见 ./log-file）：桌面版 DSH 没有控制台，ctx.logger 只写
   // stdout 等于把排障信息丢掉；base 保留终端输出。
@@ -101,7 +101,7 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
         void log.flush();
         log.dispose();
       },
-      'dsh-pet: log file',
+      'dsh-zdd-pet: log file',
     );
   }
 
@@ -141,7 +141,7 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
 
   // 老用户一次性迁移：main-config.json → main-config.jsonc（重命名，内容一字不动；
   // 新文件已存在则不动旧文件）。失败不影响运行——读取侧对旧路径有回落。
-  migrateUserConfig(configPaths, (msg) => log.info('[dsh-pet] ' + msg));
+  migrateUserConfig(configPaths, (msg) => log.info('[dsh-zdd-pet] ' + msg));
 
   // 用户动画目录（thumb 播放时优先于包内素材；webm 放 main-animation/webm/，mov（macOS 定制）放 main-animation/mov/）
   const thumbUserRoot = join(userRoot, 'main-animation');
@@ -169,10 +169,10 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
   // 注册表写进 S 的 sections.menu；点击事件不进 S——它是触发不是状态，走 /menu/events 读取即消费。
   const menuRegistry = new MenuRegistry();
 
-  // 对外 Cordis 服务（宿主半侧）：与页面侧的 petApi7340 同名，但分属两个容器，互不可见也互不覆盖。
+  // 对外 Cordis 服务（宿主半侧）：与页面侧的 petApiZdd 同名，但分属两个容器，互不可见也互不覆盖。
   // 只暴露 register（返回注销函数，配合 ctx.effect 在卸载时自动清理）与 list（排障用）；
   // 不暴露 unregister：注销走返回值，避免任何插件都能注销别人的 provider。
-  ctx.provide('petApi7340', {
+  ctx.provide('petApiZdd', {
     balance: {
       register: registerBalanceProvider,
       list: listBalanceProviders,

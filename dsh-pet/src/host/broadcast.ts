@@ -8,7 +8,7 @@
  * 始终成立：pet 必填且必须真实存在，绝不默认退到列表第一只；两种配图形态最多给一个。
  * 契约见 API.md 与 openapi.yaml。
  *
- * @module dsh-pet/src/host/broadcast
+ * @module dsh-zdd-pet/src/host/broadcast
  */
 
 import { findPetInstance } from './config.ts';

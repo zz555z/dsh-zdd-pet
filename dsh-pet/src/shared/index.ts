@@ -5,7 +5,7 @@
  * menu / chat / score-popup / tooltip 导出 DOM 样式与挂载：数据与判据仍是纯函数，渲染两端共用同一份。
  * 本文件是打包入口：scripts/build-desktop-core.mjs 把它打成 shared-core.js，产物以 window.PetShared
  * 暴露全部符号供桌面 JS 取用（那一侧没有类型检查）。
- * @module dsh-pet/src/shared/index
+ * @module dsh-zdd-pet/src/shared/index
  */
 export * from './types.ts';
 export * from './constants.ts';

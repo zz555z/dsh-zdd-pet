@@ -4,7 +4,7 @@
  * 负责把 argv 变成选项，并镜像宿主半侧推导出的配置路径；不读文件、不建目录。
  * 路径口径以宿主半侧为准，这里只是只读镜像，测试会钉住两者一致。
  * 必须始终成立：--check 不 apply 也能算出 DSH 会读的配置路径。
- * @module dsh-pet/src/standalone/options
+ * @module dsh-zdd-pet/src/standalone/options
  */
 import { join } from 'node:path';
 
@@ -19,9 +19,9 @@ export interface CliOptions {
 }
 
 /** --help 正文。 */
-export const USAGE = `dsh-pet 独立模式（不需要 DSH）
+export const USAGE = `dsh-zdd-pet 独立模式（不需要 DSH）
 
-用法：dsh-pet-standalone [选项]
+用法：dsh-zdd-pet-standalone [选项]
 
 选项：
   --port <端口>   监听端口（默认 ${DEFAULT_STANDALONE_PORT}；被占用时自动向后顺延）
@@ -69,7 +69,7 @@ export function parseArgs(argv: string[]): { options: CliOptions } | { error: st
  * @returns 与宿主半侧一致的路径集。
  */
 export function configPathsFor(root: string, home: string): ConfigPaths {
-  const userRoot = join(home, 'dsh-pet');
+  const userRoot = join(home, 'dsh-zdd-pet');
   return {
     defaultFile: join(root, 'assets', 'config.jsonc'),
     userFile: join(userRoot, 'main-config.jsonc'),

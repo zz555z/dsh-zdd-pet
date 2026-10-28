@@ -4,7 +4,7 @@
  * 各工厂拿到的 ctx 都经过这里，而不是每个模块各写一份 `any`——这样"哪里依赖宿主服务"
  * 只需 grep 一个类型名，将来 DSH 提供完整 Context 合并时也只改这一处。
  * 不扩大依赖面：模块仍要通过 HostPlugin 输入声明自己真正用到的东西。
- * @module dsh-pet/src/host/plugin/context
+ * @module dsh-zdd-pet/src/host/plugin/context
  */
 
 /**

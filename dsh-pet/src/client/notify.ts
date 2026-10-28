@@ -4,7 +4,7 @@
  * 不负责产生帧：宿主监听 DSH 事件并写进 `/state`，容器统一轮询发现 counter 变化后调 `notifyFromFrame`；
  * 中断 / 活动门等过滤也已在宿主侧完成。
  * 依赖 shared/notify.ts 的帧到文案映射，以及成品配置的 `main.notificationsEnabled` 总开关。
- * @module dsh-pet/src/client/notify
+ * @module dsh-zdd-pet/src/client/notify
  */
 
 import { frameToToast, truncate, NOTIFY_ICONS as ICON_NAMES, type NotifyFrame } from '../shared/notify.ts';
@@ -38,7 +38,7 @@ function isPageActive(): boolean {
   return pageVisible && pageFocused;
 }
 
-/** 图标 URL；pic 路由由宿主提供（`assets/pic` → `/dsh-pet-7340/pic/<file>`）。 */
+/** 图标 URL；pic 路由由宿主提供（`assets/pic` → `/dsh-zdd-pet-7340/pic/<file>`）。 */
 const PIC = (name: string): string => `${ROUTE_PATH}/pic/${name}.png`;
 
 /** 图标 URL 表；文件名以 shared 为单一来源，设置页的测试通知也用它。 */
@@ -94,7 +94,7 @@ function toast(title: string, body?: string, icon?: string, sessionId?: string):
   if (!notifyEnabled) return;
   if (isPageActive()) return;
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  console.log('[dsh-pet] 【弹窗】' + title + (body ? '：' + body : ''));
+  console.log('[dsh-zdd-pet] 【弹窗】' + title + (body ? '：' + body : ''));
   try {
     const opts: NotificationOptions = {};
     if (body) opts.body = truncate(body);

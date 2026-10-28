@@ -3,7 +3,7 @@
  *
  * 由 ./state 用当前状态装配；这里不持有状态，只把一次用户动作翻译成「调接口 → 补丁」。
  * 每个动作自己兜住异常并交给 fail 端口，调用方拿到的永远是同步的空返回。
- * @module dsh-pet/src/client/chat/actions
+ * @module dsh-zdd-pet/src/client/chat/actions
  */
 import { encodeImageFile } from '../../shared/chat/encode.ts';
 import { clearHistory, clearOrphans as clearOrphansApi, deleteRounds, sendMessage, type DeleteResult } from './api.ts';

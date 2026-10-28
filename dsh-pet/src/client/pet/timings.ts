@@ -1,7 +1,7 @@
 /**
  * 宠物页面的时间常量：气泡展示时长与 /state 轮询节奏。
  * 都写成具名常量而不是散在调用点：气泡时长与动画生命周期解耦，轮询间隔决定空闲时的请求频率。
- * @module dsh-pet/src/client/pet/timings
+ * @module dsh-zdd-pet/src/client/pet/timings
  */
 
 /** 余额与工作状态气泡的展示时长（ms），与动画生命周期解耦。 */

@@ -1,7 +1,7 @@
 /**
  * 对话弹窗的 DOM 装配：输入框、上传/截屏按钮、待发送图片缩略图、提示行与错误行。
  * 只建元素并绑定"选中图片后怎么显示"，不发送、不定位、不管关闭。
- * @module dsh-pet/src/shared/chat/dom
+ * @module dsh-zdd-pet/src/shared/chat/dom
  */
 import { type EncodedImage, encodeImageFile } from './encode.ts';
 import { IMAGE_ACCEPT, firstImageFromClipboard, isImageFile } from './image-pick.ts';
@@ -40,7 +40,7 @@ export interface ChatDom {
 function iconButton(title: string, icon: SVGElement): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'dsh-pet-chat-btn';
+  btn.className = 'dsh-zdd-pet-chat-btn';
   btn.title = title;
   btn.setAttribute('aria-label', title);
   btn.appendChild(icon);
@@ -72,20 +72,20 @@ function enableAutoResize(input: HTMLTextAreaElement, root: HTMLElement): () => 
  */
 export function createChatDom(opts: { capture?: () => Promise<EncodedImage> } = {}): ChatDom {
   const root = document.createElement('div');
-  root.className = 'dsh-pet-chat';
+  root.className = 'dsh-zdd-pet-chat';
 
   const input = document.createElement('textarea');
-  input.className = 'dsh-pet-chat-input';
+  input.className = 'dsh-zdd-pet-chat-input';
   input.placeholder = '说点什么…';
   input.maxLength = 2000;
   input.rows = 1;
 
   const err = document.createElement('div');
-  err.className = 'dsh-pet-chat-err';
+  err.className = 'dsh-zdd-pet-chat-err';
   err.style.display = 'none';
 
   const hint = document.createElement('div');
-  hint.className = 'dsh-pet-chat-hint';
+  hint.className = 'dsh-zdd-pet-chat-hint';
   let hintTimer = 0;
   const flash = (text: string): void => {
     hint.textContent = text;
@@ -104,20 +104,20 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage> } = 
   fileInput.style.display = 'none';
 
   const attach = document.createElement('div');
-  attach.className = 'dsh-pet-chat-attach';
+  attach.className = 'dsh-zdd-pet-chat-attach';
   const thumb = document.createElement('img');
-  thumb.className = 'dsh-pet-chat-thumb';
+  thumb.className = 'dsh-zdd-pet-chat-thumb';
   thumb.alt = '已选图片';
   const attachX = document.createElement('button');
   attachX.type = 'button';
-  attachX.className = 'dsh-pet-chat-attach-x';
+  attachX.className = 'dsh-zdd-pet-chat-attach-x';
   attachX.textContent = '✕';
   attachX.title = '移除图片';
   attachX.setAttribute('aria-label', '移除图片');
   attach.append(thumb, attachX);
 
   const actions = document.createElement('div');
-  actions.className = 'dsh-pet-chat-actions';
+  actions.className = 'dsh-zdd-pet-chat-actions';
   actions.append(pickBtn, shotBtn, fileInput, attach);
 
   root.append(input, actions, hint, err);

@@ -2,7 +2,7 @@
  * 动画素材的地址拼装：点播给了完整 url 就用它，否则按「素材根 + 动画名 + 扩展名」拼宿主路由。
  * 两段都过 `encodeURIComponent`——动画名与素材根都允许中文与空格，不编码会让路由匹配不上。
  * 扩展名由调用方探测后传入（`thumbExt()` 读 UA），本模块不碰浏览器环境。
- * @module dsh-pet/src/client/pet/animation/assets
+ * @module dsh-zdd-pet/src/client/pet/animation/assets
  */
 import { ROUTE_PATH } from '../../../shared/constants.ts';
 

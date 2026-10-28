@@ -3,10 +3,10 @@
  *
  * 不订阅事件（订阅在装配层），不渲染气泡；只做纯判定与定时器。
  * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
- * @module dsh-pet/src/host/plugin/session-notify
+ * @module dsh-zdd-pet/src/host/plugin/session-notify
  */
 import { hasBlockingActivity, reduceNotifyFrame, withSessionId, type HostNotifyFrame } from '../notify-events.ts';
-import { type WorkStatusTurnContext } from '../work-status.ts';
+import { type TodoView, type WorkStatusTurnContext } from '../work-status.ts';
 import type { WorkStatusBridge } from './work-status-bridge.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
@@ -45,10 +45,10 @@ export function createSessionNotify(deps: SessionNotifyInput) {
   const TERMINAL_KEEP_MS = 60 * 1000;
 
   /**
-   * 每会话最近一条 todo 文案：工具跑完要把气泡「还」给它。没有这份缓存，`tool/result` 写 null
-   * 就只能回落到通用档位文案，用户刚看到的清单进度会被抹掉。
+   * 每会话最近一次 todo 视图（文案 + 清单进度）：工具跑完要把气泡「还」给它。没有这份缓存，
+   * `tool/result` 写 null 就只能回落到通用档位文案，用户刚看到的清单进度会被抹掉。
    */
-  const lastTodoText = new Map<string, string | null>();
+  const lastTodoText = new Map<string, TodoView>();
 
   /**
    * 每会话在途调用的详情：键为调用标识（缺标识时用临时 `Symbol`），值为气泡文案。

@@ -2,14 +2,14 @@
  * 设置页共用的小件：字段、问号说明、卡片头、开关格，以及输入框与等宽字体的共享常量。
  * 全部只是造节点，不含状态也不读翻译以外的全局——样式规则在 `css.ts`，文案键在 `locales.ts`。
  * 说明统一走 `data-tip` 气泡（CSS 的 `[data-tip]::after`），不额外包一层 DOM，避免打乱外层 flex 的间距与对齐。
- * @module dsh-pet/src/client/settings/ui
+ * @module dsh-zdd-pet/src/client/settings/ui
  */
 import type { ChangeEvent } from 'react';
 import type { jsx } from 'react/jsx-runtime';
 import type { SettingsRuntime } from './runtime.ts';
 
 /** 输入框与下拉框共用的类名。 */
-export const INPUT_CLASS = 'dsh-pet-cfg__inp';
+export const INPUT_CLASS = 'dsh-zdd-pet-cfg__inp';
 
 /** 等宽字体栈（路径与命令展示用），走系统栈以免多拉一份资源。 */
 export const MONO_STACK = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
@@ -54,26 +54,26 @@ export function makeUiKit(rt: Pick<SettingsRuntime, 'h' | 't'>): SettingsUiKit {
 
   /** 问号：气泡的圆形触发元素。用 `<i>` 而不是 `<button>`——它只展示说明，点了不该有行为，也不该进 Tab 顺序。 */
   const q = (text: string, end = false): ReturnType<typeof jsx> =>
-    h('i', { className: 'dsh-pet-cfg__q', ...tip(text, end), 'aria-label': text, role: 'img', children: '?' });
+    h('i', { className: 'dsh-zdd-pet-cfg__q', ...tip(text, end), 'aria-label': text, role: 'img', children: '?' });
 
   return {
     tip,
     q,
     cardHead: (title, hint, end = false) =>
       h('div', {
-        className: 'dsh-pet-cfg__cardHead',
+        className: 'dsh-zdd-pet-cfg__cardHead',
         children: [
-          h('span', { key: 't', className: 'dsh-pet-cfg__cardTitle', children: title }),
+          h('span', { key: 't', className: 'dsh-zdd-pet-cfg__cardTitle', children: title }),
           hint ? q(hint, end) : null,
         ],
       }),
     field: (label, control, hint, end = false) =>
       h('div', {
-        className: 'dsh-pet-cfg__field',
+        className: 'dsh-zdd-pet-cfg__field',
         children: [
           h('span', {
             key: 'l',
-            className: 'dsh-pet-cfg__flabel',
+            className: 'dsh-zdd-pet-cfg__flabel',
             children: hint ? [label, q(hint, end)] : label,
           }),
           control,
@@ -81,7 +81,7 @@ export function makeUiKit(rt: Pick<SettingsRuntime, 'h' | 't'>): SettingsUiKit {
       }),
     toggleCell: (label, value, disabled, onToggle, end = false) =>
       h('div', {
-        className: 'dsh-pet-cfg__toggle',
+        className: 'dsh-zdd-pet-cfg__toggle',
         children: [
           h('label', {
             key: 'l',

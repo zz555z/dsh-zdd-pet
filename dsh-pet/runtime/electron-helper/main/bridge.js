@@ -4,7 +4,7 @@
  * 非 bridge（手动 start-desktop / 独立应用）退回 HTTP 直连。
  *
  * 回调地址与待应答表由本模块独占，调用方只问 callbackUrl()、只发 hostRequest()。
- * @module dsh-pet/runtime/electron-helper/main/bridge
+ * @module dsh-zdd-pet/runtime/electron-helper/main/bridge
  */
 
 const fsPromises = require('node:fs/promises');
@@ -54,7 +54,7 @@ function createBridge({ isBridge, prefix, origin, token }) {
     const server = http.createServer((req, res) => {
       if (req.method !== 'POST' || req.url !== '/respond') {
         res.writeHead(404, { 'content-type': 'text/plain' });
-        res.end('dsh-pet: not found');
+        res.end('dsh-zdd-pet: not found');
         return;
       }
       let raw = '';
@@ -66,28 +66,28 @@ function createBridge({ isBridge, prefix, origin, token }) {
           res.end('ok');
         } catch {
           res.writeHead(400, { 'content-type': 'text/plain' });
-          res.end('dsh-pet: bad payload');
+          res.end('dsh-zdd-pet: bad payload');
         }
       });
       req.on('error', () => {
         res.writeHead(400, { 'content-type': 'text/plain' });
-        res.end('dsh-pet: bad payload');
+        res.end('dsh-zdd-pet: bad payload');
       });
     });
     server.on('error', (e) => {
-      console.error('[dsh-pet-desktop-helper] bridge callback server error:', String(e && e.message ? e.message : e));
+      console.error('[dsh-zdd-pet-desktop-helper] bridge callback server error:', String(e && e.message ? e.message : e));
     });
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       bridgeCallbackUrl = 'http://127.0.0.1:' + (addr && typeof addr === 'object' ? addr.port : 0) + '/respond';
-      console.error('[dsh-pet-desktop-helper] bridge callback: ' + bridgeCallbackUrl);
+      console.error('[dsh-zdd-pet-desktop-helper] bridge callback: ' + bridgeCallbackUrl);
     });
     return server;
   }
 
   /** 处理一个渲染端请求：拼宿主请求行 → 等应答 → 组装 Response（素材读盘） */
   async function handleBridgeRequest(request) {
-    const url = new URL(request.url); // dsh-pet-bridge://dsh-pet/dsh-pet-7340/...
+    const url = new URL(request.url); // dsh-zdd-pet-bridge://dsh-zdd-pet/dsh-zdd-pet-7340/...
     const method = request.method || 'GET';
     let body;
     if (method === 'POST' || method === 'PUT') {
@@ -125,8 +125,8 @@ function createBridge({ isBridge, prefix, origin, token }) {
           headers: { ...headers, 'content-length': String(data.length), 'accept-ranges': 'bytes' },
         });
       } catch (e) {
-        console.error('[dsh-pet-desktop-helper] bridge file read failed:', resp.file, e);
-        return new Response('dsh-pet: asset read failed', { status: 500, headers });
+        console.error('[dsh-zdd-pet-desktop-helper] bridge file read failed:', resp.file, e);
+        return new Response('dsh-zdd-pet: asset read failed', { status: 500, headers });
       }
     }
     return new Response(resp.body ?? '', { status: resp.status || 200, headers });
@@ -139,7 +139,7 @@ function createBridge({ isBridge, prefix, origin, token }) {
       method,
       headers: {
         ...(body ? { 'content-type': 'application/json' } : {}),
-        ...(token ? { 'X-DSH-Pet-Token': token } : {}),
+        ...(token ? { 'X-DSH-Zdd-Pet-Token': token } : {}),
       },
       body,
     });

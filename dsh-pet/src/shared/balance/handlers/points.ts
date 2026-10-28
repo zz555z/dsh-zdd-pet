@@ -4,7 +4,7 @@
  * 与 money 的区别只在语义：单位是数据带出的后缀，绝不套货币符号；数学是同一套，单位在比值里
  * 被约掉，同样没有汇率问题。
  *
- * @module dsh-pet/src/shared/balance/handlers/points
+ * @module dsh-zdd-pet/src/shared/balance/handlers/points
  */
 
 import type { BalanceBubbleRow, BalanceView } from '../types.ts';

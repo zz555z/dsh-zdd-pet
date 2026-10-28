@@ -1,10 +1,10 @@
 /**
- * dsh-pet 桌面 Helper 主进程：每只桌面宠物一个透明置顶小窗，窗口跟随渲染端上报的包围盒移动，进程内
+ * dsh-zdd-pet 桌面 Helper 主进程：每只桌面宠物一个透明置顶小窗，窗口跟随渲染端上报的包围盒移动，进程内
  * 还负责托盘、bridge 数据转发与宿主存活判定；不负责渲染与命中判定（renderer.js / sprite.js）。
  * 必须保持局部小窗：Windows DWM 视频黑屏需四项同时成立——透明置顶、非点击穿透、可聚焦且已聚焦、
  * 完整盖住视频窗；本进程恰好凑齐前三项，小窗则几乎不可能满足第四项，且默认整窗点击穿透。
  * 依赖宿主注入的环境变量与同目录的纯判定模块。
- * @module dsh-pet/runtime/electron-helper/main
+ * @module dsh-zdd-pet/runtime/electron-helper/main
  */
 let electronApi;
 // 被以「纯 Node 模式」拉起（宿主透传 ELECTRON_RUN_AS_NODE）时内置 electron 模块不会注册：
@@ -13,7 +13,7 @@ try {
   electronApi = require('electron');
 } catch (error) {
   process.stderr.write(
-    '[dsh-pet helper] 启动失败：本进程被以「纯 Node 模式」拉起（ELECTRON_RUN_AS_NODE=' +
+    '[dsh-zdd-pet helper] 启动失败：本进程被以「纯 Node 模式」拉起（ELECTRON_RUN_AS_NODE=' +
       JSON.stringify(process.env.ELECTRON_RUN_AS_NODE ?? null) +
       '）。该变量必须在 spawn 前删除（见 src/host/helper-process.ts 的 helperSpawnEnv），' +
       '运行期再删无效，设成空串会让 Electron 直接 abort。原始错误：' +
@@ -67,19 +67,19 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const APP_MODE = process.env.DSH_PET_APP_MODE === '1';
 // 只供同进程应用自己的请求使用，绝不出现在渲染端地址或日志里。
 const APP_TOKEN = APP_MODE ? process.env.DSH_PET_APP_TOKEN : undefined;
-app.setName('dsh-pet-electron-helper');
+app.setName('dsh-zdd-pet-electron-helper');
 // Windows 任务栏分组：不设 AppUserModelID 时窗口归到 electron.exe 名下，任务栏按钮意外出现就显示
 // Electron 默认图标。必须在 ready 之前调用；独立应用与 DSH 内 helper 用不同 ID，避免被合成一组。
 if (process.platform === 'win32') {
   app.setAppUserModelId(APP_MODE ? 'com.dsh.pet.app' : 'com.dsh.pet.helper');
 }
 // 应用模式只改数据目录、不改应用名：共用同一个 userData 时两个 Chromium 进程会抢同一份 profile 互踢。
-if (APP_MODE) app.setPath('userData', path.join(app.getPath('appData'), 'dsh-pet'));
+if (APP_MODE) app.setPath('userData', path.join(app.getPath('appData'), 'dsh-zdd-pet'));
 
 /** DPI 探测子进程模式：不建窗口，只把主屏 scaleFactor 打到 stdout 就退出（见 probePrimaryScale） */
 const DPI_PROBE = process.env.DSH_PET_DPI_PROBE === '1';
 /** 探测进程的输出标记（父进程按它抓值） */
-const DPI_MARK = 'dsh-pet-primary-scale:';
+const DPI_MARK = 'dsh-zdd-pet-primary-scale:';
 // 宿主存活：宿主退出后 stdout/stderr 的读端一起消失，helper 下一次写（每秒至少一条 /state 轮询）
 // 拿到 EPIPE；未处理的流错误会成为未捕获异常，而 Electron 的默认处理器只弹框、不退出——桌宠就此
 // 卡死、进程赖着不走。两条路缺一不可：① 管道守卫，任何一次写失败都不许变成异常，断开即退（只在
@@ -141,7 +141,7 @@ const dpi = createDpi({
   forceDsf: process.env.DSH_PET_FORCE_DSF,
 });
 
-/** bridge 模式：DSH_PET_BRIDGE=1（宿主注入）。开启时注册 dsh-pet-bridge scheme + 管道转发 */
+/** bridge 模式：DSH_PET_BRIDGE=1（宿主注入）。开启时注册 dsh-zdd-pet-bridge scheme + 管道转发 */
 const BRIDGE = process.env.DSH_PET_BRIDGE === '1';
 
 /** 「打开网站」这一项的去向（宿主按自身形态注入）：
@@ -149,14 +149,14 @@ const BRIDGE = process.env.DSH_PET_BRIDGE === '1';
  *  'site'    = dsh web / 独立模式 / 手写 start-desktop（无该变量）→ 原行为：默认浏览器打开站点。 */
 const OPEN_TARGET = process.env.DSH_PET_OPEN_TARGET === 'desktop' ? 'desktop' : 'site';
 /** 协议行前缀（与 helper-process.ts 的 BRIDGE_PREFIX 一致） */
-const BRIDGE_PREFIX = 'dsh-pet-bridge:';
+const BRIDGE_PREFIX = 'dsh-zdd-pet-bridge:';
 
 if (BRIDGE) {
   // 自定义 scheme：standard（可解析 URL）+ secure（按 https 对待）+ supportFetchAPI（fetch 可用）
   // + stream（视频流）+ corsEnabled（让 CORS 规则生效，配合响应里的 ACAO 头放行 file:// 源页面）
   protocol.registerSchemesAsPrivileged([
     {
-      scheme: 'dsh-pet-bridge',
+      scheme: 'dsh-zdd-pet-bridge',
       privileges: {
         standard: true,
         secure: true,
@@ -169,7 +169,7 @@ if (BRIDGE) {
   ]);
 }
 
-// bridge 协议：渲染端的每个 fetch 落到 dsh-pet-bridge://，protocol.handle 把请求以一行 JSON 写
+// bridge 协议：渲染端的每个 fetch 落到 dsh-zdd-pet-bridge://，protocol.handle 把请求以一行 JSON 写
 // stdout 转发宿主。宿主应答不走近 0 号管道（Electron 主进程在 Windows 上收不到 piped stdin），
 // 所以本进程开一个 127.0.0.1 随机端口 HTTP 回调，按 id 唤醒等待中的请求；素材只回绝对路径，
 // 由本进程自行读盘应答（二进制不过管道）。协议行统一前缀 BRIDGE_PREFIX，宿主据此区分协议与日志。
@@ -181,8 +181,8 @@ if (BRIDGE) {
 // 数据不新增通道：读写都走渲染端在用的同一条 bridge。菜单是静态的——每次切换 display 宿主都会重启
 // 本进程（syncDesktop），新进程按新配置重建菜单，所以不需要「重建菜单刷新勾选」的逻辑。
 
-const PET_ROUTE = '/dsh-pet-7340';
-const ORIGIN = new URL(process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-pet-7340/config').origin;
+const PET_ROUTE = '/dsh-zdd-pet-7340';
+const ORIGIN = new URL(process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-zdd-pet-7340/config').origin;
 const TRAY_PLATFORM = trayPlatform(process.platform);
 
 /** 与宿主的通道：bridge 走管道 + 本地回调，否则 HTTP 直连。 */
@@ -226,7 +226,7 @@ app.whenReady().then(() => {
     return;
   }
   console.error(
-    '[dsh-pet-desktop-helper] displays: ' +
+    '[dsh-zdd-pet-desktop-helper] displays: ' +
       JSON.stringify(petWindows.geometry()) +
       ' forcedScaleFactor=' +
       (dpi.forcedScale || 'off') +
@@ -238,10 +238,10 @@ app.whenReady().then(() => {
 
   if (BRIDGE) {
     // 自定义 scheme 接住渲染端全部请求（配置/余额/碎碎念/广播/素材）
-    protocol.handle('dsh-pet-bridge', (request) =>
+    protocol.handle('dsh-zdd-pet-bridge', (request) =>
       bridge.handle(request).catch((e) => {
-        console.error('[dsh-pet-desktop-helper] bridge handler error:', String(e && e.message ? e.message : e));
-        return new Response('dsh-pet: bridge error', {
+        console.error('[dsh-zdd-pet-desktop-helper] bridge handler error:', String(e && e.message ? e.message : e));
+        return new Response('dsh-zdd-pet: bridge error', {
           status: 502,
           headers: { 'access-control-allow-origin': '*' },
         });
@@ -290,7 +290,7 @@ app.on('before-quit', () => {
   try {
     tray.destroy();
   } catch (e) {
-    console.error('[dsh-pet-desktop-helper] tray destroy failed:', String(e && e.message ? e.message : e));
+    console.error('[dsh-zdd-pet-desktop-helper] tray destroy failed:', String(e && e.message ? e.message : e));
   }
 });
 

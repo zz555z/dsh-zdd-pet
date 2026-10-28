@@ -3,7 +3,7 @@
  *
  * 写入顺序固定：白名单重建 → 落盘 → 异步重启 Helper；失败一律 200 + 失败实体，不留半个文件。
  * 不校验配置形状（归 ../../config），不碰单宠显示位置（归 ./display）。
- * @module dsh-pet/src/host/routes/config/save
+ * @module dsh-zdd-pet/src/host/routes/config/save
  */
 import {
   readAllConfig,
@@ -66,7 +66,7 @@ async function saveUserLayer(deps: PetRouteDeps, input: RouteInput): Promise<Rou
     // flattenConfigPets 拍平渲染，客户端的条目级字段只有这一处填充。
     return okResult(readAllConfig(configPaths));
   } catch (e) {
-    ctx.logger?.warn?.(`[dsh-pet] config save failed: ${e instanceof Error ? e.message : String(e)}`);
+    ctx.logger?.warn?.(`[dsh-zdd-pet] config save failed: ${e instanceof Error ? e.message : String(e)}`);
     return failResult('generate-error', 'failed to save config');
   }
 }

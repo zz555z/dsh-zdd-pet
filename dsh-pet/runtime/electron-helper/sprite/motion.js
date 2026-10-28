@@ -3,7 +3,7 @@
  *
  * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
  * 每条驱动只管自己的帧句柄与世代号；停止由调用方决定，互不 import。
- * @module dsh-pet/runtime/electron-helper/sprite-motion
+ * @module dsh-zdd-pet/runtime/electron-helper/sprite-motion
  */
 'use strict';
 

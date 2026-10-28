@@ -4,7 +4,7 @@
  * 客户端整段读-改-写容易误伤同层其它宠物，也拿不准该写哪一层；合并后 id 全局唯一，
  * findPetInstance 没有歧义。写入语义与 PUT /config 一致：白名单重建 + 磁盘原值透传。
  * 不解析整段 pets[]，不负责配置读取的合并（归 ../../config）。
- * @module dsh-pet/src/host/routes/config/display
+ * @module dsh-zdd-pet/src/host/routes/config/display
  */
 import { PET_DISPLAY_SET, findPetInstance, readAllConfig, saveUserConfig } from '../../config.ts';
 import { mkdir, writeFile } from 'node:fs/promises';

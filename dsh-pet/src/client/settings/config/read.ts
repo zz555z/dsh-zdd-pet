@@ -2,11 +2,12 @@
  * 成品配置的读取：把宿主 `GET /config` 的聚合响应解析成「表单补丁」与「条目实例列表」。
  * 只认成品里合法性说得清的字段：缺字段或类型不对就跳过，让表单保留自己手里的值，不拿坏数据覆盖。
  * 与写方向（`http.ts`）分开：这里纯解析，不发请求、不碰状态。
- * @module dsh-pet/src/client/settings/config/read
+ * @module dsh-zdd-pet/src/client/settings/config/read
  */
 import { DEFAULT_FONT } from '../../../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
-import type { FontConfig, ModelSelection, Pet, PhysicsParams } from '../../../shared/types.ts';
+import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
+import type { FontConfig, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
 
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
@@ -27,6 +28,8 @@ export interface MainConfigPatch {
   physics?: PhysicsParams;
   /** 字体：同物理参数。 */
   font?: FontConfig;
+  /** 番茄钟（开关 + 提醒间隔）：成品已按内置默认填满，缺子键再用内置默认兜底一次。 */
+  pomodoro?: PomodoroParams;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
   chatMemoryRounds?: number;
@@ -72,6 +75,9 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   }
   if (main.font && typeof main.font === 'object') {
     patch.font = { ...DEFAULT_FONT, ...(main.font as FontConfig) };
+  }
+  if (main.pomodoro && typeof main.pomodoro === 'object') {
+    patch.pomodoro = { ...DEFAULT_POMODORO, ...(main.pomodoro as PomodoroParams) };
   }
   const whisperModel = readModel(main.whisperModel);
   if (whisperModel) patch.whisperModel = whisperModel;

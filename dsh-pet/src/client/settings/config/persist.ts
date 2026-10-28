@@ -4,7 +4,7 @@
  * 保存是两层写入：先 PUT /config（main 实例 + 全局字段），再逐个 POST /pet-config（有改动的
  * 种类层）。写完必须立刻把成品交给容器（`petBridge.reload`）并让通知引擎重读——两条都是
  * 「保存即生效」的实现前提。结果归一成判别联合，弹窗与红字由设置页决定。
- * @module dsh-pet/src/client/settings/config/persist
+ * @module dsh-zdd-pet/src/client/settings/config/persist
  */
 import { reloadNotifications } from '../../notify.ts';
 import { petBridge } from '../bridge.ts';

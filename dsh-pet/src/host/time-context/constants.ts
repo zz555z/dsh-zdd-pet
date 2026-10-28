@@ -3,7 +3,7 @@
  *
  * 纯换算，不含节日表；时间一律取 Date 的本地字段（跟用户时区走）。
  * 必须始终成立：时段区间首尾相接且全覆盖 0–23 点。
- * @module dsh-pet/src/host/time-context/constants
+ * @module dsh-zdd-pet/src/host/time-context/constants
  */
 
 /** 时段文案：一天分 9 档（划分见 SLOTS）。 */

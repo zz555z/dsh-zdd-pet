@@ -2,7 +2,7 @@
  * 全局开关卡：通知、点击音效、两张表情包配图、抛掷锁定、系统托盘。
  * 切换只改本地状态，随「保存」整包写入——即时写盘会重启桌面 Helper、重建全部桌面宠物窗口。
  * 通知开关额外需要用户手势，开与关都要走外壳的同一个入口，因此卡里只回传键名与目标值。
- * @module dsh-pet/src/client/settings/global-card
+ * @module dsh-zdd-pet/src/client/settings/global-card
  */
 import type { FunctionComponent } from 'react';
 import type { SettingsRuntime } from './runtime.ts';
@@ -52,11 +52,11 @@ export function makeGlobalCard(rt: SettingsRuntime): FunctionComponent<GlobalCar
 
   return function GlobalCard(props: GlobalCardProps) {
     return h('div', {
-      className: 'dsh-pet-cfg__card',
+      className: 'dsh-zdd-pet-cfg__card',
       children: [
         cardHead(t('globalTitle'), t('globalHint')),
         h('div', {
-          className: 'dsh-pet-cfg__grid4',
+          className: 'dsh-zdd-pet-cfg__grid4',
           children: TOGGLES.map((toggle) =>
             toggleCell(
               toggle.label,

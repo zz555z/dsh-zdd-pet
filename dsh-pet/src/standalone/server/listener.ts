@@ -3,7 +3,7 @@
  *
  * 不做业务判断；处理器返回什么就写什么。
  * 必须始终成立：处理器抛错一律归一成 500，绝不把栈信息回给客户端。
- * @module dsh-pet/src/standalone/server/listener
+ * @module dsh-zdd-pet/src/standalone/server/listener
  */
 import { createRequestSecurity, rejectRequest, secureResponse, type RequestSecurity } from '../request-security.ts';
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from 'node:http';
@@ -35,7 +35,7 @@ function dispatch(
         rejectRequest(res, 405, '仅支持 GET');
         return;
       }
-      sendJson(res, 200, options.status?.() ?? { name: 'dsh-pet-standalone' }, true);
+      sendJson(res, 200, options.status?.() ?? { name: 'dsh-zdd-pet-standalone' }, true);
       return;
     }
     if (pathname === '/shutdown') {
@@ -44,7 +44,7 @@ function dispatch(
         return;
       }
       if (shutdownSecurity) {
-        const supplied = req.headers['x-dsh-pet-token'];
+        const supplied = req.headers['x-dsh-zdd-pet-token'];
         if (
           typeof supplied !== 'string' ||
           !/^[A-Za-z0-9_-]{43}$/.test(supplied) ||
@@ -84,7 +84,7 @@ function dispatch(
     if (!route) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(
-        `dsh-pet-standalone: 没有匹配的路由（已注册：${options.routes.map((item) => item.path).join(', ') || '无'}）`,
+        `dsh-zdd-pet-standalone: 没有匹配的路由（已注册：${options.routes.map((item) => item.path).join(', ') || '无'}）`,
       );
       return;
     }

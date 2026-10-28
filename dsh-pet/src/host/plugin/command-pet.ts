@@ -1,6 +1,6 @@
 /**
  * 斜杠命令 /pet：按 id 或名字切换当前桌宠。
- * @module dsh-pet/src/host/plugin/command-pet
+ * @module dsh-zdd-pet/src/host/plugin/command-pet
  */
 import type { BalancePoll } from './balance-poll.ts';
 import type { ChatMemory } from './chat-memory.ts';
@@ -69,6 +69,6 @@ export function registerPetCommand(deps: CommandPetInput): void {
           return { kind: 'error', text: '找不到桌宠「' + arg + '」（id 或名字都行；/pet 回车可打开选择框）' };
         },
       }),
-    'dsh-pet: /pet command',
+    'dsh-zdd-pet: /pet command',
   );
 }

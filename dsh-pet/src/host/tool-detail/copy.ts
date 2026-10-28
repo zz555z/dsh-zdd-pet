@@ -3,7 +3,7 @@
  *
  * 纯数据，不含判定；加工具或改语气只改这里。
  * 必须始终成立：每句都带具体对象，不说空话；不出现参数值（可能含 token 或内网地址）。
- * @module dsh-pet/src/host/tool-detail/copy
+ * @module dsh-zdd-pet/src/host/tool-detail/copy
  */
 import { fileTarget, filesTarget, firstStr, queryTarget, urlHost } from './target.ts';
 

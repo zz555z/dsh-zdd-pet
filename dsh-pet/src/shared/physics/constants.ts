@@ -3,7 +3,7 @@
  *
  * 只提供默认值；运行时一律以成品配置的 physics 段为准。
  * 必须始终成立：与包内 config.jsonc 的 physics 段保持一致，改一处须同步另一处。
- * @module dsh-pet/src/shared/physics/constants
+ * @module dsh-zdd-pet/src/shared/physics/constants
  */
 import { type PhysicsParams } from '../types.ts';
 

@@ -3,7 +3,7 @@
  *
  * 不决定素材归属，只按给定目录链查找。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/assets
+ * @module dsh-zdd-pet/src/host/routes/assets
  */
 import { join } from 'node:path';
 import { PACKAGE_ROOT } from '../paths.ts';
@@ -29,16 +29,17 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
   // 插件 logo：/logo → 包内 assets/logo.png。只放行这一个文件——不把 assets 根开放成静态目录
   // （同目录还有 config.jsonc）。对话面板拿它当宠物头像。
   if (scope === 'logo') {
-    if (restParts.length > 0) return { kind: 'text', status: 400, body: 'dsh-pet: expected /dsh-pet-7340/logo' };
+    if (restParts.length > 0)
+      return { kind: 'text', status: 400, body: 'dsh-zdd-pet: expected /dsh-zdd-pet-7340/logo' };
     const logo = resolveExisting(join(PACKAGE_ROOT, 'assets'), 'logo.png');
-    if (logo === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: logo not found' };
+    if (logo === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: logo not found' };
     return { kind: 'file', file: logo, contentType: MIME['.png'] ?? 'image/png' };
   }
 
   if (scope === 'font') {
     const fontRoot = join(PACKAGE_ROOT, 'assets', 'fonts');
     const fontFile = resolveExisting(fontRoot, restParts.join('/'));
-    if (fontFile === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: font not found' };
+    if (fontFile === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: font not found' };
     const ext = fontFile.slice(fontFile.lastIndexOf('.')).toLowerCase();
     return { kind: 'file', file: fontFile, contentType: MIME[ext] ?? 'application/octet-stream' };
   }
@@ -55,7 +56,7 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
       const scoped = segs.length >= 2;
       const assetRoot = scoped ? segs[0] : 'main';
       if (scoped && !isValidPetId(assetRoot)) {
-        return { kind: 'text', status: 400, body: 'dsh-pet: invalid asset root' };
+        return { kind: 'text', status: 400, body: 'dsh-zdd-pet: invalid asset root' };
       }
       const rel = (scoped ? segs.slice(1) : segs).join('/');
       let picFile: string | undefined;
@@ -63,36 +64,36 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
         picFile = resolveExisting(dir, rel);
         if (picFile !== undefined) break;
       }
-      if (picFile === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: pic not found' };
+      if (picFile === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: pic not found' };
       const ext = picFile.slice(picFile.lastIndexOf('.')).toLowerCase();
       return { kind: 'file', file: picFile, contentType: MIME[ext] ?? 'application/octet-stream' };
     }
     const picRoot = join(PACKAGE_ROOT, 'assets', 'pic');
     const picFile = resolveExisting(picRoot, restParts.join('/'));
-    if (picFile === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: pic not found' };
+    if (picFile === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: pic not found' };
     const ext = picFile.slice(picFile.lastIndexOf('.')).toLowerCase();
     return { kind: 'file', file: picFile, contentType: MIME[ext] ?? 'application/octet-stream' };
   }
 
-  // 点击音效：/dsh-pet-7340/sound/<file> → 包内 assets/sound（当前只有 click-duck.wav）。
+  // 点击音效：/dsh-zdd-pet-7340/sound/<file> → 包内 assets/sound（当前只有 click-duck.wav）。
   // 与 font 同一种扁平形式（<scope>/<file>）：只有包内一份，不做用户目录覆盖。
   if (scope === 'sound') {
     const soundRoot = join(PACKAGE_ROOT, 'assets', 'sound');
     const soundFile = resolveExisting(soundRoot, restParts.join('/'));
-    if (soundFile === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: sound not found' };
+    if (soundFile === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: sound not found' };
     const ext = soundFile.slice(soundFile.lastIndexOf('.')).toLowerCase();
     return { kind: 'file', file: soundFile, contentType: MIME[ext] ?? 'application/octet-stream' };
   }
 
   if (scope !== 'thumb') {
-    return { kind: 'text', status: 400, body: 'dsh-pet: expected /dsh-pet-7340/thumb/<petId>/<file>' };
+    return { kind: 'text', status: 400, body: 'dsh-zdd-pet: expected /dsh-zdd-pet-7340/thumb/<petId>/<file>' };
   }
 
   // thumb 是三段式：/<scope>/<petId>/<file>——从这里再拆宠物 id 与文件名
   const [petId, ...nameParts] = restParts;
 
   if (!petId || nameParts.length === 0) {
-    return { kind: 'text', status: 400, body: 'dsh-pet: expected /dsh-pet-7340/thumb/<petId>/<file>' };
+    return { kind: 'text', status: 400, body: 'dsh-zdd-pet: expected /dsh-zdd-pet-7340/thumb/<petId>/<file>' };
   }
 
   // petId 是标识符（= pet/<名>-animation/ 的 <名>，来源是 pet/ 下的文件名前缀），不是路径片段：
@@ -100,7 +101,7 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
   // 用非法字符类而不是 ASCII 白名单。非法输入不再静默回落到主素材池（攻击尝试与「没有独立素材」可区分），
   // 也给下面的 resolveAsset 之外再留一道结构性防线。
   if (!isValidPetId(petId)) {
-    return { kind: 'text', status: 400, body: 'dsh-pet: invalid pet id' };
+    return { kind: 'text', status: 400, body: 'dsh-zdd-pet: invalid pet id' };
   }
 
   const fileName = nameParts.join('/');
@@ -108,7 +109,7 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
   const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase();
 
   if (ext !== '.webm' && ext !== '.mov') {
-    return { kind: 'text', status: 400, body: 'dsh-pet: unsupported animation format (expected .webm or .mov)' };
+    return { kind: 'text', status: 400, body: 'dsh-zdd-pet: unsupported animation format (expected .webm or .mov)' };
   }
 
   // 素材归属：存在 `pet/<素材根>-animation/` 只查自己目录（唯一例外：mov 缺失时退回同名 webm），
@@ -139,7 +140,7 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
     }
   }
 
-  if (file === undefined) return { kind: 'text', status: 404, body: 'dsh-pet: asset not found' };
+  if (file === undefined) return { kind: 'text', status: 404, body: 'dsh-zdd-pet: asset not found' };
 
   return { kind: 'file', file, contentType: MIME[servedExt] ?? 'application/octet-stream' };
 }

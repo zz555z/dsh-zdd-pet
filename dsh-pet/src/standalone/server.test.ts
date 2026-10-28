@@ -64,7 +64,7 @@ function call(listener: (req: IncomingMessage, res: ServerResponse) => void, url
     {
       method,
       url,
-      headers: { host: '127.0.0.1:3080', 'x-dsh-pet-token': security.token },
+      headers: { host: '127.0.0.1:3080', 'x-dsh-zdd-pet-token': security.token },
       socket: { localPort: 3080 },
     } as unknown as IncomingMessage,
     res as unknown as ServerResponse,
@@ -76,7 +76,7 @@ function call(listener: (req: IncomingMessage, res: ServerResponse) => void, url
 function pluginLikeRoute(onCall?: (url: string) => void): RegisteredRoute {
   return {
     kind: 'prefix',
-    path: '/dsh-pet-7340',
+    path: '/dsh-zdd-pet-7340',
     handler: (req, res) => {
       onCall?.(req.url ?? '');
       const payload = JSON.stringify({ ok: true, seen: req.url });
@@ -103,32 +103,32 @@ describe('createRequestListener —— 转交给插件路由', () => {
       logger: silent,
       security,
     });
-    const res = call(listener, '/dsh-pet-7340/config?force=1');
+    const res = call(listener, '/dsh-zdd-pet-7340/config?force=1');
     assert.equal(res.status, 200);
-    assert.equal(seen, '/dsh-pet-7340/config?force=1', '插件 handler 拿到的必须是完整 URL（它自己 slice 前缀）');
-    assert.equal(res.body(), JSON.stringify({ ok: true, seen: '/dsh-pet-7340/config?force=1' }));
+    assert.equal(seen, '/dsh-zdd-pet-7340/config?force=1', '插件 handler 拿到的必须是完整 URL（它自己 slice 前缀）');
+    assert.equal(res.body(), JSON.stringify({ ok: true, seen: '/dsh-zdd-pet-7340/config?force=1' }));
   });
 
   test('前缀之外 → 404，并把已注册路由列出来（"插件没注册"要能一眼看出）', () => {
     const listener = createRequestListener({ routes: [pluginLikeRoute()], logger: silent, security });
     const res = call(listener, '/nope');
     assert.equal(res.status, 404);
-    assert.match(res.body(), /\/dsh-pet-7340/, '404 正文应带上已注册前缀');
+    assert.match(res.body(), /\/dsh-zdd-pet-7340/, '404 正文应带上已注册前缀');
     assert.equal(res.headers['access-control-allow-origin'], undefined, '独立模式禁止跨源读取');
   });
 
   test('kind=exact 的路由按全等匹配，不吃子路径', () => {
     const exact: RegisteredRoute = {
       kind: 'exact',
-      path: '/dsh-pet-7340/state',
+      path: '/dsh-zdd-pet-7340/state',
       handler: (_req, res) => {
         res.writeHead(200);
         res.end('exact');
       },
     };
     const listener = createRequestListener({ routes: [exact], logger: silent, security });
-    assert.equal(call(listener, '/dsh-pet-7340/state').body(), 'exact');
-    assert.equal(call(listener, '/dsh-pet-7340/state/extra').status, 404);
+    assert.equal(call(listener, '/dsh-zdd-pet-7340/state').body(), 'exact');
+    assert.equal(call(listener, '/dsh-zdd-pet-7340/state/extra').status, 404);
   });
 
   test('/ 与 /health → 运维 JSON（自定义 status 提供者）', () => {
@@ -136,12 +136,12 @@ describe('createRequestListener —— 转交给插件路由', () => {
       routes: [],
       logger: silent,
       security,
-      status: () => ({ name: 'dsh-pet-standalone', port: 3080 }),
+      status: () => ({ name: 'dsh-zdd-pet-standalone', port: 3080 }),
     });
     for (const path of ['/', '/health']) {
       const res = call(listener, path);
       assert.equal(res.status, 200);
-      assert.deepEqual(JSON.parse(res.body()), { name: 'dsh-pet-standalone', port: 3080 });
+      assert.deepEqual(JSON.parse(res.body()), { name: 'dsh-zdd-pet-standalone', port: 3080 });
       assert.equal(res.headers['access-control-allow-origin'], '*');
     }
   });
@@ -153,7 +153,7 @@ describe('createRequestListener —— 转交给插件路由', () => {
       logger: silent,
       security,
     });
-    const res = call(listener, '/dsh-pet-7340/config', 'OPTIONS');
+    const res = call(listener, '/dsh-zdd-pet-7340/config', 'OPTIONS');
     assert.equal(res.status, 204);
     assert.equal(calls, 0, '预检不该进插件路由');
     assert.equal(res.headers['access-control-allow-headers'], undefined);
@@ -180,12 +180,15 @@ describe('createRequestListener —— 异常收口', () => {
   test('handler 抛错且未写头 → 500 JSON（与插件自身的 500 口径一致）', () => {
     const exploding: RegisteredRoute = {
       kind: 'prefix',
-      path: '/dsh-pet-7340',
+      path: '/dsh-zdd-pet-7340',
       handler: () => {
         throw new Error('读盘失败');
       },
     };
-    const res = call(createRequestListener({ routes: [exploding], logger: silent, security }), '/dsh-pet-7340/config');
+    const res = call(
+      createRequestListener({ routes: [exploding], logger: silent, security }),
+      '/dsh-zdd-pet-7340/config',
+    );
     assert.equal(res.status, 500);
     assert.deepEqual(JSON.parse(res.body()), { error: '本机服务暂时无法处理请求' });
   });
@@ -193,12 +196,15 @@ describe('createRequestListener —— 异常收口', () => {
   test('handler 异步拒绝同样收口为 500', async () => {
     const exploding: RegisteredRoute = {
       kind: 'prefix',
-      path: '/dsh-pet-7340',
+      path: '/dsh-zdd-pet-7340',
       handler: async () => {
         throw new Error('异步失败');
       },
     };
-    const res = call(createRequestListener({ routes: [exploding], logger: silent, security }), '/dsh-pet-7340/config');
+    const res = call(
+      createRequestListener({ routes: [exploding], logger: silent, security }),
+      '/dsh-zdd-pet-7340/config',
+    );
     await new Promise((accept) => setImmediate(accept));
     assert.equal(res.status, 500);
     assert.match(res.body(), /本机服务暂时无法处理请求/);
@@ -207,14 +213,14 @@ describe('createRequestListener —— 异常收口', () => {
   test('头已发出的失败：断连而不是写坏响应（与插件 sendFile 的错误口径一致）', () => {
     const partial: RegisteredRoute = {
       kind: 'prefix',
-      path: '/dsh-pet-7340',
+      path: '/dsh-zdd-pet-7340',
       handler: (_req, res) => {
         res.writeHead(200);
         res.end('前半段');
         throw new Error('写一半炸了');
       },
     };
-    const res = call(createRequestListener({ routes: [partial], logger: silent, security }), '/dsh-pet-7340/x');
+    const res = call(createRequestListener({ routes: [partial], logger: silent, security }), '/dsh-zdd-pet-7340/x');
     assert.equal(res.status, 200, '已经写出的头不改写');
     assert.equal(res.destroyed, true, '已写头之后必须断连');
   });
@@ -242,7 +248,7 @@ describe('listenStandaloneServer —— 端口与关闭', () => {
     const response = await fetch(`http://127.0.0.1:${server.port}/`);
     assert.equal(response.status, 200);
     const body = (await response.json()) as { name?: string };
-    assert.equal(body.name, 'dsh-pet-standalone');
+    assert.equal(body.name, 'dsh-zdd-pet-standalone');
 
     const port = server.port;
     await server.close();
@@ -258,12 +264,12 @@ describe('listenStandaloneServer —— 端口与关闭', () => {
   test('插件路由经真实 HTTP 可用（前缀下 200，前缀外 404）', async () => {
     const server = await listenStandaloneServer({ routes: [pluginLikeRoute()], logger: silent, security, port: 0 });
     closers.push(server.close);
-    const inside = await fetch(`http://127.0.0.1:${server.port}/dsh-pet-7340/state`, {
-      headers: { 'X-DSH-Pet-Token': security.token },
+    const inside = await fetch(`http://127.0.0.1:${server.port}/dsh-zdd-pet-7340/state`, {
+      headers: { 'X-DSH-Zdd-Pet-Token': security.token },
     });
     assert.equal(inside.status, 200);
     const outside = await fetch(`http://127.0.0.1:${server.port}/whatever`, {
-      headers: { 'X-DSH-Pet-Token': security.token },
+      headers: { 'X-DSH-Zdd-Pet-Token': security.token },
     });
     assert.equal(outside.status, 404);
   });
@@ -279,7 +285,7 @@ describe('HTTP boundary protects every route and settings', () => {
       routes: [
         {
           kind: 'prefix',
-          path: '/dsh-pet-7340',
+          path: '/dsh-zdd-pet-7340',
           handler: (_req, res) => {
             calls++;
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -291,11 +297,11 @@ describe('HTTP boundary protects every route and settings', () => {
     });
     try {
       const base = `http://127.0.0.1:${server.port}`;
-      for (const path of ['/standalone-ai/settings', '/dsh-pet-7340/whisper', '/shutdown']) {
+      for (const path of ['/standalone-ai/settings', '/dsh-zdd-pet-7340/whisper', '/shutdown']) {
         assert.equal(
           (
             await fetch(base + path, {
-              method: path === '/dsh-pet-7340/whisper' || path === '/shutdown' ? 'POST' : 'GET',
+              method: path === '/dsh-zdd-pet-7340/whisper' || path === '/shutdown' ? 'POST' : 'GET',
             })
           ).status,
           403,
@@ -308,7 +314,7 @@ describe('HTTP boundary protects every route and settings', () => {
       ];
       for (const headers of headersList) {
         assert.equal(
-          (await fetch(base + '/health', { headers: { ...headers, 'X-DSH-Pet-Token': security.token } })).status,
+          (await fetch(base + '/health', { headers: { ...headers, 'X-DSH-Zdd-Pet-Token': security.token } })).status,
           403,
           JSON.stringify(headers),
         );
@@ -323,12 +329,17 @@ describe('HTTP boundary protects every route and settings', () => {
       });
       assert.equal(wrongHost, 403);
       assert.equal(calls, 0);
-      const response = await fetch(base + '/dsh-pet-7340/config', { headers: { 'X-DSH-Pet-Token': security.token } });
+      const response = await fetch(base + '/dsh-zdd-pet-7340/config', {
+        headers: { 'X-DSH-Zdd-Pet-Token': security.token },
+      });
       assert.equal(response.status, 200);
       assert.equal(response.headers.get('access-control-allow-origin'), null);
       assert.equal(response.headers.get('access-control-allow-headers'), null);
       assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
-      assert.equal((await fetch(base + '/shutdown', { headers: { 'X-DSH-Pet-Token': security.token } })).status, 405);
+      assert.equal(
+        (await fetch(base + '/shutdown', { headers: { 'X-DSH-Zdd-Pet-Token': security.token } })).status,
+        405,
+      );
     } finally {
       await server.close();
     }
@@ -349,7 +360,7 @@ describe('HTTP boundary protects every route and settings', () => {
     const server = await listenStandaloneServer({ port: 0, security, logger: silent, routes: [], ai });
     try {
       const base = `http://127.0.0.1:${server.port}`;
-      const headers = { 'X-DSH-Pet-Token': security.token, 'Content-Type': 'application/json' };
+      const headers = { 'X-DSH-Zdd-Pet-Token': security.token, 'Content-Type': 'application/json' };
       const shell = await fetch(base + '/standalone-ai/');
       assert.equal(shell.status, 200);
       assert.match(shell.headers.get('content-security-policy') ?? '', /default-src 'none'/);
@@ -375,7 +386,7 @@ describe('HTTP boundary protects every route and settings', () => {
         (
           await fetch(base + '/standalone-ai/settings', {
             method: 'POST',
-            headers: { 'X-DSH-Pet-Token': security.token, 'Content-Type': 'text/plain' },
+            headers: { 'X-DSH-Zdd-Pet-Token': security.token, 'Content-Type': 'text/plain' },
             body: '{}',
           })
         ).status,
@@ -415,9 +426,9 @@ describe('HTTP boundary protects every route and settings', () => {
       ],
     });
     try {
-      const result = await fetch(`http://127.0.0.1:${server.port}/dsh-pet-7340/config`, {
+      const result = await fetch(`http://127.0.0.1:${server.port}/dsh-zdd-pet-7340/config`, {
         method: 'POST',
-        headers: { 'X-DSH-Pet-Token': security.token },
+        headers: { 'X-DSH-Zdd-Pet-Token': security.token },
         body: 'x'.repeat(1024 * 1024 + 1),
       });
       assert.equal(result.status, 413);
@@ -456,7 +467,7 @@ test('bounded body replay preserves plugin readBody; chunked and stalled inputs 
     const url = `http://127.0.0.1:${server.port}/plugin`;
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'X-DSH-Pet-Token': security.token },
+      headers: { 'X-DSH-Zdd-Pet-Token': security.token },
       body: '中文 body',
     });
     assert.equal(await response.text(), '中文 body');
@@ -465,7 +476,7 @@ test('bounded body replay preserves plugin readBody; chunked and stalled inputs 
       return new Promise((resolve, reject) => {
         const req = httpRequest(
           url,
-          { method: 'POST', headers: { 'X-DSH-Pet-Token': security.token, 'Transfer-Encoding': 'chunked' } },
+          { method: 'POST', headers: { 'X-DSH-Zdd-Pet-Token': security.token, 'Transfer-Encoding': 'chunked' } },
           (res) => {
             res.resume();
             resolve(res.statusCode ?? 0);

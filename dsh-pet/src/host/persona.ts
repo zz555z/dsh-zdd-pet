@@ -5,7 +5,7 @@
  * 时间背景（timeContextOf 现算，不缓存）。不碰 IO、不读时钟，Date 由调用方传入；也不负责取字段与
  * 发起生成（index.ts 的 petSystemPrompt 只做「取字段 → 调这里」）。
  * 必须始终成立：拼装点唯一——不给名字与时间开占位符配置，否则等于出现第二个拼装点。
- * @module dsh-pet/src/host/persona
+ * @module dsh-zdd-pet/src/host/persona
  */
 import { timeContextOf } from './time-context.ts';
 

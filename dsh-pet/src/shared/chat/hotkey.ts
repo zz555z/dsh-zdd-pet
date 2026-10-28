@@ -1,7 +1,7 @@
 /**
  * 悬停快捷键的判据：鼠标停在某只宠物上时，按 `T` 打开对话。
  * 纯函数，两端共用；桌面端只在窗口已聚焦时收得到按键（透明穿透窗默认不抢焦点）。
- * @module dsh-pet/src/shared/chat/hotkey
+ * @module dsh-zdd-pet/src/shared/chat/hotkey
  */
 
 /** 快捷键的显示文案（菜单项右侧灰字）。与 {@link isChatHotkey} 的按键保持同一份事实。 */

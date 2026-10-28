@@ -1,9 +1,9 @@
 /**
- * dsh-pet 独立应用主进程：同一个 Electron 进程里装本机 HTTP 服务、插件宿主半侧与桌面 Helper。
+ * dsh-zdd-pet 独立应用主进程：同一个 Electron 进程里装本机 HTTP 服务、插件宿主半侧与桌面 Helper。
  * 只做启动装配与日志落盘：不实现路由（见 router.ts），不实现窗口/托盘/物理（复用桌面 Helper）。
  * 依赖宿主半侧的 apply()、standalone 的配置与安全模块，以及 runtime/electron-helper/main.js。
  * 始终成立：端口先于 Helper 就位（它在 ready 前就要用配置地址），令牌只经请求头与环境变量传递。
- * @module dsh-pet/src/app/main
+ * @module dsh-zdd-pet/src/app/main
  */
 
 import { createRequire } from 'node:module';
@@ -52,7 +52,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, '..');
 const helperMain = join(packageRoot, 'runtime', 'electron-helper', 'main.js');
 
-const log = (message: string): void => console.log(`[dsh-pet-app] ${message}`);
+const log = (message: string): void => console.log(`[dsh-zdd-pet-app] ${message}`);
 
 /** 单实例：第二次双击直接退出（共用 userData 的 Chromium profile 会互踢） */
 const locked = app.requestSingleInstanceLock();
@@ -72,7 +72,7 @@ async function boot(): Promise<void> {
   // 独立应用没有控制台：插件日志、standalone 日志与同进程 Helper/渲染端的 console 全部落盘。
   // 原始 console 方法要先快照——包装后的 console 会转给文件 logger，logger 的 base 必须指向原始方法，
   // 否则 logger → console → logger 无限递归。
-  const logFile = join(dshHomeDir(), 'dsh-pet', 'logs.txt');
+  const logFile = join(dshHomeDir(), 'dsh-zdd-pet', 'logs.txt');
   const rawConsole = {
     log: console.log.bind(console),
     info: console.info.bind(console),
@@ -197,7 +197,7 @@ function status(port: number): Record<string, unknown> {
     /* 落地页/状态接口不该因配置坏掉而 500：下面如实显示 0 只 */
   }
   return {
-    name: 'dsh-pet-app',
+    name: 'dsh-zdd-pet-app',
     version: packageVersion(packageRoot),
     pid: process.pid,
     port,
@@ -217,7 +217,7 @@ function landingPage(port: number): string {
         .join('')
     : '<li>（未读到宠物，检查配置文件）</li>';
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-pet</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>dsh-zdd-pet</title>
 <style>
   body{font:14px/1.7 "Segoe UI",system-ui,sans-serif;margin:0;padding:32px;background:#f6f8fa;color:#1f2328}
   main{max-width:720px;margin:0 auto;background:#fff;border:1px solid #d0d7de;border-radius:12px;padding:28px 32px}
@@ -226,7 +226,7 @@ function landingPage(port: number): string {
   ul{margin:6px 0;padding-left:20px} a{color:#0969da}
 </style></head>
 <body><main>
-  <h1>dsh-pet 桌宠</h1>
+  <h1>dsh-zdd-pet 桌宠</h1>
   <div class="sub">版本 ${escapeHtml(String(info.version))} · 端口 ${port}</div>
   <h2>宠物</h2><ul>${petLines}</ul>
   <h2>配置文件</h2>

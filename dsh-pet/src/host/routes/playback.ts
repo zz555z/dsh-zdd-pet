@@ -3,7 +3,7 @@
  *
  * 不驱动播放，记录只由渲染端上报推进。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/playback
+ * @module dsh-zdd-pet/src/host/routes/playback
  */
 import { parsePlaybackPath, parseWaitQuery } from '../playback.ts';
 import { type RouteResult } from '../http.ts';

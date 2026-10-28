@@ -3,7 +3,7 @@
  * 显示器热更新：分辨率、缩放、插拔与旋转都会让桌面几何失效，这里重算并推给所有窗口。
  *
  * 事件会连发，去抖后只重算一次；主屏缩放可能一起变，线性化生效时只刷新缓存、提示重启。
- * @module dsh-pet/runtime/electron-helper/main/displays
+ * @module dsh-zdd-pet/runtime/electron-helper/main/displays
  */
 
 /**
@@ -27,7 +27,7 @@ function createDisplaySync({ screen, petWindows, dpi }) {
       petWindows.keepOffTaskbar(win);
       win.webContents.send('pet:displays', geo);
     }
-    console.error('[dsh-pet-desktop-helper] displays changed: ' + JSON.stringify(geo));
+    console.error('[dsh-zdd-pet-desktop-helper] displays changed: ' + JSON.stringify(geo));
     // 主屏缩放可能一起变了：线性化生效期间 screen API 只报被强制的值，真实值只能靠探测子进程拿；
     // 不一致就刷新缓存，下次启动自动用上。
     if (dpi.forcedScale > 0) {
@@ -35,7 +35,7 @@ function createDisplaySync({ screen, petWindows, dpi }) {
         const real = dpi.probePrimaryScale();
         if (real > 0 && Math.abs(real - dpi.primaryScale) > 1e-6) {
           console.error(
-            '[dsh-pet-desktop-helper] primary scaleFactor changed ' +
+            '[dsh-zdd-pet-desktop-helper] primary scaleFactor changed ' +
               dpi.primaryScale +
               ' -> ' +
               real +

@@ -2,7 +2,7 @@
  * `/state` 的自调度轮询：请求 → 分发 → 立刻再请求，宿主没变化时挂起。
  * 首拍用无 since 的普通请求探出宿主是否支持长轮询（`counter` 存在即支持），之后带上 since 挂起等待。
  * 失败或老宿主退避一个间隔，避免变成忙等；卸载由 `isAlive` 判断，循环自行退出。
- * @module dsh-pet/src/client/pet/state-poll
+ * @module dsh-zdd-pet/src/client/pet/state-poll
  */
 import type { PollState } from '../../shared/state.ts';
 

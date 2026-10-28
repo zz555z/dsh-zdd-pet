@@ -3,7 +3,7 @@
  * 设置页选项由 FONT_PRESETS 生成，渲染层一律经 fontStackOf / resolveFontPx 取值，不再各写字面量。
  * 配置里只存 id 不存字体栈：字体栈手改写错会拼坏样式，id 有白名单可校验。
  * 宿主半侧也经本模块取清单：字体种类只此一份，改清单两端同时生效。
- * @module dsh-pet/src/shared/fonts
+ * @module dsh-zdd-pet/src/shared/fonts
  */
 import type { FontConfig, FontFamilyId } from './types.ts';
 
@@ -80,7 +80,7 @@ export function resolveFontPx(font: FontConfig | undefined, size: number): { bub
 export const BUBBLE_OVERLAP_RATIO = 0.108;
 
 /** 气泡布局度量（em，基准 = 气泡正文最终字号 --f）。
- *  系数与两端渲染层 .dsh-pet-bubble 的 CSS、shared/whisper.ts 的 MEME_BUBBLE_CSS 同源，
+ *  系数与两端渲染层 .dsh-zdd-pet-bubble 的 CSS、shared/whisper.ts 的 MEME_BUBBLE_CSS 同源，
  *  改任何一条 CSS 系数都必须同步这里，否则桌面窗口上边距会算少、气泡顶端被窗口切掉。 */
 export const BUBBLE_METRICS = {
   lineHeight: 1.6,

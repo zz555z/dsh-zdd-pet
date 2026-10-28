@@ -53,7 +53,7 @@ test('settings shell is accessible, self contained, and never saves browser secr
   assert.match(settingsPage, /费用/);
   assert.match(settingsPage, /min="60"/);
   assert.match(settingsScript, /history\.replaceState/);
-  assert.match(settingsScript, /X-DSH-Pet-Token/);
+  assert.match(settingsScript, /X-DSH-Zdd-Pet-Token/);
   assert.doesNotMatch(settingsScript, /localStorage|sessionStorage|document\.cookie|innerHTML/);
   assert.doesNotMatch(settingsPage, /https?:\/\/(?!example)/);
   assert.match(settingsStyle, /focus-visible/);
@@ -136,7 +136,7 @@ test('settings browser script strips fragment, keeps key write-only and explicit
   assert.ok(
     requests.every(
       ({ url, options }) =>
-        url === '/standalone-ai/settings' && options.headers['X-DSH-Pet-Token'] === 'process-capability',
+        url === '/standalone-ai/settings' && options.headers['X-DSH-Zdd-Pet-Token'] === 'process-capability',
     ),
   );
 });

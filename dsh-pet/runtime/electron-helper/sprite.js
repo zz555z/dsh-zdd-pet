@@ -1,10 +1,10 @@
 /**
- * dsh-pet 桌面 Helper 的宠物本体（PetSprite 类）：播放、拖拽抛掷、跨窗碰撞、点击穿透、
+ * dsh-zdd-pet 桌面 Helper 的宠物本体（PetSprite 类）：播放、拖拽抛掷、跨窗碰撞、点击穿透、
  * 右键菜单、聊天弹窗与气泡渲染。
  * 事件联动（余额/碎碎念/广播/工作状态）不在此文件，见 events.js；纯逻辑与常量来自 shared-core.js。
  * 依赖 constants.js 的全局，须后加载。始终成立：所有位移都经 sendBounds 落到窗口，跨进程交换一律
  * 在 toScreen/toLocal 收口。
- * @module dsh-pet/runtime/electron-helper/sprite
+ * @module dsh-zdd-pet/runtime/electron-helper/sprite
  */
 'use strict';
 
@@ -51,7 +51,7 @@ class PetSprite {
     this.bottomPad = (this.size * (9 / 16) * (S.CANVAS_H - S.FEET_Y)) / S.CANVAS_H;
     // 窗口高 = 舞台高 + 脚底垫高（stage 被 translateY(bottomPad) 下移的余量，防底部被窗口裁剪）
     this.winH = this.height + this.bottomPad;
-    // 可交互区域 = 身体命中区（像素，窗口坐标）。浏览器只有 .dsh-pet-hit 可交互，桌面严格对齐：
+    // 可交互区域 = 身体命中区（像素，窗口坐标）。浏览器只有 .dsh-zdd-pet-hit 可交互，桌面严格对齐：
     // 命中区外（含透明像素）一律穿透到下层应用。HIT_BOX 是 640×360 舞台坐标：x 按窗口宽缩放，
     // y 除舞台高外还要加 bottomPad（舞台被下移）。
     this.hitRect = {
@@ -146,7 +146,7 @@ class PetSprite {
       facing: this._facing,
     };
     void S.postAction(POSE_REPORT_URL + '?pet=' + encodeURIComponent(this.pet.id), body).then((ok) => {
-      if (!ok) console.warn('[dsh-pet] 实况上报未送达 pet=' + this.pet.id);
+      if (!ok) console.warn('[dsh-zdd-pet] 实况上报未送达 pet=' + this.pet.id);
     });
   }
 
@@ -194,18 +194,20 @@ class PetSprite {
     } else {
       // 角落取主屏而不是外接矩形：不规则多屏布局下外接矩形的角落可能不属于任何显示器，
       // 配了该角落的宠物会开机即隐身。
+      // 四个角位置逻辑一致：都用用户 marginX/marginY 贴对应角落。顶部角的气泡已改为侧弹
+      // （见 sprite/bubble.js 的 data-side），不再需要为气泡把宠物往下压，四角参数保持统一。
       const anchor = S.anchorPixel({
         corner: this.pet.position.corner,
         // marginX/marginY 是配置里的绝对像素：页面级缩放已统一放大整窗，配置值不再乘 scale
         marginX: this.pet.position.marginX,
-        // macOS 顶部边距对齐身体命中盒，扣掉动画画布头顶留白。
-        marginY:
-          this.pet.position.marginY -
-          (this.pet.position.corner.startsWith('top-') ? this.size * CONFIG.topInsetRatio : 0),
+        marginY: this.pet.position.marginY,
         size: this.size,
         W,
         H,
         area: PRIMARY_AREA || undefined,
+        // 身体在盒子里的左右透明留白：传入后水平方向按「身体贴边」定位，marginX 即身体到屏边的距离
+        // （否则盒子比身体宽出的留白会让身体实际离屏更远，size 越大越明显）。
+        sideAllow: this.sideAllow,
       });
       x = anchor.x;
       y = anchor.y;
@@ -272,7 +274,7 @@ class PetSprite {
     if (!playbackId) return;
     const body = reason ? { status, reason } : { status };
     void S.postAction(BASE + '/playback/' + encodeURIComponent(playbackId) + '/report', body).then((ok) => {
-      if (!ok) console.warn('[dsh-pet] 播放回执未送达 pet=' + this.pet.id + ' id=' + playbackId + ' status=' + status);
+      if (!ok) console.warn('[dsh-zdd-pet] 播放回执未送达 pet=' + this.pet.id + ' id=' + playbackId + ' status=' + status);
     });
   }
 

@@ -1,4 +1,22 @@
-# dsh-pet 🐾
+# dsh-zdd-pet 🐾
+
+> **本仓库是 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的二次开发分支（fork）**，项目名 `dsh-zdd-pet`。
+> 在原版基础上新增了下面这些功能，其余行为与上游一致；原作者的署名与素材授权约定见文末「许可」。
+>
+> ## 本分支新增 / 改动
+>
+> - **🐟 气泡任务进度**：宠物跟随 DSH 会话任务时，气泡里实时显示清单进度（`▰▰▱▱▱  2/5` 方块条 + 数字）；有任务时进度气泡优先，不被碎碎念/余额顶掉。
+> - **🍅 番茄钟 / 久坐提醒（可开关 + 可选间隔）**：设置页新增「番茄钟 / 久坐提醒」卡片，用一个下拉框选择「关闭」或每隔 N 分钟（15/25/45/50/60/90 分钟）提醒一次；到点让桌宠说一句（零 token，文案池可在配置里自定义）。
+> - **🎉 任务彩蛋**：任务完成 / 出错时，气泡额外配一张随机表情包 + 一句话（纯配置、零 token；`taskEasterEggs`）。
+> - **💰 余额告急演出**：额度快用光（已用 ≥ 阈值）时让桌宠演一段（带表情包），阈值 + 冷却 + 已告急锁定三层防刷屏，只弹一次（`balanceGag`）。
+> - **📍 位置与气泡优化**：
+>   - 四个角落统一只用 `marginX / marginY` 贴角，按**宠物身体**（而非透明的动画盒子）贴边，`marginX/marginY` 即身体到屏幕边缘的真实像素，`size` 调大调小都稳定。
+>   - 顶部角（左上 / 右上）的气泡改为**侧弹**（左上→气泡在身体右侧、右上→在身体左侧），避免气泡顶出屏幕被裁；底部角气泡仍在上方。桌面端与浏览器端行为一致。
+> - **🏷️ 全量改名**：包名、路由前缀（`/dsh-zdd-pet-7340`）、Cordis 服务名（`petApiZdd`）、数据目录（`~/.dsh/dsh-zdd-pet`）、桌面 helper 名等均改为 `dsh-zdd-pet` 系列。
+>
+> ### 内置默认配置（本分支的初始状态）
+>
+> `assets/config.jsonc` 的默认值已按本人使用习惯调整：宠物 `size 300`、`display desktop`（仅桌面）、右下角 `marginX 24 / marginY 20`、字体 `yahei 21`、番茄钟开启 5 分钟、余额开关与系统托盘默认关闭。安装 / 恢复默认后即为此状态，可在设置页或 `~/.dsh/dsh-zdd-pet/main-config.jsonc` 中随时改。
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-pet?label=npm&color=blue"></a>

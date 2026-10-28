@@ -3,7 +3,7 @@
  *
  * 只是把状态 hook 与渲染树接起来：状态在 ./state、树在 ./view、样式在 ./panel-css。
  * react 能力由宿主注入（见 ./runtime）。
- * @module dsh-pet/src/client/chat/panel
+ * @module dsh-zdd-pet/src/client/chat/panel
  */
 import { createPetChatState } from './state.ts';
 import { buildPanel } from './view.ts';

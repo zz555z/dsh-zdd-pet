@@ -5,7 +5,7 @@
  * 不负责发起调用，也不校验凭据——候选可能已经不可用（凭据被删 / 模型下架 / 该服务商没配 key），
  * 回落到当前对话的模型重试是生成侧的事。必须始终成立：两个字段都留空时，行为就是跟随当前对话。
  * 依赖约束：不 import @deepseek-ai/dsh-llm，保证能在 node:test 里直接单测。
- * @module dsh-pet/src/host/model-selection
+ * @module dsh-zdd-pet/src/host/model-selection
  */
 
 /** 一处「服务商 + 模型」选择（与 shared/types.ts 的 ModelSelection 同构） */

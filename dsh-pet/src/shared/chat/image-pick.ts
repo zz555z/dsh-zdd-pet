@@ -1,7 +1,7 @@
 /**
  * 对话图片的挑选与本地预览：判断是不是图、读成 data URL 给缩略图。
  * 不压缩、不编码、不发网络——真正送图的那一步在接入时另加，预算逻辑也会落在这里。
- * @module dsh-pet/src/shared/chat/image-pick
+ * @module dsh-zdd-pet/src/shared/chat/image-pick
  */
 
 /** 与宿主附件服务白名单一致的图片类型。 */

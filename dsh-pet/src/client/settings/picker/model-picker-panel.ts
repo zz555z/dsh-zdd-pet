@@ -2,7 +2,7 @@
  * 模型选择器浮层的 DOM 树：搜索框、按服务商分组的行清单、加载/失败/空结果三态提示。
  * 只由视图数据构造节点，不持有状态、不读写 DOM——打开与关闭、定位与键盘都在 `model-picker.ts`。
  * 无障碍语义对齐 DSH 自带的选择器：浮层 `menu`、行 `menuitemradio`、高亮行走 `is-active` 类。
- * @module dsh-pet/src/client/settings/picker/model-picker-panel
+ * @module dsh-zdd-pet/src/client/settings/picker/model-picker-panel
  */
 import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
@@ -56,7 +56,7 @@ export function buildModelPanel(view: ModelPanelView): ReturnType<typeof jsx> {
         : '';
   return h('div', {
     ref: view.panelRef,
-    className: 'dsh-pet-mp__panel',
+    className: 'dsh-zdd-pet-mp__panel',
     role: 'menu',
     'aria-label': view.label,
     style: {
@@ -74,7 +74,7 @@ export function buildModelPanel(view: ModelPanelView): ReturnType<typeof jsx> {
           ? statusNode(h, 'empty', emptyHint, true)
           : h('div', {
               key: 'list',
-              className: 'dsh-pet-mp__list',
+              className: 'dsh-zdd-pet-mp__list',
               role: 'group',
               children: view.rows.map((row, index) => rowNode(view, row, index)),
             }),
@@ -86,7 +86,7 @@ export function buildModelPanel(view: ModelPanelView): ReturnType<typeof jsx> {
 function statusNode(h: typeof jsx, key: string, text: string, live: boolean): ReturnType<typeof jsx> {
   return h('div', {
     key,
-    className: 'dsh-pet-mp__status',
+    className: 'dsh-zdd-pet-mp__status',
     role: live ? 'status' : undefined,
     children: text,
   });
@@ -98,7 +98,7 @@ function searchNode(view: ModelPanelView): ReturnType<typeof jsx> {
   return h('input', {
     key: 'search',
     type: 'text',
-    className: 'dsh-pet-mp__search',
+    className: 'dsh-zdd-pet-mp__search',
     role: 'searchbox',
     placeholder: t('modelSearch'),
     'aria-label': t('modelSearch'),
@@ -113,10 +113,10 @@ function searchNode(view: ModelPanelView): ReturnType<typeof jsx> {
 function rowNode(view: ModelPanelView, row: ModelRow, index: number): ReturnType<typeof jsx> {
   const { h, t } = view;
   if (row.kind === 'group') {
-    return h('div', { key: row.key, className: 'dsh-pet-mp__group', children: row.name });
+    return h('div', { key: row.key, className: 'dsh-zdd-pet-mp__group', children: row.name });
   }
   if (row.kind === 'none') {
-    return h('div', { key: row.key, className: 'dsh-pet-mp__status', children: t('modelNone') });
+    return h('div', { key: row.key, className: 'dsh-zdd-pet-mp__status', children: t('modelNone') });
   }
   const checked =
     row.kind === 'follow'
@@ -128,17 +128,17 @@ function rowNode(view: ModelPanelView, row: ModelRow, index: number): ReturnType
     role: 'menuitemradio',
     'aria-checked': checked,
     'data-row': index,
-    className: 'dsh-pet-mp__item' + (index === view.active ? ' is-active' : ''),
+    className: 'dsh-zdd-pet-mp__item' + (index === view.active ? ' is-active' : ''),
     disabled: view.disabled,
     onClick: () => view.onPick(row),
     onMouseMove: () => view.onHover(index),
     children: [
       h('span', {
         key: 'n',
-        className: 'dsh-pet-mp__name',
+        className: 'dsh-zdd-pet-mp__name',
         children: row.kind === 'follow' ? t('modelFollow') : row.model.name,
       }),
-      h('span', { key: 'c', className: 'dsh-pet-mp__check', children: checked ? '✓' : '' }),
+      h('span', { key: 'c', className: 'dsh-zdd-pet-mp__check', children: checked ? '✓' : '' }),
     ],
   });
 }

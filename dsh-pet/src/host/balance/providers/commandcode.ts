@@ -5,7 +5,7 @@
  * 订阅与当期消耗。订阅接口可选，失败只缺重置时间，不因此整体失败。
  * 展示形态同 opencode（windows）；不负责展示层选择最紧迫窗口。
  *
- * @module dsh-pet/src/host/balance/providers/commandcode
+ * @module dsh-zdd-pet/src/host/balance/providers/commandcode
  */
 import { fetchWithRetry, looseNum, num, obj, queryString, readWindow } from '../internal.ts';
 import type { BalanceProvider, BalanceSuccess, WindowsUsage } from '../types.ts';
@@ -37,18 +37,18 @@ export function parseCommandCode(
 ): BalanceSuccess {
   const root = obj(creditsBody);
   const credits = obj(root?.credits);
-  if (!credits) throw new Error('dsh-pet: commandcode 响应缺少 credits');
+  if (!credits) throw new Error('dsh-zdd-pet: commandcode 响应缺少 credits');
 
   // 三个额度字段全缺即认不出响应形态：宁可报错，也不把分母当 0 算出「已用 100%」。
   const creditFields = [credits.monthlyCredits, credits.purchasedCredits, credits.freeCredits];
   if (creditFields.every((v) => looseNum(v) === undefined)) {
-    throw new Error('dsh-pet: commandcode credits 响应缺少额度字段');
+    throw new Error('dsh-zdd-pet: commandcode credits 响应缺少额度字段');
   }
   const remaining = creditFields.reduce<number>((sum, v) => sum + Math.max(0, looseNum(v) ?? 0), 0);
 
   const summary = obj(summaryBody);
   const spentRaw = summary?.totalCost;
-  if (spentRaw === undefined || spentRaw === null) throw new Error('dsh-pet: commandcode usage 响应缺少 totalCost');
+  if (spentRaw === undefined || spentRaw === null) throw new Error('dsh-zdd-pet: commandcode usage 响应缺少 totalCost');
   const spent = Math.max(0, num(spentRaw, 'totalCost'));
 
   const pool = spent + remaining;

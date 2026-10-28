@@ -3,7 +3,7 @@
  * 不负责指针状态与松手结算：目标由拖拽模块每帧更新，这里只管把盒子追过去。
  * 依赖 shared/physics 的弹簧步进；帧句柄与速度由本模块持有，stop 之后可重新瞄准。
  * 不变量：同一时刻最多一条跟随在跑；瞄准与停走都会让迟到的帧自弃。
- * @module dsh-pet/src/client/pet/motion/drag-follow
+ * @module dsh-zdd-pet/src/client/pet/motion/drag-follow
  */
 import { springStep } from '../../../shared/physics.ts';
 import type { BoxPoint } from './geometry.ts';

@@ -3,7 +3,7 @@
  *
  * 不依赖任何模型后端，便于在没有 AI 客户端时测试；不负责持久化。
  * 必须始终成立：只放行已知字段，密钥永远不会出现在白名单输出里。
- * @module dsh-pet/src/standalone/settings
+ * @module dsh-zdd-pet/src/standalone/settings
  */
 import { z } from 'zod';
 

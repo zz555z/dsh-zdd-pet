@@ -3,7 +3,7 @@
  * 两端共用同一份实现；它只经注入的 baseUrl/surface 说话，不读配置、不读写记忆。
  * 回复不经响应回传展示：POST 的响应里也有正文，但本组件不用它——回复统一从 /state 的
  * pets.<id>.say 走气泡展示，onSent 只用来催促调用方取一拍。
- * @module dsh-pet/src/shared/chat/dialog
+ * @module dsh-zdd-pet/src/shared/chat/dialog
  */
 import { ROUTE_PATH } from '../constants.ts';
 import { createChatDom } from './dom.ts';

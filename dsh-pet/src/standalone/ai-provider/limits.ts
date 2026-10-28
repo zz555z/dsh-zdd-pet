@@ -3,7 +3,7 @@
  *
  * 纯声明与常量，不含逻辑。
  * 必须始终成立：上限只能收紧不能放宽；改 schema 必须同步 README 的模型体验一节。
- * @module dsh-pet/src/standalone/ai-provider/limits
+ * @module dsh-zdd-pet/src/standalone/ai-provider/limits
  */
 import { z } from 'zod';
 

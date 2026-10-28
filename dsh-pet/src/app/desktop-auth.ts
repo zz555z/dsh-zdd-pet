@@ -4,7 +4,7 @@
  * 只负责给「本机渲染端发起、目标为插件路由」的请求附加令牌；不生成、不校验令牌（校验在宿主路由侧）。
  * 依赖 Electron 的 session 请求拦截与 file:// 渲染页。始终成立：令牌只进请求头，且只对顶层渲染端
  * 指向本机 origin 的插件路由生效，重定向目标不携带。
- * @module dsh-pet/src/app/desktop-auth
+ * @module dsh-zdd-pet/src/app/desktop-auth
  */
 
 import { pathToFileURL } from 'node:url';
@@ -46,7 +46,7 @@ export function installDesktopAuth(session: DesktopSession, origin: string, rend
     const headers = { ...details.requestHeaders };
     // 重定向后的请求不得把凭证带去别的目标。
     for (const name of Object.keys(headers)) {
-      if (name.toLowerCase() === 'x-dsh-pet-token') delete headers[name];
+      if (name.toLowerCase() === 'x-dsh-zdd-pet-token') delete headers[name];
     }
     try {
       const target = new URL(details.url);
@@ -60,7 +60,7 @@ export function installDesktopAuth(session: DesktopSession, origin: string, rend
         page.origin === 'null' &&
         page.href.split(/[?#]/, 1)[0] === renderer
       ) {
-        headers['X-DSH-Pet-Token'] = token;
+        headers['X-DSH-Zdd-Pet-Token'] = token;
       }
     } catch {
       // frame 缺失/已销毁或地址非法时，一律不授予凭证。

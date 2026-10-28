@@ -3,7 +3,7 @@
  * Windows 的 DIP↔物理换算是逐显示器仿射变换，骑缝时两套坐标系横跳：启动前强制 device scale
  * factor = 1 把各屏塌缩成恒等映射，再按探测到的真实主屏缩放补偿回原观感。macOS 的 DIP 即「点」，
  * 该开关只改 backing store、不产生需要补偿的差异，故 darwin 一律不启用；探测与接线不在本文件。
- * @module dsh-pet/runtime/electron-helper/dpi-linearization
+ * @module dsh-zdd-pet/runtime/electron-helper/dpi-linearization
  */
 
 'use strict';

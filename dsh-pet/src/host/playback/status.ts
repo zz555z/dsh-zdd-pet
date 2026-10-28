@@ -3,7 +3,7 @@
  * 词汇表在 `shared/playback.ts`，两端共用；这里只回答「这个状态还能不能变」并带上宿主的保留策略。
  * 必须始终成立：终态集合与可上报集合互斥，终态不可再变。
  * 契约见 API.md 与 openapi.yaml。
- * @module dsh-pet/src/host/playback/status
+ * @module dsh-zdd-pet/src/host/playback/status
  */
 import { REPORTABLE_STATUSES, TERMINAL_STATUSES, type PlaybackStatus } from '../../shared/playback.ts';
 

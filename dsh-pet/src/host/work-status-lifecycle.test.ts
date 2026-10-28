@@ -20,7 +20,7 @@ import { Writable } from 'node:stream';
 import { apply } from './index.ts';
 
 /** 工作状态快照（= S 里 sections.workStatus 的 data；ts 已由叶子 counter 取代，不再出现） */
-type Snapshot = { state: string | null; task: string | null };
+type Snapshot = { state: string | null; task: string | null; progress: { done: number; total: number } | null };
 type Listener = (session: unknown, event: unknown) => void;
 /** 一个插件的测试实例：发事件 + 读快照 + 收尾 */
 type Harness = {
@@ -82,7 +82,7 @@ function setup(): Harness {
     agentDefaultModel: { currentSelection: () => undefined },
     credentials: { resolve: async () => undefined },
   });
-  assert.ok(handler, 'apply() 应注册 /dsh-pet-7340 prefix handler');
+  assert.ok(handler, 'apply() 应注册 /dsh-zdd-pet-7340 prefix handler');
   assert.ok(listeners.length > 0, 'apply() 应监听 session/event');
 
   const harness: Harness = {
@@ -99,9 +99,9 @@ function setup(): Harness {
           const body = JSON.parse(Buffer.concat(res.chunks).toString('utf8')) as {
             sections?: { workStatus?: { data?: Snapshot | null } };
           };
-          done(body.sections?.workStatus?.data ?? { state: null, task: null });
+          done(body.sections?.workStatus?.data ?? { state: null, task: null, progress: null });
         });
-        void handler?.({ method: 'GET', url: '/dsh-pet-7340/state', on: noop }, res);
+        void handler?.({ method: 'GET', url: '/dsh-zdd-pet-7340/state', on: noop }, res);
       }),
     dispose: () => {
       // 插件收尾：清掉待执行的定时器（终态清理 60s；余额周期刷新是常驻的）——
@@ -120,7 +120,7 @@ function setup(): Harness {
 }
 
 before(() => {
-  dir = mkdtempSync(join(tmpdir(), 'dsh-pet-workstatus-'));
+  dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-workstatus-'));
   savedHome = process.env.DSH_HOME;
   savedElectron = process.env.DSH_PET_ELECTRON_PATH;
   process.env.DSH_HOME = join(dir, 'home');
@@ -182,7 +182,11 @@ describe('并行工具的详情与调用对应', () => {
     assert.match((await h.snapshot()).task ?? '', /active\.ts/, 'todo 不该盖掉仍在跑的详情');
     now += 6000;
     h.emit('s', TOOL_RESULT(7, 'read-A'));
-    assert.deepEqual(await h.snapshot(), { state: 'result', task: '最新清单' }, '全部结束后应回落到最新 todo');
+    assert.deepEqual(
+      await h.snapshot(),
+      { state: 'result', task: '最新清单', progress: { done: 0, total: 1 } },
+      '全部结束后应回落到最新 todo（含其清单进度）',
+    );
   });
 
   test('最后开始的工具先完成时，立即显示另一项仍在执行的操作', async (t) => {
@@ -255,7 +259,11 @@ describe('并行工具的详情与调用对应', () => {
       h.emit('s', DETAILED_CALL(5, 'new', 'new.ts'));
       now += 6000;
       h.emit('s', TOOL_RESULT(6, 'new'));
-      assert.deepEqual(await h.snapshot(), { state: 'result', task: null }, '上一轮未完成的条目不该被带到这一轮');
+      assert.deepEqual(
+        await h.snapshot(),
+        { state: 'result', task: null, progress: null },
+        '上一轮未完成的条目不该被带到这一轮',
+      );
     });
   }
 

@@ -2,7 +2,7 @@
  * 「AI 模型与对话上下文」卡：碎碎念 / 对话各自的模型（条目级），对话历史条数与配图张数上限（全局默认）。
  * 都与全局开关同语义：只改本地状态，随「保存」整包写入；宿主生成时优先用模型，失败自动回落。
  * 候选清单拉取失败只在这里提示一行，不阻塞已有配置值的显示与保存。
- * @module dsh-pet/src/client/settings/model-card
+ * @module dsh-zdd-pet/src/client/settings/model-card
  */
 import type { FunctionComponent } from 'react';
 import type { ModelSelection } from '../../shared/types.ts';
@@ -90,22 +90,22 @@ export function makeModelCard(
     };
 
     return h('div', {
-      className: 'dsh-pet-cfg__card',
+      className: 'dsh-zdd-pet-cfg__card',
       children: [
         cardHead(t('modelTitle'), t('modelHint')),
         failed
           ? h('p', {
-              className: 'dsh-pet-cfg__note',
+              className: 'dsh-zdd-pet-cfg__note',
               style: { color: 'var(--dsw-alias-state-error-primary)' },
               children: t('modelCatalogFailed'),
             })
           : null,
         h('div', {
-          className: 'dsh-pet-cfg__grid2',
+          className: 'dsh-zdd-pet-cfg__grid2',
           children: [modelCell('whisperModel', props.whisperModel), modelCell('chatModel', props.chatModel, true)],
         }),
         h('div', {
-          className: 'dsh-pet-cfg__grid4',
+          className: 'dsh-zdd-pet-cfg__grid4',
           children: [
             numField('chatMemory', props.chatMemory, props.onChatMemoryChange),
             numField('chatImageLimit', props.chatImageLimit, props.onChatImageLimitChange),

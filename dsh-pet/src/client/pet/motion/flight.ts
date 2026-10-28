@@ -3,7 +3,7 @@
  * 不负责起点与初速（拖拽松手、抛掷指令与宠物互撞各自决定），也不负责落地挤压的动画本身。
  * 依赖注入的取值函数与物理参数；rAF 句柄与飞行状态由本模块持有。
  * 不变量：每帧先积分、再处理互撞、最后写 DOM 与提交位置；落定那一帧才调 commitFinal。
- * @module dsh-pet/src/client/pet/motion/flight
+ * @module dsh-zdd-pet/src/client/pet/motion/flight
  */
 import {
   bodyPixelBox,

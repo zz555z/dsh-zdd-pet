@@ -3,7 +3,7 @@
  *
  * 纯类型声明，不含实现。
  * 必须始终成立：叶子带 action 或 anim（至少其一），分支必须带 children，二者不可兼得。
- * @module dsh-pet/src/shared/menu/types
+ * @module dsh-zdd-pet/src/shared/menu/types
  */
 import { type PetDisplay } from '../types.ts';
 

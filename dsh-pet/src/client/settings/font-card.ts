@@ -2,7 +2,7 @@
  * 外观与字体卡（全局默认）：字体种类、字号、是否跟随宠物说话。
  * 字体种类作用于现在用软糖体的全部文字；字号只作用于气泡与悬浮提示，对话窗与得分弹窗不变。
  * 与其余全局默认同语义：只改本地状态，随「保存」整包写入。
- * @module dsh-pet/src/client/settings/font-card
+ * @module dsh-zdd-pet/src/client/settings/font-card
  */
 import type { ChangeEvent, FunctionComponent } from 'react';
 import type { FontConfig, FontFamilyId } from '../../shared/types.ts';
@@ -33,11 +33,11 @@ export function makeFontCard(rt: SettingsRuntime): FunctionComponent<FontCardPro
   return function FontCard(props: FontCardProps) {
     const { busy, font } = props;
     return h('div', {
-      className: 'dsh-pet-cfg__card',
+      className: 'dsh-zdd-pet-cfg__card',
       children: [
         cardHead(t('fontTitle'), t('fontHint')),
         h('div', {
-          className: 'dsh-pet-cfg__grid2',
+          className: 'dsh-zdd-pet-cfg__grid2',
           children: [
             field(
               t('fontFamilyLabel'),
@@ -71,7 +71,7 @@ export function makeFontCard(rt: SettingsRuntime): FunctionComponent<FontCardPro
           ],
         }),
         h('div', {
-          className: 'dsh-pet-cfg__grid2',
+          className: 'dsh-zdd-pet-cfg__grid2',
           children: [toggleCell('fontFollowToggle', font.followPet, busy, (v) => props.onChange({ followPet: v }))],
         }),
       ],

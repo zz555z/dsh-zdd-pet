@@ -3,7 +3,7 @@
  *
  * 只做 HTTP 与响应整形，不碰 DOM、不持状态；失败抛错或回判别联合，
  * 由调用方决定怎么展示——不把异常静默兜底成空列表。
- * @module dsh-pet/src/client/chat/api
+ * @module dsh-zdd-pet/src/client/chat/api
  */
 import { sendChat, type ChatAttachment } from '../../shared/chat/send.ts';
 import { flattenConfigPets } from '../../shared/config.ts';

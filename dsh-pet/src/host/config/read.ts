@@ -3,7 +3,7 @@
  *
  * 不负责写盘（归 ./save）；解析失败按内置默认回退，绝不返回半成品。
  * 必须始终成立：所有读取都经 readAllConfig，模块外不得自行拼路径。
- * @module dsh-pet/src/host/config/read
+ * @module dsh-zdd-pet/src/host/config/read
  */
 import { existsSync, readdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -71,7 +71,7 @@ export function readPetConfigEntry(
  */
 export function readAllConfig(paths: ConfigPaths): Record<string, Record<string, unknown>> {
   const base = readJsonc(paths.defaultFile);
-  if (!base) throw new Error('dsh-pet: 内置默认配置缺失或解析失败（安装损坏）：' + paths.defaultFile);
+  if (!base) throw new Error('dsh-zdd-pet: 内置默认配置缺失或解析失败（安装损坏）：' + paths.defaultFile);
   const basePets = Array.isArray(base.pets) ? (base.pets as Record<string, unknown>[]) : [];
   const seenIds = new Set<string>();
   const out: Record<string, Record<string, unknown>> = {};

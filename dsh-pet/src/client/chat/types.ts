@@ -2,7 +2,7 @@
  * 对话面板的本地状态形状与对外状态契约。
  *
  * 只声明类型：取值流程归 ./state，动作实现归 ./actions。
- * @module dsh-pet/src/client/chat/types
+ * @module dsh-zdd-pet/src/client/chat/types
  */
 import type { EncodedImage } from '../../shared/chat/encode.ts';
 import type { Pet } from '../../shared/types.ts';

@@ -3,7 +3,7 @@
  *
  * 不做积分、不改位置；输出只作为 throwStep 的初值。
  * 必须始终成立：采样间隔超出窗口即视为松手，不得跨窗口拼接速度。
- * @module dsh-pet/src/shared/physics/release
+ * @module dsh-zdd-pet/src/shared/physics/release
  */ import { type PhysicsParams } from '../types.ts';
 import type { DragSample } from './throw.ts';
 import {

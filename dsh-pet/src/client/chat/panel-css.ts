@@ -3,7 +3,7 @@
  *
  * 尺寸统一走 ./metrics 的 {@link SIZE}（CSS 与输入框自动长高共用一份），
  * 与 styles.ts 分开是因为这里是纯字符串：改样式时 diff 只落在这里。
- * @module dsh-pet/src/client/chat/panel-css
+ * @module dsh-zdd-pet/src/client/chat/panel-css
  */
 import { px, SIZE } from './metrics.ts';
 

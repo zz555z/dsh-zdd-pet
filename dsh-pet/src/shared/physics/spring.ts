@@ -3,7 +3,7 @@
  *
  * 不读时钟、不写状态；dt 由调用方按帧传入。
  * 必须始终成立：dt 需小于 MAX_STEP_DT，否则阶跃过大。
- * @module dsh-pet/src/shared/physics/spring
+ * @module dsh-zdd-pet/src/shared/physics/spring
  */
 import { DEFAULT_THROW_POWER, MAX_THROW_SPEED, SPRING_C, SPRING_K } from './constants.ts';
 

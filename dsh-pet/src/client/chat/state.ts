@@ -3,7 +3,7 @@
  *
  * 只做装配：形状见 ./types、动作见 ./actions、副作用见 ./effects、取数在 ./api。
  * 用一个 state 对象装全部字段——切换宠物要同时清空消息与勾选，拆成多个 useState 会露出中间态。
- * @module dsh-pet/src/client/chat/state
+ * @module dsh-zdd-pet/src/client/chat/state
  */
 import { fetchHistory, groupRounds } from './api.ts';
 import { createHistoryActions, createSendActions, createShellActions } from './actions.ts';

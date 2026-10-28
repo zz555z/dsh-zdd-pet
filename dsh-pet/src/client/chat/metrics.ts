@@ -3,7 +3,7 @@
  *
  * 尺寸不写字面量（规范要求走共享常量）；输入框的最大高度还要被自动长高的脚本读到，
  * 所以放在这里而不是 CSS 字符串里各写一份。
- * @module dsh-pet/src/client/chat/metrics
+ * @module dsh-zdd-pet/src/client/chat/metrics
  */
 
 /** 面板尺寸与间距（px）。 */

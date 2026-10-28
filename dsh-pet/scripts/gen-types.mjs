@@ -6,7 +6,7 @@
  * 目录布局必须与 package.json exports 的 types 路径一致：宿主半侧落在 lib/types/index.d.ts，
  * 浏览器半侧落在 lib/types/client/index.d.ts。
  * 只生成声明，不构建 JS、不做类型检查（typecheck 是另一条链）。
- * @module dsh-pet/scripts/gen-types
+ * @module dsh-zdd-pet/scripts/gen-types
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';

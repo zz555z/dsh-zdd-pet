@@ -7,7 +7,7 @@
  * 始终成立：候选模型失败要显式回落并留痕；生成失败返回结构化原因，不伪造文案。
  * 契约见 API.md 与 openapi.yaml。
  *
- * @module dsh-pet/src/host/whisper
+ * @module dsh-zdd-pet/src/host/whisper
  */
 
 import { BlockAssembler, createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
@@ -83,7 +83,7 @@ export async function generateWhisper(
     if (i + 1 < candidates.length) {
       defaultLog(
         'warn',
-        `dsh-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`,
+        `dsh-zdd-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`,
       );
     }
   }

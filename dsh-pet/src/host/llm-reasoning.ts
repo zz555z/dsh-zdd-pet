@@ -5,7 +5,7 @@
  * 必须始终成立：只有模型确实声明支持时才传 reasoningEffort: 'off'——dsh-llm 对
  * 「无 reasoning 元数据 + 显式传 effort」直接判 UNSUPPORTED_REASONING_EFFORT，请求发不出去，
  * 只会被适配器折叠成空流，表现为「模型未返回文本」。
- * @module dsh-pet/src/host/llm-reasoning
+ * @module dsh-zdd-pet/src/host/llm-reasoning
  */
 
 /** 可调用的 dsh-llm resolveModelInfo 能力的最小形状（防御式：不依赖完整类型） */

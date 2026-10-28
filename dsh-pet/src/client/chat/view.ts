@@ -2,7 +2,7 @@
  * 对话面板的根元素：宠物标签条 + 工具栏 + 列表 + 错误行 + 输入区。
  *
  * 只做装配，节点细节在 ./view-node；不取数、不持状态。
- * @module dsh-pet/src/client/chat/view
+ * @module dsh-zdd-pet/src/client/chat/view
  */
 import { HISTORY_ROUNDS, memoryBoundaryIndex } from './api.ts';
 import type { ChatPanelRuntime } from './runtime.ts';

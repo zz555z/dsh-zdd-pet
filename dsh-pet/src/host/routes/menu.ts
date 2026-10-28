@@ -3,7 +3,7 @@
  *
  * 不渲染菜单，不决定菜单层级（归 shared/menu）。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/menu
+ * @module dsh-zdd-pet/src/host/routes/menu
  */
 import { MENU_WAIT_MAX_MS } from '../menu.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';

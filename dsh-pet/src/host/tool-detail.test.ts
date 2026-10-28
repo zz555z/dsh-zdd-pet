@@ -43,11 +43,10 @@ describe('工具文案 —— 每工具 3 句候选，且带具体对象', () =>
   });
 
   test('edit：长路径压成文件名', () => {
-    oneOf(toolDetailFromEvent(call('edit', { file_path: 'D:\\Projects\\Web\\pet\\dsh-pet\\src\\host\\index.ts' })), [
-      'index.ts 得改改啦',
-      '我来动动 index.ts 哦',
-      'index.ts 这里要修一下',
-    ]);
+    oneOf(
+      toolDetailFromEvent(call('edit', { file_path: 'D:\\Projects\\Web\\pet\\dsh-zdd-pet\\src\\host\\index.ts' })),
+      ['index.ts 得改改啦', '我来动动 index.ts 哦', 'index.ts 这里要修一下'],
+    );
   });
 
   test('write / glob / grep / present / skill / web_search / web_fetch 都能出句', () => {

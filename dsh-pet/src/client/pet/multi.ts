@@ -2,7 +2,7 @@
  * 多开容器：拉一次成品配置、长轮询 /state 叶子，再把指令分发给对应的宠物卡。
  * 只做「配置 → 渲染列表」与「叶子 → 每只宠物」的分发，不解释叶子语义、不画 DOM。
  * 必须始终成立：首拉只记基线，之后 counter 变化才分发；配置形状异常时显式报错，绝不用空列表清空。
- * @module dsh-pet/src/client/pet/multi
+ * @module dsh-zdd-pet/src/client/pet/multi
  */
 import type { FunctionComponent, ReactNode } from 'react';
 import { petBridge } from '../settings/bridge.ts';
@@ -89,7 +89,7 @@ export function createPetMulti(
       if (show) setBalanceNoticeTick((t) => t + 1); // 弹文字说明气泡（不播动画）
       // 未登记服务商是配置事实，已由气泡说明；其余原因照旧显式报错。
       if (state.reason !== 'unsupported') {
-        console.error('[dsh-pet] 余额查询失败 reason=' + state.reason + (state.message ? ' ' + state.message : ''));
+        console.error('[dsh-zdd-pet] 余额查询失败 reason=' + state.reason + (state.message ? ' ' + state.message : ''));
       }
     };
     // 工作状态：容器统一轮询 sections.workStatus，快照与 tick 驱动各宠物播档位动画。
@@ -101,7 +101,7 @@ export function createPetMulti(
     useEffect(() => {
       const family = pets[0]?.font?.family;
       if (family === undefined) return;
-      document.documentElement.style.setProperty('--dsh-pet-font-family', fontStackOf(family));
+      document.documentElement.style.setProperty('--dsh-zdd-pet-font-family', fontStackOf(family));
     }, [pets]);
 
     useEffect(() => {
@@ -138,7 +138,7 @@ export function createPetMulti(
           applyMerged(merged);
           setReady(true);
         } catch (e) {
-          console.error('[dsh-pet] 配置加载失败', e); // 成品拉取失败要显式报错，不静默隐藏。
+          console.error('[dsh-zdd-pet] 配置加载失败', e); // 成品拉取失败要显式报错，不静默隐藏。
         }
       })();
       // 设置页保存或同步后，用权威成品重新拍平；传入 merged 时直接用写接口的响应体。
@@ -149,7 +149,7 @@ export function createPetMulti(
             if (!alive) return;
             applyMerged(next);
           } catch (e) {
-            console.error('[dsh-pet] 配置重载失败，保留当前渲染列表', e); // 显式报错，不清空已有宠物。
+            console.error('[dsh-zdd-pet] 配置重载失败，保留当前渲染列表', e); // 显式报错，不清空已有宠物。
           }
         })();
       };
@@ -211,7 +211,7 @@ export function createPetMulti(
             notifyFromFrame(leaf.data);
             return;
           case 'menu':
-            // 第三方菜单快照只更新 ref，不触发渲染；同一份交给页面内菜单镜像，供 petApi7340.menuEvents 读取。
+            // 第三方菜单快照只更新 ref，不触发渲染；同一份交给页面内菜单镜像，供 petApiZdd.menuEvents 读取。
             menuItemsRef.current = readMenuItems(leaf.data, 'web');
             setMenuItems(menuItemsRef.current);
             return;
@@ -269,7 +269,7 @@ export function createPetMulti(
 
       /** 应用一份轮询状态：首拉只记基线，之后按 counter 变化逐个分发。 */
       const applyState = (s: PollState) => {
-        // 最近一拍先留给同页消费者（petApi7340.getState）：它读的是同一个对象，不占连接。
+        // 最近一拍先留给同页消费者（petApiZdd.getState）：它读的是同一个对象，不占连接。
         setStateSnapshot(s);
         if (baseline === null) {
           baseline = flattenCounters(s); // 首拉只记基线，不渲染。

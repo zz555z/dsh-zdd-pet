@@ -4,7 +4,7 @@
  * 补的是两个既有写端点之间的空档：PUT /config 只写用户主配置，POST /pet-display 只改单只的
  * display。写入语义与这两条一致——白名单重建 + 磁盘原值透传 + 写后广播并重启 Helper。
  * 不碰全局字段（只归 main 层），也不改条目级的动画池与人设。
- * @module dsh-pet/src/host/routes/config/entry
+ * @module dsh-zdd-pet/src/host/routes/config/entry
  */
 import { isValidPetId, readAllConfig, saveUserConfig } from '../../config.ts';
 import { mkdir, writeFile } from 'node:fs/promises';

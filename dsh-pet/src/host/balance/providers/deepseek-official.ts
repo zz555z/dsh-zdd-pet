@@ -5,7 +5,7 @@
  * 只取首条会让后面的币种凭空消失。金额原样透传，不按赠送加充值重算。
  * 档位基准与峰谷取自 ./deepseek-common.ts；重试与校验细节统一走 ./internal.ts。
  *
- * @module dsh-pet/src/host/balance/providers/deepseek-official
+ * @module dsh-zdd-pet/src/host/balance/providers/deepseek-official
  */
 import { deepseekFullBalance, deepseekPricingTier } from '../deepseek-common.ts';
 import { fetchWithRetry, obj, str } from '../internal.ts';
@@ -21,7 +21,7 @@ export const deepseekOfficial: BalanceProvider = {
     const body: unknown = await res.json();
     const infos = (body as { balance_infos?: unknown })?.balance_infos;
     if (!Array.isArray(infos) || infos.length === 0)
-      throw new Error('dsh-pet: deepseek balance 响应缺少 balance_infos');
+      throw new Error('dsh-zdd-pet: deepseek balance 响应缺少 balance_infos');
     const wallets = infos.map((raw) => {
       const w = obj(raw) ?? {};
       const currency = str(w.currency, 'currency');

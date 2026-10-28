@@ -3,7 +3,7 @@
  *
  * 与宿主侧 src/host/http.ts 的 parseRange 同语义；两侧运行环境与构建边界不同（Node http 与 Electron
  * protocol.handle），各自实现一份。
- * @module dsh-pet/runtime/electron-helper/range
+ * @module dsh-zdd-pet/runtime/electron-helper/range
  */
 'use strict';
 

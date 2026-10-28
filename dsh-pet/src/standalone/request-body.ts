@@ -3,7 +3,7 @@
  *
  * 负责把正文一次读进内存，再以有界回放流交给插件路由；不解析 JSON，也不做鉴权。
  * 必须始终成立：超限、超时或连接异常时不调用插件，并直接回结构化错误。
- * @module dsh-pet/src/standalone/request-body
+ * @module dsh-zdd-pet/src/standalone/request-body
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';

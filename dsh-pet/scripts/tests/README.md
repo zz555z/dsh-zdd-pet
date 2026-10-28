@@ -1,6 +1,6 @@
 # 设置页浏览器回归
 
-在 `dsh-pet/` 包目录运行：
+在 `dsh-zdd-pet/` 包目录运行：
 
 ```sh
 pnpm install --frozen-lockfile

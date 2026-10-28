@@ -3,7 +3,7 @@
  *
  * 只做装配，不含逻辑；三块的分工见 ./desktop/ 下各自模块头。
  * 必须始终成立：requestRestart 是唯一的重启入口，内部串行且不重叠。
- * @module dsh-pet/src/host/plugin/desktop-helper
+ * @module dsh-zdd-pet/src/host/plugin/desktop-helper
  */
 import { createDesktopPets } from './desktop/pets.ts';
 import { createDesktopSpawn } from './desktop/spawn.ts';

@@ -2,7 +2,7 @@
  * 画布与几何常量：与 640×360 播放变体强耦合，属运行时几何，不作为配置。
  * 浏览器半侧与桌面模式共用同一组值；命中、移动与抛掷都按这组值换算，改画布尺寸须同步素材。
  * 不依赖任何模块；这些值不来自配置，运行时的位移与命中由宠物大小和 moves 段决定。
- * @module dsh-pet/src/shared/constants
+ * @module dsh-zdd-pet/src/shared/constants
  */
 /** thumb 画布高度。 */
 export const CANVAS_H = 360;
@@ -24,7 +24,7 @@ export const PET_REF_WIDTH = 462;
  * 宿主半侧直接 import 本文件（零依赖叶子模块）而不经 shared/index 桶——桶里有 DOM 挂载代码，
  * 进宿主 bundle 会破坏单文件加载约束。
  */
-export const ROUTE_PATH = '/dsh-pet-7340';
+export const ROUTE_PATH = '/dsh-zdd-pet-7340';
 
 /** 播放动画扩展名（集中开关）：默认 .webm（VP9-alpha）两端可直接透明播放；
  *  macOS 的 Safari/WKWebView 不认 webm alpha（渲染黑底），需改为 .mov（HEVC-with-Alpha）——

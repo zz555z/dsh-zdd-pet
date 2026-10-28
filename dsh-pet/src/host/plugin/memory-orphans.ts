@@ -3,7 +3,7 @@
  *
  * 宠物从配置里删掉后，`memory.json` 里的分桶仍在，而 `GET /chat` 要求宠物存在——
  * 这类历史只能从这里看到与清掉。读写锁与文件句柄仍归 ./chat-memory（它持有串行队列）。
- * @module dsh-pet/src/host/plugin/memory-orphans
+ * @module dsh-zdd-pet/src/host/plugin/memory-orphans
  */
 import type { ChatMemoryMessage } from '../chat.ts';
 import { findPetInstance, readAllConfig, type ConfigPaths } from '../config.ts';
@@ -71,7 +71,7 @@ export function createMemoryOrphans(deps: OrphanDeps) {
         if (Object.keys(byPet).length === 0) delete mem[entry];
       }
       if (pets > 0) await writeMemory(mem);
-      deps.log.info(`[dsh-pet] 清理已删宠物的历史 pets=${pets}，messages=${messages}`);
+      deps.log.info(`[dsh-zdd-pet] 清理已删宠物的历史 pets=${pets}，messages=${messages}`);
       return { ok: true as const, pets, messages };
     });
 

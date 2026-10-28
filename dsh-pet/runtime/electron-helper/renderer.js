@@ -4,15 +4,15 @@
  * 配置唯一来源是宿主 /config 的成品聚合（一步 fetch → S.flattenConfigPets 拍平），失败大声报错并每 5s
  * 重试，没有静默兜底。窗口 = 宠物包围盒 + 四周外扩余量，宠物移动由本页逐帧上报给主进程。
  * 不实现宠物行为与系统通知（见 sprite.js）。
- * @module dsh-pet/runtime/electron-helper/renderer
+ * @module dsh-zdd-pet/runtime/electron-helper/renderer
  */
 'use strict';
 
 // 配置（大声报错；失败 5s 重试）
 function showError(message) {
-  console.error('[dsh-pet] ' + message);
+  console.error('[dsh-zdd-pet] ' + message);
   window.__dshPetDebug.configOk = false;
-  errorEl.textContent = 'dsh-pet 配置错误：' + message;
+  errorEl.textContent = 'dsh-zdd-pet 配置错误：' + message;
   errorEl.classList.add('visible');
 }
 function hideError() {
@@ -62,14 +62,14 @@ async function boot() {
     hideError();
     // 字体族进 documentElement：对话窗/得分弹窗挂在 body 下、继承不到宠物根容器，只能走全局变量。
     // 必须等 /config 拉回来之后才设（字体族来自配置）。
-    document.documentElement.style.setProperty('--dsh-pet-font-family', S.fontStackOf(cfg.font.family));
+    document.documentElement.style.setProperty('--dsh-zdd-pet-font-family', S.fontStackOf(cfg.font.family));
     const pets = cfg.pets.filter((p) => S.isDesktopVisible(p.display));
     if (pets.length === 0) {
       // 全部宠物只在网页显示是合法状态，不是配置错误：没有桌面宠物就表示本窗口没活儿干，
       // 安静关掉、不弹条、不重试。托盘是否还在看 main 条目的 trayEnabled，与这里无关。
       // 宿主流由 syncDesktop() 在配置变化时重建 Helper；手动流需自行重启。
       hideError();
-      console.info('[dsh-pet] no desktop pets; closing this helper window (tray kept only if trayEnabled)');
+      console.info('[dsh-zdd-pet] no desktop pets; closing this helper window (tray kept only if trayEnabled)');
       window.close();
       return;
     }
@@ -91,12 +91,12 @@ async function boot() {
     // 首次失败先静默（多半是启动竞态，见 bootFailures 的说明），下一次 5s 重试仍失败才报。
     bootFailures += 1;
     if (bootFailures > 1) showError(msg);
-    else console.error('[dsh-pet] ' + msg + ' (first boot, retrying)');
+    else console.error('[dsh-zdd-pet] ' + msg + ' (first boot, retrying)');
     scheduleReboot();
   }
 }
 
-// 注入打字资源：气泡字体 + 点击/拖拽光标图标（与浏览器同一套素材，host 经 /dsh-pet-7340/ 提供）
+// 注入打字资源：气泡字体 + 点击/拖拽光标图标（与浏览器同一套素材，host 经 /dsh-zdd-pet-7340/ 提供）
 function injectAssets() {
   const style = document.createElement('style');
   style.textContent =

@@ -5,7 +5,7 @@
  * ./entry（整条目实例）：读路径零副作用，写路径要重建白名单、落盘并重启 Helper，
  * 三者的失败模式与改动原因都不同。
  * 不校验配置形状（归 ../../config）；依赖由 PetRouteDeps 显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/config/index
+ * @module dsh-zdd-pet/src/host/routes/config/index
  */
 import { readAllConfig } from '../../config.ts';
 import { type RouteResult } from '../../http.ts';
@@ -54,7 +54,7 @@ function getMeta(deps: PetRouteDeps): RouteResult {
     default: join(PACKAGE_ROOT, 'assets', 'config.jsonc'),
     animations: thumbUserRoot,
     memes: memesUserRoot,
-    // 统一日志出口（就是上面那个 logger 的 file：三种模式都落在 $DSH_HOME/dsh-pet/logs.txt）：
+    // 统一日志出口（就是上面那个 logger 的 file：三种模式都落在 $DSH_HOME/dsh-zdd-pet/logs.txt）：
     // 桌面版没有控制台，用户反馈「宠物不出现 / 闪退」时只能靠这个文件。
     logs: log.file,
     // 全部落盘位置（本包用户数据 / Electron 运行时 / 桌面端缓存 / 下载缓存 / 插件本体）：
@@ -65,7 +65,7 @@ function getMeta(deps: PetRouteDeps): RouteResult {
       home: homedir(),
       packageRoot: PACKAGE_ROOT,
     }),
-    // profile 名（拼卸载命令 dsh plugin --profile <名> remove dsh-pet；反推不出时为空串）
+    // profile 名（拼卸载命令 dsh plugin --profile <名> remove dsh-zdd-pet；反推不出时为空串）
     profile: profileNameFrom(PACKAGE_ROOT) ?? '',
   });
 }

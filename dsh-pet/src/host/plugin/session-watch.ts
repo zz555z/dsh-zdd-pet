@@ -2,9 +2,15 @@
  * 会话事件监听：把 DSH 的 session/event 折叠成工作状态与完成通知。
  *
  * 不决定通知文案与档位（归 notify-events 与 shared/work-status），只做事件到判定的转接。
- * @module dsh-pet/src/host/plugin/session-watch
+ * @module dsh-zdd-pet/src/host/plugin/session-watch
  */
-import { GOAL_UPDATE_TOOL, currentTaskFromTodo, goalUpdateAction, reduceWorkStatus } from '../work-status.ts';
+import {
+  GOAL_UPDATE_TOOL,
+  goalUpdateAction,
+  reduceWorkStatus,
+  todoViewFromTodo,
+  type TodoView,
+} from '../work-status.ts';
 import { toolDetailFromEvent } from '../tool-detail.ts';
 import {
   agentErrorFrame,
@@ -15,6 +21,7 @@ import {
   withSessionId,
 } from '../notify-events.ts';
 import type { SessionNotify, ToolCallKey, ToolCallLedger } from './session-notify.ts';
+import type { Extras } from './extras.ts';
 import type { WorkStatusBridge } from './work-status-bridge.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
@@ -23,7 +30,8 @@ import type { HostContext } from './context.ts';
 export type SessionWatchInput = {
   /** 宿主上下文（apply 收到的那一个）。 */
   ctx: HostContext;
-} & Pick<SessionNotify, 'cancelTerminalCleanup'> &
+} & Pick<Extras, 'deliverEasterEgg'> &
+  Pick<SessionNotify, 'cancelTerminalCleanup'> &
   Pick<SessionNotify, 'lastTodoText'> &
   Pick<SessionNotify, 'notifyActivityTimers'> &
   Pick<WorkStatusBridge, 'publishWorkStatus'> &
@@ -33,7 +41,8 @@ export type SessionWatchInput = {
   Pick<SessionNotify, 'terminalTimers'> &
   Pick<SessionNotify, 'toolsInFlight'> &
   Pick<SessionNotify, 'turnFlags'> &
-  Pick<HostSetup, 'workStatus'>;
+  Pick<HostSetup, 'workStatus'> &
+  Pick<HostSetup, 'log'>;
 
 /** 一次工具事件在记账表里的形态：调用开始（带详情）或结果返回（按标识移除一条）。 */
 type ToolPhase =
@@ -44,6 +53,8 @@ type ToolPhase =
 type ToolPhaseOutcome = {
   /** 要写进气泡的文案；`undefined` = 本次不改文案，`null` = 清空回落到档位文案。 */
   task?: string | null;
+  /** 与 task 同批写入的清单进度；`undefined` = 本次不改进度（工具调用无清单），`null` = 清空。 */
+  progress?: { done: number; total: number } | null;
   /** 是否还有带描述的操作在跑：为真时把档位压回 working，避免结果档盖住没干完的活。 */
   keepWorking: boolean;
 };
@@ -56,8 +67,8 @@ type TrackInput = {
   callId: ToolCallKey | undefined;
   /** `tool/call` 的详情文案；`null` 表示这次调用没有可展示的描述。 */
   detail: string | null;
-  /** 该会话最近一条 todo 文案，表清空后回落到它。 */
-  lastTodo: string | null;
+  /** 该会话最近一次 todo 视图（文案 + 进度），表清空后回落到它。 */
+  lastTodo: TodoView;
 };
 
 /**
@@ -80,20 +91,21 @@ function toolCallIdOf(event: unknown): ToolCallKey | undefined {
  * @param ledger - 每会话在途调用表；本函数原地修改。
  * @param sessionId - 会话标识。
  * @param phase - 本次是调用开始还是结果返回，以及对应的调用标识。
- * @param lastTodo - 表清空后回落到的 todo 文案。
- * @returns 气泡文案与是否仍在工作。
+ * @param lastTodo - 表清空后回落到的 todo 视图。
+ * @returns 气泡文案、进度与是否仍在工作。
  */
 function trackToolPhase(
   ledger: ToolCallLedger,
   sessionId: string,
   phase: ToolPhase,
-  lastTodo: string | null,
+  lastTodo: TodoView,
 ): ToolPhaseOutcome {
   if (phase.kind === 'call') {
     let pending = ledger.get(sessionId);
     if (!pending) ledger.set(sessionId, (pending = new Map()));
     pending.set(phase.callId ?? Symbol(), phase.detail);
-    return { task: phase.detail, keepWorking: true };
+    // 工具调用自身没有清单进度：显式清空，避免上一条清单的「2/5」挂在这条工具档位上。
+    return { task: phase.detail, progress: null, keepWorking: true };
   }
   const pending = ledger.get(sessionId);
   // 缺标识的结果只释放一个匿名条目：不猜它是哪个具名调用，宁可少记一条也不删错别人的。
@@ -102,8 +114,9 @@ function trackToolPhase(
   const remaining = [...(pending?.values() ?? [])];
   if (pending?.size === 0) ledger.delete(sessionId);
   const active = remaining.pop();
-  if (active !== undefined) return { task: active, keepWorking: true };
-  return { task: lastTodo, keepWorking: false };
+  if (active !== undefined) return { task: active, progress: null, keepWorking: true };
+  // 全部工具跑完：把气泡「还」给最近一次清单（文案 + 进度一起恢复），没有清单则回落到档位文案。
+  return { task: lastTodo.task, progress: lastTodo.progress, keepWorking: false };
 }
 
 /**
@@ -134,7 +147,9 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
   const {
     ctx,
     cancelTerminalCleanup,
+    deliverEasterEgg,
     lastTodoText,
+    log,
     notifyActivityTimers,
     publishWorkStatus,
     pushNotifyFrame,
@@ -158,17 +173,17 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
           'unknown',
       );
       if (type === 'todo/write') {
-        // 任务详情文案只写该会话的条目（state/task 同源，不可能串会话）。会话没有活动条目
-        // （已空闲/已清理）→ 不动：不会被展示，写进去只会成为一条幽灵文案。
-        // 清单里再无 in_progress/pending 时返回 null，气泡回落到档位文案。
-        const text = currentTaskFromTodo(event as { data?: { todos?: Array<{ status?: string; content?: string }> } });
-        // 缓存无条件更新：工具跑完要靠它把气泡恢复回来（见下方 tool/call 的接线）
-        lastTodoText.set(sessionId, text);
+        // 任务详情文案 + 清单进度只写该会话的条目（state/task/progress 同源，不可能串会话）。会话没有活动
+        // 条目（已空闲/已清理）→ 不动：不会被展示，写进去只会成为一条幽灵文案。
+        // 清单里再无 in_progress/pending 时两者都是 null，气泡回落到档位文案。
+        const view = todoViewFromTodo(event as { data?: { todos?: Array<{ status?: string; content?: string }> } });
+        // 缓存无条件更新：工具跑完要靠它把气泡（含进度）恢复回来（见下方 tool/call 的接线）
+        lastTodoText.set(sessionId, view);
         // 工具正在执行时不覆盖气泡：「修改 index.ts」比清单里那句更能说明此刻在动什么
         if ((toolsInFlight.get(sessionId)?.size ?? 0) > 0) return;
         if (workStatus.has(sessionId)) {
-          workStatus.setTask(sessionId, text);
-          publishWorkStatus(); // 任务文案变化也要写 S（气泡内容靠它更新）
+          workStatus.setTask(sessionId, view.task, view.progress);
+          publishWorkStatus(); // 任务文案/进度变化也要写 S（气泡内容靠它更新）
         }
         return;
       }
@@ -233,27 +248,32 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
         type,
         callId: toolCallIdOf(event),
         detail,
-        lastTodo: lastTodoText.get(sessionId) ?? null,
+        lastTodo: lastTodoText.get(sessionId) ?? { task: null, progress: null },
       });
       // 还有操作没完就把档位压回 working：结果档与「仍在执行」的文案同时出现会自相矛盾。
       if (outcome?.keepWorking) next = 'working';
       const changed = workStatus.setState(sessionId, next, seq);
-      if (outcome?.task !== undefined) workStatus.setTask(sessionId, outcome.task);
+      if (outcome?.task !== undefined) workStatus.setTask(sessionId, outcome.task, outcome.progress ?? null);
       publishWorkStatus(); // 档位或文案变了 → 写 S（内容没变时它自己会短路，不产生多余写入）
       // 同会话同状态不重复更新（防刷屏）：写已经落定，这里只负责跳过终态清理的重排
       if (!changed) return;
       // 终态只展示短暂窗口后自动清理：陈旧完成态不再浮上来（Bug 3 的一环，顺带缓解 Bug 2 残留）。
       // 回到非终态则取消那次待执行的清理——否则它到点时会话已非终态，既不清也不重排，
       // 条目（连同旧任务文案）就永久留下了。
-      if (next === 'success' || next === 'error') scheduleTerminalCleanup(sessionId);
-      else cancelTerminalCleanup(sessionId);
+      if (next === 'success' || next === 'error') {
+        scheduleTerminalCleanup(sessionId);
+        // 任务彩蛋：本轮真正收尾（changed=true 才走到这）→ 对启用了 taskEasterEggs 的宠物各投一条
+        // 「配图 + 一句话」气泡。纯配置、零 token；配置为空 / 图名写错的宠物不投。
+        const delivered = deliverEasterEgg(next);
+        if (delivered > 0) log.info(`[dsh-zdd-pet] 任务彩蛋已投递 ${delivered} 只宠物（${next}）`);
+      } else cancelTerminalCleanup(sessionId);
     });
     return () => {
       dispose();
       for (const t of terminalTimers.values()) clearTimeout(t);
       terminalTimers.clear();
     };
-  }, 'dsh-pet: work-status session events');
+  }, 'dsh-zdd-pet: work-status session events');
 
   // 系统通知：监听 DSH 宿主事件生成通知帧入队，浏览器轮询 /state 读到后弹 toast（帧契约与
   // shared/notify.ts 一致）。事件源：turn/end、approval/asked、tool/call（ask_user_question）、
@@ -297,5 +317,5 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
       sessionDispose();
       errorDispose();
     };
-  }, 'dsh-pet: notify frames');
+  }, 'dsh-zdd-pet: notify frames');
 }

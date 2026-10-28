@@ -3,7 +3,7 @@
  * DSH 没有给命令配面孔的入口，只能包装 `commandUi.candidates`：它用闭包在运行时查实例方法，包一层即可。
  * 不负责命令的注册与执行，只改候选行；已带图标的行原样放行，将来官方支持后自动让位。
  * 降级原则：补丁异常只退回原始行，绝不弄坏「/」菜单；原方法自身的错误不吞。
- * @module dsh-pet/src/client/command-faces
+ * @module dsh-zdd-pet/src/client/command-faces
  */
 import type { ComponentType } from 'react';
 import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -31,7 +31,7 @@ export interface CommandFace {
 export function installCommandFaces(commandUi: CommandUiLike, faces: ReadonlyMap<string, CommandFace>): () => void {
   const original = commandUi.candidates;
   if (typeof original !== 'function') {
-    console.warn('[dsh-pet] 命令图标不可用：commandUi.candidates 缺失（命令本身仍可用，只是没有图标）');
+    console.warn('[dsh-zdd-pet] 命令图标不可用：commandUi.candidates 缺失（命令本身仍可用，只是没有图标）');
     return () => {};
   }
 
@@ -49,7 +49,8 @@ export function installCommandFaces(commandUi: CommandUiLike, faces: ReadonlyMap
       });
     } catch (error) {
       console.warn(
-        '[dsh-pet] 命令图标补丁异常，本次退回原始菜单行：' + (error instanceof Error ? error.message : String(error)),
+        '[dsh-zdd-pet] 命令图标补丁异常，本次退回原始菜单行：' +
+          (error instanceof Error ? error.message : String(error)),
       );
       return rows;
     }

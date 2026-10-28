@@ -3,7 +3,7 @@
  * 不负责判定口径（余额档位、工作状态索引、播完分支分别属于 shared 与动画链），也不持有驱动。
  * 依赖卡运行时与当帧 props；每条指令自带「这一拍是否已消费」的守卫。
  * 不变量：只有计数器变化才动手；占用锁生效时自动来源整拍丢弃，显式指令不挡。
- * @module dsh-pet/src/client/pet/card/cue-effects
+ * @module dsh-zdd-pet/src/client/pet/card/cue-effects
  */
 import { balanceEventIndex, balancePercent } from '../../../shared/balance/index.ts';
 import { pickSlot, poolIncludes } from '../../../shared/pickers.ts';
@@ -25,7 +25,7 @@ const stamp = (): string => new Date().toTimeString().slice(0, 8);
 
 /** 一行带时刻的日志：客户端统一前缀，便于 grep。 */
 const log = (message: string): void => {
-  console.log('[dsh-pet] ' + stamp() + ' ' + message);
+  console.log('[dsh-zdd-pet] ' + stamp() + ' ' + message);
 };
 
 /**
@@ -69,13 +69,13 @@ export function createCueEffects(rt: CueEffectsRuntime) {
       if (percent === undefined) return; // 当前数据源没有百分比语义，不触发档位动画。
       const pool = hub.anims().events?.balance;
       if (!pool || pool.length === 0) {
-        console.error('[dsh-pet] 配置缺少 animations.events.balance，无法播放余额事件动画');
+        console.error('[dsh-zdd-pet] 配置缺少 animations.events.balance，无法播放余额事件动画');
         return;
       }
       const idx = balanceEventIndex(percent);
       const slot = pool[idx];
       if (!slot) {
-        console.error('[dsh-pet] balance 档位索引越界：p=' + percent + ' idx=' + idx);
+        console.error('[dsh-zdd-pet] balance 档位索引越界：p=' + percent + ' idx=' + idx);
         return;
       }
       const name = pickSlot(slot, card.animRef.current); // 档内随机抽 1，并避开当前正播动画。
@@ -119,13 +119,13 @@ export function createCueEffects(rt: CueEffectsRuntime) {
       }
       const pool = hub.anims().events?.workStatus;
       if (!pool || pool.length === 0) {
-        console.error('[dsh-pet] 配置缺少 animations.events.workStatus，无法播放工作状态动画');
+        console.error('[dsh-zdd-pet] 配置缺少 animations.events.workStatus，无法播放工作状态动画');
         return;
       }
       const idx = WORK_STATUS_INDEX[workStatus.state];
       const slot = pool[idx];
       if (slot === undefined) {
-        console.error('[dsh-pet] work-status 档位索引越界：state=' + workStatus.state + ' idx=' + idx);
+        console.error('[dsh-zdd-pet] work-status 档位索引越界：state=' + workStatus.state + ' idx=' + idx);
         return;
       }
       const name = pickSlot(slot, card.animRef.current); // 档内随机抽 1，并避开当前正播动画。

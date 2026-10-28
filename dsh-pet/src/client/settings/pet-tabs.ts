@@ -1,7 +1,7 @@
 /**
  * 宠物标签条：当前种类的每只实例一个按钮（显示名字与宽度），末尾是「添加宠物」。
  * 只负责「选中谁」与「加一只」，增删的合法性由设置页外壳判断。
- * @module dsh-pet/src/client/settings/pet-tabs
+ * @module dsh-zdd-pet/src/client/settings/pet-tabs
  */
 import type { FunctionComponent } from 'react';
 import type { Pet } from '../../shared/types.ts';
@@ -32,15 +32,15 @@ export function makePetTabs(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionCompo
 
   return function PetTabs(props: PetTabsProps) {
     return h('div', {
-      className: 'dsh-pet-cfg__tabs',
+      className: 'dsh-zdd-pet-cfg__tabs',
       children: [
-        h('span', { key: 'label', className: 'dsh-pet-cfg__tabsLabel', children: t('petsLabel') }),
+        h('span', { key: 'label', className: 'dsh-zdd-pet-cfg__tabsLabel', children: t('petsLabel') }),
         ...props.pets.map((pet) =>
           h('button', {
             key: pet.id,
             type: 'button',
             onClick: () => props.onSelect(pet.id),
-            className: 'dsh-pet-cfg__tab' + (pet.id === props.selId ? ' is-active' : ''),
+            className: 'dsh-zdd-pet-cfg__tab' + (pet.id === props.selId ? ' is-active' : ''),
             children: (pet.name || pet.id) + ' (' + pet.size + 'px)',
           }),
         ),
@@ -49,7 +49,7 @@ export function makePetTabs(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionCompo
           type: 'button',
           onClick: props.onAdd,
           disabled: props.busy,
-          className: 'dsh-pet-cfg__tab is-ghost',
+          className: 'dsh-zdd-pet-cfg__tab is-ghost',
           children: '+ ' + t('add'),
         }),
       ],

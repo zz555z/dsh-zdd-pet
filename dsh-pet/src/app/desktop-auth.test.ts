@@ -24,16 +24,16 @@ test('only the local main renderer receives the capability, scoped to the API or
   const send = (url: string, frame?: { url: string; parent: unknown } | null) => {
     let result: Record<string, string> = {};
     listener!(
-      { url, frame, requestHeaders: { 'content-type': 'application/json', 'x-dsh-pet-token': 'stale-token' } },
+      { url, frame, requestHeaders: { 'content-type': 'application/json', 'x-dsh-zdd-pet-token': 'stale-token' } },
       (response) => {
         result = response.requestHeaders;
       },
     );
     return result;
   };
-  const endpoint = 'http://127.0.0.1:3080/dsh-pet-7340/chat';
+  const endpoint = 'http://127.0.0.1:3080/dsh-zdd-pet-7340/chat';
   const ownFrame = { url: renderer + '?petIndex=0', parent: null };
-  assert.equal(send(endpoint, ownFrame)['X-DSH-Pet-Token'], 'private-token');
+  assert.equal(send(endpoint, ownFrame)['X-DSH-Zdd-Pet-Token'], 'private-token');
   for (const frame of [
     undefined,
     null,
@@ -44,18 +44,18 @@ test('only the local main renderer receives the capability, scoped to the API or
   ]) {
     const headers = send(endpoint, frame);
     assert.equal(
-      Object.keys(headers).some((name) => name.toLowerCase() === 'x-dsh-pet-token'),
+      Object.keys(headers).some((name) => name.toLowerCase() === 'x-dsh-zdd-pet-token'),
       false,
     );
     assert.equal(headers['content-type'], 'application/json');
   }
   for (const url of [
-    'http://127.0.0.1:3081/dsh-pet-7340/chat',
-    'http://localhost:3080/dsh-pet-7340/chat',
-    'https://example.invalid/dsh-pet-7340/chat',
+    'http://127.0.0.1:3081/dsh-zdd-pet-7340/chat',
+    'http://localhost:3080/dsh-zdd-pet-7340/chat',
+    'https://example.invalid/dsh-zdd-pet-7340/chat',
     'http://127.0.0.1:3080/standalone-ai/settings',
     'invalid-url',
   ]) {
-    assert.equal(send(url, ownFrame)['X-DSH-Pet-Token'], undefined);
+    assert.equal(send(url, ownFrame)['X-DSH-Zdd-Pet-Token'], undefined);
   }
 });

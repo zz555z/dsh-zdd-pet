@@ -7,7 +7,7 @@
  * 不做版本管理、不清理旧版本，也不拉起 Helper：可执行文件已存在就原样复用并直接返回。
  * 版本与镜像可由环境变量覆盖，落盘主目录由 DSH_HOME 决定，具体见 README。
  * 必须始终：解压后确认可执行文件真的存在，否则视为失败退出。
- * @module dsh-pet/scripts/ensure-electron
+ * @module dsh-zdd-pet/scripts/ensure-electron
  */
 
 import { existsSync, mkdirSync } from 'node:fs';

@@ -2,7 +2,7 @@
  * 「下一个自播动画」的决策：把掷骰结果与移动尝试折成「切哪个动画、日志里算什么类别」。
  * 只决定该做什么，不碰 ref、不 setState——调用方负责真正切动画并推进世代号。
  * 移动那一档由调用方先试一次走位：占用中就别重播、无法移动才退回原地动作。
- * @module dsh-pet/src/client/pet/animation/next-animation
+ * @module dsh-zdd-pet/src/client/pet/animation/next-animation
  */
 import { pick, pickCategoryAction, type RollKind } from '../../../shared/pickers.ts';
 import type { Animations } from '../../../shared/types.ts';

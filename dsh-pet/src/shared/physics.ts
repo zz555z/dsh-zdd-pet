@@ -3,7 +3,7 @@
  *
  * 只做再导出，不含逻辑；子模块按变化原因分居 ./physics/。
  * 必须始终成立：浏览器半侧与桌面 Helper 消费同一份实现，手感不得分叉。
- * @module dsh-pet/src/shared/physics
+ * @module dsh-zdd-pet/src/shared/physics
  */
 export {
   ACCEL_GAIN_MAX,

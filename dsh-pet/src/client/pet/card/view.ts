@@ -3,9 +3,10 @@
  * 不持有状态、不做判定：尺寸变量、定位样式与事件回调都由 PetCard 当帧传入，这里只按顺序拼装。
  * 依赖注入的 h、pet/motion/geometry 的命中区样式与 shared/tooltip 的类名。
  * 不变量：命中区在 stage 内，气泡与提示是根节点的直接子节点——三者的定位都相对根节点。
- * @module dsh-pet/src/client/pet/card/view
+ * @module dsh-zdd-pet/src/client/pet/card/view
  */
 import { PET_HIT_STYLE } from '../motion/geometry.ts';
+import { HIT_BOX } from '../../../shared/constants.ts';
 import { TOOLTIP_CLASS } from '../../../shared/tooltip.ts';
 import type { CSSProperties, ReactNode } from 'react';
 import type * as ReactNS from 'react';
@@ -28,7 +29,7 @@ export interface CardViewProps {
   corner: Corner;
   /** 朝向，写进 data-facing 由 CSS 镜像。 */
   facing: 'left' | 'right';
-  /** 宠物宽度 px，注入 --dsh-pet-size。 */
+  /** 宠物宽度 px，注入 --dsh-zdd-pet-size。 */
   size: number;
   /** 水平边距 px。 */
   marginX: number;
@@ -77,19 +78,22 @@ export function makeCardView(rt: { h: typeof jsx }) {
   const { h } = rt;
 
   return function CardView(props: CardViewProps) {
+    // 身体在盒子里的左右透明留白（与桌面端 sideAllow 同一口径）：角落定位按「身体贴边」算，
+    // 即 CSS 的 right/left 取 marginX − sideAllow，让身体边缘（而非盒子边缘）离屏 = marginX。
+    const sideAllow = (HIT_BOX.x0 / 640) * props.size;
     return h('div', {
       ref: props.rootRef,
-      className: 'dsh-pet-root',
+      className: 'dsh-zdd-pet-root',
       'data-corner': props.corner,
       'data-facing': props.facing,
       style: Object.assign(
         {
-          '--dsh-pet-size': props.size + 'px',
-          '--dsh-pet-mx': props.marginX + 'px',
-          '--dsh-pet-my': props.marginY + 'px',
+          '--dsh-zdd-pet-size': props.size + 'px',
+          '--dsh-zdd-pet-mx': props.marginX - sideAllow + 'px',
+          '--dsh-zdd-pet-my': props.marginY + 'px',
           // 字号注入最终 px；CSS 侧带原值回退，漏注入也不会坏。
-          '--dsh-pet-font-bubble': props.fontBubblePx + 'px',
-          '--dsh-pet-font-tip': props.fontTipPx + 'px',
+          '--dsh-zdd-pet-font-bubble': props.fontBubblePx + 'px',
+          '--dsh-zdd-pet-font-tip': props.fontTipPx + 'px',
         },
         props.rootStyle,
       ),
@@ -98,13 +102,16 @@ export function makeCardView(rt: { h: typeof jsx }) {
         props.bubble,
         h('div', {
           ref: props.stageRef,
-          className: 'dsh-pet-stage',
+          className: 'dsh-zdd-pet-stage',
           style: props.stageStyle,
           children: [
-            h('video', Object.assign({}, VIDEO_PROPS, { ref: props.videoARef, className: 'dsh-pet-video is-front' })),
-            h('video', Object.assign({}, VIDEO_PROPS, { ref: props.videoBRef, className: 'dsh-pet-video' })),
+            h(
+              'video',
+              Object.assign({}, VIDEO_PROPS, { ref: props.videoARef, className: 'dsh-zdd-pet-video is-front' }),
+            ),
+            h('video', Object.assign({}, VIDEO_PROPS, { ref: props.videoBRef, className: 'dsh-zdd-pet-video' })),
             h('div', {
-              className: 'dsh-pet-hit',
+              className: 'dsh-zdd-pet-hit',
               style: PET_HIT_STYLE,
               onClick: props.onClick,
               onPointerDown: props.onPointerDown,

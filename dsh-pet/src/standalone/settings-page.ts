@@ -4,7 +4,7 @@
  * 只在本机回环上由 ./server 提供；不包含构建步骤，也不依赖外部 CDN。
  * 必须始终成立：脚本从地址片段读一次令牌后立刻清掉片段；页面不内联脚本与样式，
  * 以便 CSP 保持 default-src 'none'。
- * @module dsh-pet/src/standalone/settings-page
+ * @module dsh-zdd-pet/src/standalone/settings-page
  */
 /** 设置页 HTML。 */
 export const settingsPage = `<!doctype html>
@@ -62,7 +62,7 @@ export const settingsScript = `
   async function request(method, body) {
     const response = await fetch('/standalone-ai/settings', {
       method, credentials: 'omit', cache: 'no-store', redirect: 'error',
-      headers: { 'X-DSH-Pet-Token': token, ...(body ? {'Content-Type': 'application/json'} : {}) },
+      headers: { 'X-DSH-Zdd-Pet-Token': token, ...(body ? {'Content-Type': 'application/json'} : {}) },
       ...(body ? {body: JSON.stringify(body)} : {})
     });
     if (!response.ok) {
@@ -106,7 +106,7 @@ export const settingsScript = `
           credentials: 'omit',
           cache: 'no-store',
           headers: {
-            'X-DSH-Pet-Token': token,
+            'X-DSH-Zdd-Pet-Token': token,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(input),

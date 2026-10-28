@@ -44,19 +44,19 @@ function fixture(base: string, enabled: boolean | undefined = true, failure?: 'c
 }
 
 test('desktop click sound uses the bridge asset channel in bridge mode', () => {
-  const audio = fixture('dsh-pet-bridge://dsh-pet/dsh-pet-7340');
+  const audio = fixture('dsh-zdd-pet-bridge://dsh-zdd-pet/dsh-zdd-pet-7340');
   audio.play();
-  assert.equal(audio.sounds[0].url, 'dsh-pet-bridge://dsh-pet/dsh-pet-7340/sound/click-duck.wav');
+  assert.equal(audio.sounds[0].url, 'dsh-zdd-pet-bridge://dsh-zdd-pet/dsh-zdd-pet-7340/sound/click-duck.wav');
 });
 
 test('desktop click sound retains direct HTTP in legacy mode', () => {
-  const audio = fixture('http://127.0.0.1:3080/dsh-pet-7340');
+  const audio = fixture('http://127.0.0.1:3080/dsh-zdd-pet-7340');
   audio.play();
-  assert.equal(audio.sounds[0].url, 'http://127.0.0.1:3080/dsh-pet-7340/sound/click-duck.wav');
+  assert.equal(audio.sounds[0].url, 'http://127.0.0.1:3080/dsh-zdd-pet-7340/sound/click-duck.wav');
 });
 
 test('disabled or absent click-sound settings never create an audio request', () => {
-  const audio = fixture('dsh-pet-bridge://dsh-pet/dsh-pet-7340', false);
+  const audio = fixture('dsh-zdd-pet-bridge://dsh-zdd-pet/dsh-zdd-pet-7340', false);
   audio.play();
   audio.config.clickSoundEnabled = undefined;
   audio.advance(100);
@@ -65,7 +65,7 @@ test('disabled or absent click-sound settings never create an audio request', ()
 });
 
 test('click sound reuses its audio element and throttles rapid clicks', () => {
-  const audio = fixture('dsh-pet-bridge://dsh-pet/dsh-pet-7340');
+  const audio = fixture('dsh-zdd-pet-bridge://dsh-zdd-pet/dsh-zdd-pet-7340');
   audio.play();
   audio.advance(99);
   audio.play();
@@ -80,7 +80,7 @@ test('click sound reuses its audio element and throttles rapid clicks', () => {
 
 for (const failure of ['construct', 'play', 'reject'] as const) {
   test(`audio ${failure} failures do not escape the click handler`, async () => {
-    const audio = fixture('dsh-pet-bridge://dsh-pet/dsh-pet-7340', true, failure);
+    const audio = fixture('dsh-zdd-pet-bridge://dsh-zdd-pet/dsh-zdd-pet-7340', true, failure);
     assert.doesNotThrow(audio.play);
     await setImmediate();
   });

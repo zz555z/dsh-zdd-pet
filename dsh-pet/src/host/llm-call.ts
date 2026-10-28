@@ -4,14 +4,14 @@
  * 不负责发请求、选模型与拼消息——那是生成侧各模块自己的事；这里只给所有调用两样共享的东西：
  * 一个稳定的调用身份，和一句把流终止原因翻成人话的文案。
  * 必须始终成立：身份字符串不变，适配器靠它生成服务商载体，对端可能据此拒绝请求。
- * @module dsh-pet/src/host/llm-call
+ * @module dsh-zdd-pet/src/host/llm-call
  */
 
 /**
  * 调用身份：适配器据此生成服务商需要的载体（opencode-go 会翻成 `x-opencode-session`
  * 请求头，缺这个头该路由回 400）。值只需稳定，不要求是真实会话 id。
  */
-export const PET_CALL_IDENTITY = 'dsh-pet';
+export const PET_CALL_IDENTITY = 'dsh-zdd-pet';
 
 /**
  * 没有正文时，按流终止原因给出要展示的原因。

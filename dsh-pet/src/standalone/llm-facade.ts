@@ -3,7 +3,7 @@
  *
  * 形状必须与 DSH 的 llm 服务一致（路由与设置页只认这几个方法）；不实现生成逻辑（归 ./ai-provider）。
  * 必须始终成立：未接入模型时每个调用都抛错或给空清单，绝不假装成功。
- * @module dsh-pet/src/standalone/llm-facade
+ * @module dsh-zdd-pet/src/standalone/llm-facade
  */
 
 /** ctx.llm 替身的契约，形状必须与 DSH 一致。 */
@@ -50,7 +50,7 @@ export function createOfflineLlm(): LlmFacade {
       [Symbol.asyncIterator](): AsyncIterator<never> {
         return {
           next: async (): Promise<IteratorResult<never>> => {
-            throw new Error('dsh-pet standalone: 独立模式未接入模型（碎碎念/对话不可用）');
+            throw new Error('dsh-zdd-pet standalone: 独立模式未接入模型（碎碎念/对话不可用）');
           },
         };
       },

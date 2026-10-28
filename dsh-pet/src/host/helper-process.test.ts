@@ -32,7 +32,7 @@ import {
 } from './helper-process.ts';
 
 test('Electron 安装目录无法创建时返回 undefined，不产生未处理拒绝', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-install-'));
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-install-'));
   const savedHome = process.env.DSH_HOME;
   t.after(() => {
     if (savedHome === undefined) delete process.env.DSH_HOME;
@@ -52,7 +52,7 @@ test('Electron 安装目录无法创建时返回 undefined，不产生未处理�
 
 /** 建一个隔离的临时目录,并归还原 DSH_HOME / DSH_PET_ELECTRON_PATH 环境变量 */
 function withIsolatedHome(fn: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-test-'));
   const savedHome = process.env.DSH_HOME;
   const savedPath = process.env.DSH_PET_ELECTRON_PATH;
   try {
@@ -188,7 +188,7 @@ describe('resolveElectronPath —— 候选优先级', () => {
 });
 
 test('Electron cache validation: an existing non-empty file avoids a download', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-pet-cache-'));
+  const home = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-cache-'));
   const previous = process.env.DSH_HOME;
   t.after(() => {
     if (previous === undefined) delete process.env.DSH_HOME;
@@ -212,7 +212,7 @@ test('Electron cache validation: an existing non-empty file avoids a download', 
 });
 
 test('Electron cache validation: an empty file enters the download path and reports failure', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'dsh-pet-cache-'));
+  const home = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-cache-'));
   const previous = process.env.DSH_HOME;
   t.after(() => {
     if (previous === undefined) delete process.env.DSH_HOME;
@@ -473,7 +473,7 @@ describe('HelperProcess.stopAndWait —— 停止要等进程真正退出（issu
 
 describe('HelperProcess failed spawn recovery', () => {
   test('keeps a running child after a non-spawn error', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-live-child-'));
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-live-child-'));
     const hp = new HelperProcess(
       { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], cwd: dir },
       {},
@@ -494,7 +494,7 @@ describe('HelperProcess failed spawn recovery', () => {
       `retries ${code} after the executable is repaired`,
       { skip: code === 'EACCES' && process.platform === 'win32', timeout: 10000 },
       async () => {
-        const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-spawn-'));
+        const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-spawn-'));
         const command = join(dir, 'electron');
         if (code === 'EACCES') writeFileSync(command, '#!/bin/sh\nexit 0\n', { mode: 0o600 });
         const options = { command, args: ['-e', 'console.log("helper-recovered")'], cwd: dir };

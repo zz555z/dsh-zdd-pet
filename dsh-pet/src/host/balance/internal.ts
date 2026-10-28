@@ -5,7 +5,7 @@
  * 统一 20s 超时加 3 次重试：目标端点多为境外，实测会间歇性超时。
  * 依赖全局 fetch；始终成立：必填字段缺失或非法一律抛错，绝不静默当 0。
  *
- * @module dsh-pet/src/host/balance/internal
+ * @module dsh-zdd-pet/src/host/balance/internal
  */
 
 /** 单次抓取超时（ms）。 */
@@ -16,7 +16,7 @@ const RETRIES = 3;
 /** 发起一次带超时的 fetch；失败抛错，是否重试由调用方决定。 */
 async function fetchOnce(url: string, key: string): Promise<Response> {
   return fetch(url, {
-    headers: { Authorization: 'Bearer ' + key, 'User-Agent': 'dsh-pet-balance' },
+    headers: { Authorization: 'Bearer ' + key, 'User-Agent': 'dsh-zdd-pet-balance' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 }
@@ -38,13 +38,13 @@ export async function fetchWithRetry(url: string, key: string): Promise<Response
 /** 必填数值：无法数值化或非有限数时抛错，不静默当 0。 */
 export function num(value: unknown, what: string): number {
   const n = Number(value);
-  if (!Number.isFinite(n)) throw new Error('dsh-pet: 余额数据非法字段 ' + what);
+  if (!Number.isFinite(n)) throw new Error('dsh-zdd-pet: 余额数据非法字段 ' + what);
   return n;
 }
 
 /** 必填字符串：非空才通过，否则抛错。 */
 export function str(value: unknown, what: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new Error('dsh-pet: 余额数据非法字段 ' + what);
+  if (typeof value !== 'string' || value.length === 0) throw new Error('dsh-zdd-pet: 余额数据非法字段 ' + what);
   return value;
 }
 
@@ -99,7 +99,7 @@ export function queryString(params: Record<string, string | undefined>): string 
 export function money(value: unknown, what: string): string {
   const raw = str(value, what);
   const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error('dsh-pet: 账号余额金额非法 ' + what);
+  if (!Number.isFinite(n)) throw new Error('dsh-zdd-pet: 账号余额金额非法 ' + what);
   return n.toFixed(2);
 }
 

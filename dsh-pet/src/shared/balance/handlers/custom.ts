@@ -4,7 +4,7 @@
  * 本文件不产生文案，也不决定长什么样——布局、字号、颜色、进度条全由对方在树里声明。校验不在这里：
  * 解析层（parseCustomNode）已把 tag、样式与容量裁过一遍，到这里的数据视为可信，渲染器不再过滤。
  *
- * @module dsh-pet/src/shared/balance/handlers/custom
+ * @module dsh-zdd-pet/src/shared/balance/handlers/custom
  */
 
 import type { BalanceBubbleRow } from '../types.ts';

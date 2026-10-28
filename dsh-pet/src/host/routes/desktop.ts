@@ -3,7 +3,7 @@
  *
  * 不负责 Helper 进程本身的拉活与重启（归 ./helper-process）。
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/desktop
+ * @module dsh-zdd-pet/src/host/routes/desktop
  */
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
@@ -43,7 +43,7 @@ export async function handleDesktopRoutes(deps: PetRouteDeps, input: RouteInput)
       try {
         (quit as (reason: string) => void)('托盘退出');
       } catch (e: unknown) {
-        log.warn(`[dsh-pet] 托盘退出失败：${e instanceof Error ? e.message : String(e)}`);
+        log.warn(`[dsh-zdd-pet] 托盘退出失败：${e instanceof Error ? e.message : String(e)}`);
       }
     });
     return okResult({ ok: true });

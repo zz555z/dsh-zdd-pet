@@ -3,7 +3,7 @@
  *
  * 纯类型文件，唯一的导入是 `import type`，编译后消失，因此不依赖任何逻辑模块，也不会引入循环依赖。
  *
- * @module dsh-pet/src/shared/balance/types
+ * @module dsh-zdd-pet/src/shared/balance/types
  */
 
 import type { QuotaTone } from './tone.ts';

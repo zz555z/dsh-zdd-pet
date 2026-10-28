@@ -3,7 +3,7 @@
  *
  * 不负责读写与校验；校验函数从这里取枚举集合，避免各写一份。
  * 必须始终成立：取值域与 shared/types 的联合类型一一对应，改一处必须同步另一处。
- * @module dsh-pet/src/host/config/constants
+ * @module dsh-zdd-pet/src/host/config/constants
  */
 import { FONT_PRESETS } from '../../shared/fonts.ts';
 import { PET_DISPLAYS } from '../../shared/config.ts';
@@ -66,17 +66,17 @@ const warnedKeys = new Set<string>();
 export function warnOnce(key: string, message: string): void {
   if (warnedKeys.has(key)) return;
   warnedKeys.add(key);
-  defaultLog('warn', 'dsh-pet: ' + message);
+  defaultLog('warn', 'dsh-zdd-pet: ' + message);
 }
 
 /** 配置路径集（宿主组装好后传入，单一事实来源） */
 export interface ConfigPaths {
   /** 包内 assets/config.jsonc（内置默认，绝对正确） */
   defaultFile: string;
-  /** ~/.dsh/dsh-pet/main-config.jsonc（用户主配置，可编辑层；JSONC——允许注释） */
+  /** ~/.dsh/dsh-zdd-pet/main-config.jsonc（用户主配置，可编辑层；JSONC——允许注释） */
   userFile: string;
-  /** 旧路径 ~/.dsh/dsh-pet/main-config.json：读取回落 + 启动时迁移（见 migrateUserConfig） */
+  /** 旧路径 ~/.dsh/dsh-zdd-pet/main-config.json：读取回落 + 启动时迁移（见 migrateUserConfig） */
   legacyUserFile?: string;
-  /** ~/.dsh/dsh-pet/pet（文件宠物目录） */
+  /** ~/.dsh/dsh-zdd-pet/pet（文件宠物目录） */
   petDir: string;
 }

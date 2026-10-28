@@ -1,7 +1,7 @@
 /**
  * 面板落点几何：决定级联子菜单摆在父面板的哪一侧，保证不与任何已展开面板重叠。
  * 纯函数，不碰 DOM；调用方只负责读矩形与写样式。
- * @module dsh-pet/src/shared/menu/position
+ * @module dsh-zdd-pet/src/shared/menu/position
  */
 
 /** 面板矩形（只需定位用到的边）。 */

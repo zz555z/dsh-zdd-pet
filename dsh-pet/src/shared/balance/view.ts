@@ -4,7 +4,7 @@
  * 纯函数，不碰 DOM 与 React；形态相关的文案也不在这里，本模块只负责不可用状态的说明行，
  * 其余按形态查分发表。必须始终成立：不可用时绝不伪造数字。
  *
- * @module dsh-pet/src/shared/balance/view
+ * @module dsh-zdd-pet/src/shared/balance/view
  */
 
 import { HANDLERS } from './handlers/index.ts';

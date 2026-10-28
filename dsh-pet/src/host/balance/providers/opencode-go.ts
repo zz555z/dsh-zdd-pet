@@ -5,7 +5,7 @@
  * 满额度是接口不回传的业务常量，随数据带出；滚动窗为 5 小时。
  * opencode-go 与 opencode 是两个 id，后者没有用量接口，不登记。
  *
- * @module dsh-pet/src/host/balance/providers/opencode-go
+ * @module dsh-zdd-pet/src/host/balance/providers/opencode-go
  */
 import { fetchWithRetry, num, str } from '../internal.ts';
 import type { BalanceProvider } from '../types.ts';
@@ -29,12 +29,12 @@ export const opencodeGo: BalanceProvider = {
     if (!res.ok) throw new Error('opencode usage HTTP ' + res.status);
     const body: unknown = await res.json();
     const usage = (body as { usage?: unknown })?.usage;
-    if (!usage || typeof usage !== 'object') throw new Error('dsh-pet: opencode usage 响应缺少 usage');
+    if (!usage || typeof usage !== 'object') throw new Error('dsh-zdd-pet: opencode usage 响应缺少 usage');
     const u = usage as Record<string, { percent?: unknown; resetsAt?: unknown }>;
     const rolling = u.rolling,
       weekly = u.weekly,
       monthly = u.monthly;
-    if (!rolling || !weekly || !monthly) throw new Error('dsh-pet: opencode usage 响应缺少窗口');
+    if (!rolling || !weekly || !monthly) throw new Error('dsh-zdd-pet: opencode usage 响应缺少窗口');
     return {
       ok: true,
       provider,

@@ -1,5 +1,5 @@
 /**
- * 点播动画（`POST /dsh-pet-7340/anim`）的决策层单测。
+ * 点播动画（`POST /dsh-zdd-pet-7340/anim`）的决策层单测。
  *
  * 契约核心有两条（issue #122 第 1 条后是两种形态）：
  *   name = 名字必须在菜单能点到的集合里——播放端"名字即文件名"，播不存在的动画只会静默失败
@@ -182,7 +182,7 @@ describe('decideAnim —— url 形态（第三方自带素材，issue #122 第 
   });
 
   test('同源相对地址不行——必须是完整 URL（`new URL` 对相对路径会抛）', () => {
-    const d = decide({ name: undefined, url: '/dsh-pet-wallpaper/asset/x.webm' });
+    const d = decide({ name: undefined, url: '/dsh-zdd-pet-wallpaper/asset/x.webm' });
     assert.equal(d.ok, false);
     assert.equal(d.ok === false && d.reason, 'bad-request');
   });
@@ -225,7 +225,7 @@ describe('decideAnim —— url 形态（第三方自带素材，issue #122 第 
   });
 
   test('url 形态不看名字：地址里带什么名字都照样放行（不查池、也不查文件名）', () => {
-    const d = decide({ name: undefined, url: 'http://127.0.0.1:8080/dsh-pet-wallpaper/a/根本不在池里.webm' });
+    const d = decide({ name: undefined, url: 'http://127.0.0.1:8080/dsh-zdd-pet-wallpaper/a/根本不在池里.webm' });
     assert.equal(d.ok, true);
   });
 });

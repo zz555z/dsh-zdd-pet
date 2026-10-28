@@ -3,7 +3,7 @@
  *
  * 与服务商无关——各窗口满额度与滚动窗时长都由数据带出，这里不写死任何服务商的额度。
  *
- * @module dsh-pet/src/shared/balance/handlers/windows
+ * @module dsh-zdd-pet/src/shared/balance/handlers/windows
  */
 
 import { quotaTone } from '../tone.ts';

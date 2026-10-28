@@ -3,7 +3,7 @@
  *
  * 不发起下载，只转发进度。
  * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
- * @module dsh-pet/src/host/plugin/download-report
+ * @module dsh-zdd-pet/src/host/plugin/download-report
  */
 import { TASK_TEXT_MAX, type HostWorkStatusState } from '../work-status.ts';
 import type { WorkStatusBridge } from './work-status-bridge.ts';

@@ -3,7 +3,7 @@
  * 位置指令用归一化比例、拖拽与抛掷用左上角像素，两个方向必须互逆，否则松手会跳位。
  * 纯计算：视口、盒尺寸与画布基准都由调用方传入，不读 `window`。
  * 换算本身不夹取；越界摆放的可见下限由 {@link clampReachableBox} 在提交位置时保证。
- * @module dsh-pet/src/client/pet/motion/geometry
+ * @module dsh-zdd-pet/src/client/pet/motion/geometry
  */
 import { CANVAS_H, FEET_Y, HIT_BOX } from '../../../shared/constants.ts';
 import { bodyPixelBox } from '../../../shared/physics.ts';

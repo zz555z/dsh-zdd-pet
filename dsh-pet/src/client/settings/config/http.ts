@@ -2,10 +2,10 @@
  * 设置页与宿主的 HTTP 契约：读配置、读元信息、读候选模型、写用户层（PUT）、同步（POST）与写种类层。
  * 每个函数都是「总函数」——失败不抛给调用方，而是返回约定好的空值或判别联合，调用方只管分支与文案。
  * 写配置强制显式 `force` 布尔：严格 `=== true` 才拼 `?force=1`，绝不能让事件对象冒充真值绕过损坏预检。
- * @module dsh-pet/src/client/settings/config/http
+ * @module dsh-zdd-pet/src/client/settings/config/http
  */
 import { ROUTE_PATH } from '../../../shared/constants.ts';
-import type { FontConfig, ModelSelection, Pet, PhysicsParams } from '../../../shared/types.ts';
+import type { FontConfig, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
 import type { ModelCatalogGroup } from '../picker/index.ts';
 import type { MergedConfig } from './read.ts';
 
@@ -39,6 +39,7 @@ export interface SaveFields {
   chatMemoryRounds: number;
   chatImageLimit: number;
   font: FontConfig;
+  pomodoro: PomodoroParams;
 }
 
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
@@ -69,6 +70,7 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     chatMemoryRounds: fields.chatMemoryRounds,
     chatImageLimit: fields.chatImageLimit,
     font: fields.font,
+    pomodoro: fields.pomodoro,
   };
 }
 

@@ -3,7 +3,7 @@
  *
  * 不做多体求解，也不改渲染；只回答「撞没撞、撞后速度多少」。
  * 必须始终成立：只算一次分离，不迭代求解。
- * @module dsh-pet/src/shared/physics/collide
+ * @module dsh-zdd-pet/src/shared/physics/collide
  */
 import { HIT_BOX } from '../constants.ts';
 import { PET_BOUNCE_E } from './constants.ts';

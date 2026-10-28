@@ -3,7 +3,7 @@
  *
  * 只回答「这一段播完了该进哪条分支」，不碰 DOM、不读时钟、不上报回执——
  * 回执与停顿门禁由动画链处理，React 状态由组件按结果改。
- * @module dsh-pet/src/client/pet/animation/cues
+ * @module dsh-zdd-pet/src/client/pet/animation/cues
  */
 import { isEventAnim, nextWorkStatusAnim, poolIncludes } from '../../../shared/pickers.ts';
 import type { Animations } from '../../../shared/types.ts';

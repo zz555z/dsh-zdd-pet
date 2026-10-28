@@ -33,7 +33,7 @@ const previousHome = process.env.DSH_HOME;
 const previousInProcess = process.env.DSH_PET_IN_PROCESS;
 
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'dsh-pet-config-concurrency-'));
+  dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-config-concurrency-'));
   const pkg = join(dir, 'package');
   mkdirSync(join(pkg, 'assets'), { recursive: true });
   copyFileSync(new URL('../../assets/config.jsonc', import.meta.url), join(pkg, 'assets/config.jsonc'));
@@ -58,9 +58,9 @@ before(async () => {
   const home = join(dir, 'home');
   process.env.DSH_HOME = home;
   process.env.DSH_PET_IN_PROCESS = '1';
-  mkdirSync(join(home, 'dsh-pet/pet'), { recursive: true });
-  file = join(home, 'dsh-pet/main-config.jsonc');
-  packFile = join(home, 'dsh-pet/pet/pack-config.jsonc');
+  mkdirSync(join(home, 'dsh-zdd-pet/pet'), { recursive: true });
+  file = join(home, 'dsh-zdd-pet/main-config.jsonc');
+  packFile = join(home, 'dsh-zdd-pet/pet/pack-config.jsonc');
   writeFileSync(file, JSON.stringify({ trayEnabled: false, pets: [pet('alpha'), pet('beta')] }));
   const logger = { info() {}, warn() {}, error() {}, debug() {} };
   context = createStandaloneContext({ port: 0, logger });
@@ -70,7 +70,7 @@ before(async () => {
   const security = createRequestSecurity();
   token = security.token;
   server = await listenStandaloneServer({ routes: context.routes, logger, port: 0, security });
-  base = `http://127.0.0.1:${server.port}/dsh-pet-7340/`;
+  base = `http://127.0.0.1:${server.port}/dsh-zdd-pet-7340/`;
 });
 
 beforeEach(() => {
@@ -94,7 +94,7 @@ after(async () => {
 async function request(path: string, method = 'GET', body?: unknown) {
   const response = await fetch(base + path, {
     method,
-    headers: { 'X-DSH-Pet-Token': token, 'content-type': 'application/json' },
+    headers: { 'X-DSH-Zdd-Pet-Token': token, 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return {

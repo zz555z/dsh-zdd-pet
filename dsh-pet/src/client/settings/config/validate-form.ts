@@ -2,14 +2,21 @@
  * 设置页表单校验：保存前把「宿主一定会 400 的组合」先就地拦下并给红字提示。
  * 规则与宿主一一对应（非法组合宿主回 400，等同于把错误推到一次网络往返之后才发现）。
  * 纯函数：只看传入的值，返回第一个不合格项的文案键，顺序即提示优先级。
- * @module dsh-pet/src/client/settings/config/validate-form
+ * @module dsh-zdd-pet/src/client/settings/config/validate-form
  */
 import { FONT_PRESETS, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../../shared/fonts.ts';
-import type { FontConfig, ModelSelection, Pet, PhysicsParams } from '../../../shared/types.ts';
+import { POMODORO_MAX_INTERVAL_MIN, POMODORO_MIN_INTERVAL_MIN } from '../../../shared/pomodoro.ts';
+import type { FontConfig, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
 
 /** 校验失败时返回的文案键。 */
 export type InvalidKey =
-  'invalid' | 'invalidPhysics' | 'invalidModel' | 'invalidChatMemory' | 'invalidChatImageLimit' | 'invalidFont';
+  | 'invalid'
+  | 'invalidPhysics'
+  | 'invalidModel'
+  | 'invalidChatMemory'
+  | 'invalidChatImageLimit'
+  | 'invalidFont'
+  | 'invalidPomodoro';
 
 /** 保存前要校验的全部表单值。 */
 export interface FormValues {
@@ -20,6 +27,7 @@ export interface FormValues {
   chatMemory: number;
   chatImageLimit: number;
   font: FontConfig;
+  pomodoro: PomodoroParams;
 }
 
 /** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
@@ -67,5 +75,13 @@ export function validateForm(values: FormValues): InvalidKey | null {
   // 0 = 不限制，合法。
   if (!Number.isFinite(values.chatImageLimit) || values.chatImageLimit < 0) return 'invalidChatImageLimit';
   if (!fontValid(values.font)) return 'invalidFont';
+  // 番茄钟：间隔须在 1~1440 分钟内（与宿主 pomodoroValid 同名规则）。
+  if (
+    !Number.isFinite(values.pomodoro.intervalMin) ||
+    values.pomodoro.intervalMin < POMODORO_MIN_INTERVAL_MIN ||
+    values.pomodoro.intervalMin > POMODORO_MAX_INTERVAL_MIN
+  ) {
+    return 'invalidPomodoro';
+  }
   return null;
 }

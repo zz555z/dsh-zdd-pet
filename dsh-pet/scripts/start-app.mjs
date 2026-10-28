@@ -6,7 +6,7 @@
  * 打包产物则把同一批文件塞进自己的 exe；环境变量与打包版一致，方便对照排查。
  * 不下载 Electron、不构建：解压目录与 lib/app.js 都要事先备好，缺 Electron 时这里直接报错退出。
  * 必须始终：清掉 ELECTRON_RUN_AS_NODE，否则 Electron 会以纯 Node 模式启动。
- * @module dsh-pet/scripts/start-app
+ * @module dsh-zdd-pet/scripts/start-app
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';

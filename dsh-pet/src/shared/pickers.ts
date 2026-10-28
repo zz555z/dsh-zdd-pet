@@ -2,7 +2,7 @@
  * 纯选择逻辑：随机抽取、事件档位取值、权重掷骰，可独立单测。
  * 两端共用同一份，随机链必须走这里，否则浏览器半侧与桌面 Helper 会分叉。
  * 不依赖 React / DOM。
- * @module dsh-pet/src/shared/pickers
+ * @module dsh-zdd-pet/src/shared/pickers
  */
 import type { Category, EventSlot, Events, Weights } from './types.ts';
 

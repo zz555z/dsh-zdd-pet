@@ -2,7 +2,7 @@
  * 设置页的写回计划：比较「加载时的快照」与「当前编辑列表」，算出哪些种类层需要写回。
  *
  * 纯函数，不发请求也不碰状态；main 不在计划里——它连同全局字段每次保存都整包写 PUT /config。
- * @module dsh-pet/src/client/settings/config/pack-writes
+ * @module dsh-zdd-pet/src/client/settings/config/pack-writes
  */
 import type { Pet } from '../../../shared/types.ts';
 import type { ConfigEntry } from './read.ts';

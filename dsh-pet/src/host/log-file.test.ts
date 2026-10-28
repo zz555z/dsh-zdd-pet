@@ -24,7 +24,7 @@ const LOGGER_URL = new URL('./log-file.ts', import.meta.url).href;
 let dir = '';
 
 before(() => {
-  dir = mkdtempSync(join(tmpdir(), 'dsh-pet-log-'));
+  dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-log-'));
 });
 
 after(() => {
@@ -40,7 +40,7 @@ describe('纯函数', () => {
   });
 
   test('redactSensitive：令牌、站点 URL 片段一律打码', () => {
-    assert.equal(redactSensitive('x-dsh-pet-token: abcdefghijklmnopqrstuvwx'), 'x-dsh-pet-token: ***');
+    assert.equal(redactSensitive('x-dsh-zdd-pet-token: abcdefghijklmnopqrstuvwx'), 'x-dsh-zdd-pet-token: ***');
     assert.equal(redactSensitive('打开 http://x/#token=abcdefghijklmnopqrstuvwx'), '打开 http://x/#token=***');
     assert.equal(redactSensitive('DSH_PET_SITE_URL=http://127.0.0.1:1/?t=2'), 'DSH_PET_SITE_URL=***');
     // 普通文本不动
@@ -163,11 +163,11 @@ describe('createFileLogger', () => {
   test('落盘前脱敏：令牌不进文件', async () => {
     const file = join(dir, 'redact.log');
     const logger = createFileLogger({ file, flushThreshold: 1, flushIntervalMs: 60_000 });
-    logger.info('请求头 x-dsh-pet-token: abcdefghijklmnopqrstuvwx');
+    logger.info('请求头 x-dsh-zdd-pet-token: abcdefghijklmnopqrstuvwx');
     await logger.flush();
     logger.dispose();
     const text = readFileSync(file, 'utf8');
-    assert.match(text, /x-dsh-pet-token: \*\*\*/);
+    assert.match(text, /x-dsh-zdd-pet-token: \*\*\*/);
     assert.ok(!text.includes('abcdefghijklmnopqrstuvwx'));
   });
 });
@@ -177,7 +177,7 @@ describe('createFileLogger', () => {
  * 退出路径只能在真实进程里验证：同进程的 flush/dispose 看不到 exit 时的行为。
  */
 function logFromChild(script: string): string {
-  const childDir = mkdtempSync(join(tmpdir(), 'dsh-pet-log-exit-'));
+  const childDir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-log-exit-'));
   // 父目录故意不存在：首次退出时也要能自己建出来
   const file = join(childDir, 'nested', 'logs.txt');
   try {

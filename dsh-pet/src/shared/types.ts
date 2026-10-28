@@ -2,7 +2,7 @@
  * 与 config.jsonc 同构的类型模型：animations / animationWeights / pets 只此一份定义。
  * 运行时（浏览器半侧、桌面 Helper、设置页）直接使用这套结构，不额外造转换后的类型。
  * 纯类型与常量，无 React / DOM 依赖。
- * @module dsh-pet/src/shared/types
+ * @module dsh-zdd-pet/src/shared/types
  */
 
 /** 支持的角落。 */
@@ -113,6 +113,18 @@ export interface Pet {
   chatModel?: ModelSelection;
   /** 全局默认：字体（种类 / 字号 / 是否随宠物大小缩放） */
   font?: FontConfig;
+  /** 全局默认：番茄钟 / 久坐提醒（设置页可开/关并选提醒间隔；文案池不在设置页暴露，手改 config 可自定义） */
+  pomodoro?: PomodoroParams;
+}
+
+/** config.jsonc 的 pomodoro 段（设置页「番茄钟」区可编辑的部分）：开关 + 提醒间隔分钟。
+ *  提醒文案池（texts）与配图不在设置页暴露——保存时透传保留，想自定义请手改 main-config.jsonc。
+ *  默认值见 shared/pomodoro.ts 的 DEFAULT_POMODORO，与内置 config.jsonc 保持一致。 */
+export interface PomodoroParams {
+  /** 是否启用番茄钟（到点让桌宠说一句）；false = 关闭 */
+  enabled: boolean;
+  /** 提醒间隔（分钟）：1~1440，非法回落默认 50 */
+  intervalMin: number;
 }
 
 /** 一处「服务商 + 模型」选择（config.jsonc 的 whisperModel / chatModel 段）。
@@ -187,4 +199,6 @@ export interface ClientConfig {
   chatModel: ModelSelection;
   /** 事件刷新周期（秒）：事件名 → 间隔；balance = 余额数据刷新与动画触发间隔 */
   eventsRefreshSec: Record<string, number>;
+  /** 番茄钟 / 久坐提醒（全局默认；合并器已填默认） */
+  pomodoro: PomodoroParams;
 }

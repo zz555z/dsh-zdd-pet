@@ -2,7 +2,7 @@
  * 指针拖拽的装配：把当帧能力束成 DragCard，再交给驱动长期持有。
  * 依赖 motion 的运动面与迟绑槽里的动画流、锁与提示——它们创建得更晚，只在回调里读。
  * 只建一次：驱动自带指针状态机与捕获，重建会让按下中的手势丢失。
- * @module dsh-pet/src/client/pet/card/drag
+ * @module dsh-zdd-pet/src/client/pet/card/drag
  */
 import { createDrag, type Drag, type DragCard } from '../motion/drag.ts';
 import { boxToRatio, clampReachableBox } from '../motion/geometry.ts';

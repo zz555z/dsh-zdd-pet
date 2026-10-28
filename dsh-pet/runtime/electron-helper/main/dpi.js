@@ -4,7 +4,7 @@
  *
  * 线性化必须赶在 ready 之前 appendSwitch，所以工厂在 main.js 顶层调用；探测子进程复用同一个
  * main.js（mainPath 传入），只打一行 scaleFactor 就退出。
- * @module dsh-pet/runtime/electron-helper/main-dpi
+ * @module dsh-zdd-pet/runtime/electron-helper/main-dpi
  */
 
 const path = require('node:path');
@@ -53,7 +53,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
     try {
       writeFileSync(dpiCacheFile(), JSON.stringify({ scaleFactor: value }), 'utf8');
     } catch (e) {
-      console.error('[dsh-pet-desktop-helper] write dpi cache failed:', String(e && e.message ? e.message : e));
+      console.error('[dsh-zdd-pet-desktop-helper] write dpi cache failed:', String(e && e.message ? e.message : e));
     }
   }
 
@@ -75,7 +75,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
     };
     let out = '';
     try {
-      out = execFileSync(process.execPath, [mainPath, '--dsh-pet-dpi-probe'], opts);
+      out = execFileSync(process.execPath, [mainPath, '--dsh-zdd-pet-dpi-probe'], opts);
     } catch (e) {
       // 只认 stdout，不认退出码：不开窗口的 Electron 进程调 app.exit() 在 Windows 上偶发
       // 0xC0000005（退出期访问违例），但那时值早就写出来了，丢掉它纯属浪费一次冷启动。
@@ -88,7 +88,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
           .filter(Boolean)
           .join(' ');
         console.error(
-          '[dsh-pet-desktop-helper] dpi probe failed:',
+          '[dsh-zdd-pet-desktop-helper] dpi probe failed:',
           String(e && e.message ? e.message : e).split('\n')[0],
           detail,
         );

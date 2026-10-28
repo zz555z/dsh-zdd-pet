@@ -2,7 +2,7 @@
  * 轮询状态的客户端出口：留下最近一拍，供同页插件经 Cordis 服务读取。
  * 只存引用、不比对也不分发状态变化：比对在 shared/state，分发在 pet/multi，本模块没有第二份判据。
  * 页面级单例，标签页之间不共享；`/state` 首拍之前为 `null`。
- * @module dsh-pet/src/client/state-service
+ * @module dsh-zdd-pet/src/client/state-service
  */
 import type { PollState } from '../shared/state.ts';
 
@@ -26,7 +26,7 @@ export function setStateSnapshot(state: PollState): void {
     try {
       listener(state);
     } catch (error) {
-      console.error('[dsh-pet] 状态订阅回调出错（已忽略，不影响轮询）：', error);
+      console.error('[dsh-zdd-pet] 状态订阅回调出错（已忽略，不影响轮询）：', error);
     }
   }
 }

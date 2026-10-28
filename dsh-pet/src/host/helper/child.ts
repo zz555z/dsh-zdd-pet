@@ -3,7 +3,7 @@
  *
  * 不决定何时重启（归 ./restart），不解析 Electron 路径（归 ./electron）。
  * 必须始终成立：新旧进程绝不重叠，stop 之后不得再写管道。
- * @module dsh-pet/src/host/helper/child
+ * @module dsh-zdd-pet/src/host/helper/child
  */
 import { mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -94,7 +94,7 @@ export class HelperProcess {
     const args = this.options.args || launch.args;
 
     // cwd 必须落在包目录之外：Windows 不允许重命名或删除活进程的当前目录，否则 pnpm 无法 rename
-    // 覆盖 node_modules/dsh-pet。Helper 侧资源解析与 CWD 无关，故用 $DSH_HOME。
+    // 覆盖 node_modules/dsh-zdd-pet。Helper 侧资源解析与 CWD 无关，故用 $DSH_HOME。
     const cwd = this.options.cwd || dshHomeDir();
     mkdirSync(cwd, { recursive: true }); // spawn 的 cwd 不存在会直接 ENOENT
     const child = spawn(command, args, {
@@ -110,7 +110,7 @@ export class HelperProcess {
     });
     this.child = child;
     child.once('error', (error) => {
-      this.logger.error?.(`dsh-pet desktop helper failed to start: ${error.message}`);
+      this.logger.error?.(`dsh-zdd-pet desktop helper failed to start: ${error.message}`);
       // spawn 失败（ENOENT / EACCES）只发 error 不发 exit：不能留一个没跑起来的子进程挡住之后每次
       // start；而活着的进程报错（例如 kill 失败）必须继续等它的 exit。
       if (child.pid === undefined && this.child === child) {
@@ -123,7 +123,7 @@ export class HelperProcess {
       this.child = undefined;
       if (!this.stopping) {
         this.logger.warn?.(
-          `dsh-pet desktop helper exited (code=${String(code)}, signal=${String(signal)}); restarting`,
+          `dsh-zdd-pet desktop helper exited (code=${String(code)}, signal=${String(signal)}); restarting`,
         );
         this.scheduleRestart();
       }
@@ -133,7 +133,7 @@ export class HelperProcess {
     });
     child.stderr.on('data', (chunk) => {
       const line = String(chunk).trim();
-      if (line) this.logger.warn?.(`[dsh-pet desktop helper] ${line}`);
+      if (line) this.logger.warn?.(`[dsh-zdd-pet desktop helper] ${line}`);
     });
     child.stdin?.on('error', () => {
       /* EPIPE 等：进程退出/重启期间回写失败静默（下一轮 start 重建管道） */
@@ -141,7 +141,7 @@ export class HelperProcess {
     return child;
   }
 
-  /** stdout 按行缓冲：`dsh-pet-bridge:` 前缀整行 = 协议请求，其余 = 日志行。 */
+  /** stdout 按行缓冲：`dsh-zdd-pet-bridge:` 前缀整行 = 协议请求，其余 = 日志行。 */
   private onStdoutChunk(chunk: string): void {
     this.stdoutBuffer += chunk;
     let nl: number;
@@ -154,7 +154,7 @@ export class HelperProcess {
         void this.handleBridgeLine(trimmed);
         continue;
       }
-      this.logger.debug?.(`[dsh-pet desktop helper] ${trimmed}`);
+      this.logger.debug?.(`[dsh-zdd-pet desktop helper] ${trimmed}`);
     }
   }
 
@@ -167,7 +167,7 @@ export class HelperProcess {
     try {
       req = JSON.parse(line.slice(BRIDGE_PREFIX.length)) as BridgeRequest;
     } catch {
-      this.logger.warn?.('[dsh-pet desktop helper] bridge 协议行非法，已忽略');
+      this.logger.warn?.('[dsh-zdd-pet desktop helper] bridge 协议行非法，已忽略');
       return;
     }
     if (typeof req.id !== 'number') return;
@@ -214,7 +214,7 @@ export class HelperProcess {
     this.stopping = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = undefined;
-    this.logger.debug?.(`dsh-pet desktop helper stopping (${reason})`);
+    this.logger.debug?.(`dsh-zdd-pet desktop helper stopping (${reason})`);
     const child = this.child;
     if (!child) return;
     child.kill();
@@ -232,7 +232,7 @@ export class HelperProcess {
     const child = this.child;
     if (!child) return;
     await waitForChildExit(child, timeoutMs, () => {
-      this.logger.warn?.(`dsh-pet desktop helper 未在 ${timeoutMs}ms 内退出，升级 SIGKILL（${reason}）`);
+      this.logger.warn?.(`dsh-zdd-pet desktop helper 未在 ${timeoutMs}ms 内退出，升级 SIGKILL（${reason}）`);
       try {
         child.kill('SIGKILL');
       } catch {
@@ -252,7 +252,7 @@ export class HelperProcess {
     }
     if (shouldCircuitBreak(this.restartFailures, this.resolveMaxFailures())) {
       this.logger.error?.(
-        `dsh-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, ` +
+        `dsh-zdd-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, ` +
           `no more restarts. Fix the environment (e.g. DISPLAY/headless) or set DSH_PET_RESTART_MAX_FAILURES to raise the limit.`,
       );
       return;
@@ -261,7 +261,7 @@ export class HelperProcess {
     // 计数是「已经崩了几次」（1 起），延迟要按「第几次重试」（0 起）取，故减 1：首次崩溃等 base。
     const delay = restartBackoffDelayMs(this.restartFailures - 1, base);
     this.logger.warn?.(
-      `dsh-pet desktop helper exited; restarting in ${Math.round(delay)}ms ` +
+      `dsh-zdd-pet desktop helper exited; restarting in ${Math.round(delay)}ms ` +
         `(attempt ${this.restartFailures}, consecutive-crash limit ${this.resolveMaxFailures()})`,
     );
     this.restartTimer = setTimeout(() => {

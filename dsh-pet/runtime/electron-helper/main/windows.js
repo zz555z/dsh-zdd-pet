@@ -4,7 +4,7 @@
  *
  * 窗口表与按窗口索引的几张表都由本模块独占（`state` 只给同进程的装配根与 ipc 用，不是对外接口）。
  * 两条泵的生命周期跟着窗口：建窗起跑，`closed` 时停止并清句柄——泵自己不清，因为同一窗口上还有别的清理。
- * @module dsh-pet/runtime/electron-helper/main/windows
+ * @module dsh-zdd-pet/runtime/electron-helper/main/windows
  */
 const path = require('node:path');
 const { pointerZone, decideWindowIgnore } = require('../pointer-target.js');
@@ -255,7 +255,7 @@ function createWindows({
       offBodyMs.delete(win.id);
     });
     win.loadFile(path.join(helperDir, 'index.html'), { query: windowQuery(pet, geo, scale) }).catch((error) => {
-      console.error(`[dsh-pet-desktop-helper] page load failed (${pet.id}):`, error);
+      console.error(`[dsh-zdd-pet-desktop-helper] page load failed (${pet.id}):`, error);
       win.destroy();
     });
     return win;
@@ -264,7 +264,7 @@ function createWindows({
   /** 渲染端首帧需要的全部参数：几何逐屏注入，运行期变化再经 pet:displays 推送。 */
   function windowQuery(pet, geo, scale) {
     return {
-      configUrl: process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-pet-7340/config',
+      configUrl: process.env.DSH_PET_CONFIG_URL || 'http://127.0.0.1:3080/dsh-zdd-pet-7340/config',
       bridge: isBridge ? '1' : '0',
       openTarget,
       scale: String(scale),

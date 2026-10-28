@@ -3,7 +3,7 @@
  *
  * 只做形状转换，不算业务、不读写盘；两处消费（素材走文件路径、其余走 body）的口径都收在这里，
  * 因此可以脱离 Electron 与 HTTP 断言。素材分支恒 200——404/400 已由 text 分支表达。
- * @module dsh-pet/src/host/plugin/desktop/bridge-response
+ * @module dsh-zdd-pet/src/host/plugin/desktop/bridge-response
  */
 import type { BridgeResponse } from '../../helper/bridge.ts';
 import type { RouteResult } from '../../http.ts';

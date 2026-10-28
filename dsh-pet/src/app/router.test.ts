@@ -22,7 +22,7 @@ test('app rejects untrusted file origins and hosts while authenticated desktop c
   const server = await start([
     {
       kind: 'prefix',
-      path: '/dsh-pet-7340',
+      path: '/dsh-zdd-pet-7340',
       handler: async (req, res) => {
         calls++;
         let body = '';
@@ -39,8 +39,8 @@ test('app rejects untrusted file origins and hosts while authenticated desktop c
     },
   ]);
   try {
-    const path = server.base + '/dsh-pet-7340/chat';
-    const token = { 'X-DSH-Pet-Token': server.security.token };
+    const path = server.base + '/dsh-zdd-pet-7340/chat';
+    const token = { 'X-DSH-Zdd-Pet-Token': server.security.token };
     const blockedHeaders: Array<Record<string, string>> = [
       { Origin: 'null', 'Sec-Fetch-Site': 'cross-site' },
       { ...token, Origin: 'https://evil.test' },
@@ -72,7 +72,7 @@ test('app rejects untrusted file origins and hosts while authenticated desktop c
     assert.equal(response.headers.get('access-control-allow-origin'), '*');
     assert.deepEqual(await response.json(), { body: '{"dummy":true}' });
     assert.equal(calls, 1);
-    const media = await fetch(server.base + '/dsh-pet-7340/thumb/main/test.webm', {
+    const media = await fetch(server.base + '/dsh-zdd-pet-7340/thumb/main/test.webm', {
       headers: { ...token, 'Sec-Fetch-Site': 'cross-site' },
     });
     assert.equal(media.status, 200);
@@ -84,7 +84,7 @@ test('app rejects untrusted file origins and hosts while authenticated desktop c
       403,
     );
     for (const encoded of ['%63hat', 'ch%61t']) {
-      assert.equal((await fetch(server.base + '/dsh-pet-7340/' + encoded)).status, 403);
+      assert.equal((await fetch(server.base + '/dsh-zdd-pet-7340/' + encoded)).status, 403);
     }
     assert.equal(calls, 2);
   } finally {
@@ -105,8 +105,11 @@ test('invalid URL and percent encodings return 400 and leave the app service ava
     });
     assert.equal(malformed, 400);
     assert.equal(
-      (await fetch(server.base + '/dsh-pet-7340/%ZZ', { headers: { 'X-DSH-Pet-Token': server.security.token } }))
-        .status,
+      (
+        await fetch(server.base + '/dsh-zdd-pet-7340/%ZZ', {
+          headers: { 'X-DSH-Zdd-Pet-Token': server.security.token },
+        })
+      ).status,
       400,
     );
     const health = await fetch(server.base + '/health');
@@ -128,7 +131,7 @@ test('app caps request bodies before plugins/settings and catches synchronous an
     [
       {
         kind: 'prefix',
-        path: '/dsh-pet-7340',
+        path: '/dsh-zdd-pet-7340',
         handler: (req) => {
           calls++;
           if (req.url?.endsWith('/async')) return Promise.reject(new Error('PRIVATE_SENTINEL'));
@@ -139,9 +142,9 @@ test('app caps request bodies before plugins/settings and catches synchronous an
     (message) => logs.push(message),
   );
   try {
-    const headers = { 'X-DSH-Pet-Token': server.security.token };
+    const headers = { 'X-DSH-Zdd-Pet-Token': server.security.token };
     for (const [path, bytes] of [
-      ['/dsh-pet-7340/config', MAX_REQUEST_BYTES],
+      ['/dsh-zdd-pet-7340/config', MAX_REQUEST_BYTES],
       ['/standalone-ai/settings', MAX_SETTINGS_BYTES],
     ] as const) {
       const response = await fetch(server.base + path, { method: 'POST', headers, body: 'x'.repeat(bytes + 1) });
@@ -150,7 +153,7 @@ test('app caps request bodies before plugins/settings and catches synchronous an
     }
     assert.equal(calls, 0);
     for (const path of ['/sync', '/async']) {
-      const response = await fetch(server.base + '/dsh-pet-7340' + path, { headers });
+      const response = await fetch(server.base + '/dsh-zdd-pet-7340' + path, { headers });
       assert.equal(response.status, 500);
       assert.ok(!(await response.text()).includes('PRIVATE_SENTINEL'));
     }

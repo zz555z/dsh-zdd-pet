@@ -3,7 +3,7 @@
  *
  * 不碰 DOM；输入是配置与注册数据，输出是纯对象树。
  * 必须始终成立：同一份输入必得同一棵树，层级顺序稳定。
- * @module dsh-pet/src/shared/menu/tree
+ * @module dsh-zdd-pet/src/shared/menu/tree
  */
 import { type Animations, type Category } from '../types.ts';
 import type { MenuBranch, MenuLeaf, MenuMoreItem, MenuNode } from './types.ts';

@@ -3,7 +3,7 @@
  *
  * 不拼人设（人设归配置），不发网络请求（归 ./chat、./whisper）。
  * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
- * @module dsh-pet/src/host/plugin/chat-memory
+ * @module dsh-zdd-pet/src/host/plugin/chat-memory
  */
 import { join } from 'node:path';
 import { generateChat, type ChatMemoryMessage } from '../chat.ts';
@@ -61,7 +61,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
       return parsed as Record<string, Record<string, { messages: ChatMemoryMessage[] }>>;
     } catch (e) {
       log.error(
-        `dsh-pet: 记忆文件无法解析（对话将从头开始）：${memoryPath}（${e instanceof Error ? e.message : String(e)}）`,
+        `dsh-zdd-pet: 记忆文件无法解析（对话将从头开始）：${memoryPath}（${e instanceof Error ? e.message : String(e)}）`,
       );
       return {};
     }
@@ -127,7 +127,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     if (!result.ok) {
       // 失败不写 S：静默跳过 + warn，不伪造文案、不弹错误气泡
       log.warn(
-        '[dsh-pet] 碎碎念生成失败 pet=' +
+        '[dsh-zdd-pet] 碎碎念生成失败 pet=' +
           petId +
           ' reason=' +
           result.reason +
@@ -140,7 +140,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     state.writePet(petId, 'say', result.image ? { text: result.text, image: result.image } : { text: result.text });
     // 成功也留一行：否则 logs.txt 里「没触发」与「触发了并且成功」无法区分。
     log.info(
-      `[dsh-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` +
+      `[dsh-zdd-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` +
         (result.image ? `，配图=${result.image}` : ''),
     );
     // 文本随返回值带出，且与刚写进叶子的是同一个变量：两条出口给同一份文本，不是一个真相两个版本
@@ -181,7 +181,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
           : (mem[found.entry] = {});
       const existing = bucket[petId];
       if (existing !== undefined && (!existing || !Array.isArray(existing.messages))) {
-        log.error(`[dsh-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按新会话处理：${memoryPath}`);
+        log.error(`[dsh-zdd-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按新会话处理：${memoryPath}`);
       }
       const entry = existing && Array.isArray(existing.messages) ? existing : (bucket[petId] = { messages: [] });
       // rounds = 0（用户关掉历史）→ 空历史；否则截尾部 rounds 轮（1 轮 = 1 问 1 答）。
@@ -190,7 +190,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
       // 图片只记尺寸与字节数（不记 base64）：模型不支持读图时 dsh-llm 会把它投影成占位文本，靠这行日志定位
       if (image !== undefined) {
         log.info(
-          `[dsh-pet] 对话附带图片 pet=${petId}，${image.width}x${image.height}，${image.bytes} 字节` +
+          `[dsh-zdd-pet] 对话附带图片 pet=${petId}，${image.width}x${image.height}，${image.bytes} 字节` +
             '（模型不支持读图时内核会以占位文本代替）',
         );
       }
@@ -256,7 +256,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
         await writeMemory(mem);
       }
       // 只记数量与动作，不打正文（记忆内容是用户隐私）
-      log.info(`[dsh-pet] 删除对话记忆 pet=${petId}，removed=${removed}` + (ts === undefined ? '（清空）' : ''));
+      log.info(`[dsh-zdd-pet] 删除对话记忆 pet=${petId}，removed=${removed}` + (ts === undefined ? '（清空）' : ''));
       return { ok: true as const, removed };
     });
 

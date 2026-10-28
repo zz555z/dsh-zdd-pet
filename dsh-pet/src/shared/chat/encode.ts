@@ -2,7 +2,7 @@
  * 对话图片的压缩与编码：把一张文件或一块画布压进宿主可接受的预算，产出可发送的 base64。
  * 纯计算（尺寸换算、字节反推）与 DOM（解码、canvas）分开，前者可单测。
  * 预算依据：宿主按 1 MiB 请求体拒绝，base64 膨胀 4/3，所以解码后上限取 640 KiB。
- * @module dsh-pet/src/shared/chat/encode
+ * @module dsh-zdd-pet/src/shared/chat/encode
  */
 import { type PetImageMediaType, imageMediaTypeOf } from './image-pick.ts';
 

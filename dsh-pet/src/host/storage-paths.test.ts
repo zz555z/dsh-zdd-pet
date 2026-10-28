@@ -18,10 +18,10 @@ import { DESKTOP_APP_NAME, profileNameFrom, storageEntries } from './storage-pat
 
 /** 各平台的注入输入（基准目录全部写死，避免用到真实环境） */
 const base = {
-  userDataRoot: '/dsh-home/dsh-pet',
+  userDataRoot: '/dsh-home/dsh-zdd-pet',
   electronDir: '/dsh-home/electron',
   home: '/home/u',
-  packageRoot: '/dsh-home/profiles/web/node_modules/dsh-pet',
+  packageRoot: '/dsh-home/profiles/web/node_modules/dsh-zdd-pet',
 };
 
 /** 取出某条目的路径 */
@@ -33,7 +33,7 @@ function pathOf(entries: ReturnType<typeof storageEntries>, key: string): string
 
 describe('storageEntries —— 写入方路径原样透传（不自己拼目录名）', () => {
   test('userData 与 electron 就是调用方给的路径，一个字符都不改', () => {
-    // 故意给一个不符合任何默认约定的路径：若本模块偷偷拼 'dsh-pet' / 'electron'，这里必红
+    // 故意给一个不符合任何默认约定的路径：若本模块偷偷拼 'dsh-zdd-pet' / 'electron'，这里必红
     const entries = storageEntries({
       userDataRoot: 'Z:\\weird\\place',
       electronDir: 'Z:\\another\\runtime',
@@ -94,22 +94,22 @@ describe('storageEntries —— 逐平台路径推导', () => {
   });
 
   test('exists 由磁盘即时判定（真实存在的目录为 true，未创建的为 false）', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-storage-test-'));
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-zdd-pet-storage-test-'));
     try {
       const mk = () =>
         storageEntries({
-          userDataRoot: join(dir, 'dsh-pet'),
+          userDataRoot: join(dir, 'dsh-zdd-pet'),
           electronDir: join(dir, 'electron'),
           home: dir,
           packageRoot: dir,
           platform: 'win32',
           env: {},
         });
-      // packageRoot = dir 本身存在 → true；dsh-pet/ 尚未创建 → false
+      // packageRoot = dir 本身存在 → true；dsh-zdd-pet/ 尚未创建 → false
       assert.equal(mk().find((e) => e.key === 'package')?.exists, true);
       assert.equal(mk().find((e) => e.key === 'userData')?.exists, false);
 
-      mkdirSync(join(dir, 'dsh-pet'), { recursive: true });
+      mkdirSync(join(dir, 'dsh-zdd-pet'), { recursive: true });
       assert.equal(mk().find((e) => e.key === 'userData')?.exists, true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -119,13 +119,13 @@ describe('storageEntries —— 逐平台路径推导', () => {
 
 describe('profileNameFrom —— 卸载命令里的 profile 名', () => {
   test('从 <DSH_HOME>/profiles/<name>/node_modules/<pkg> 反推', () => {
-    assert.equal(profileNameFrom("C:\\Users\\p'c\\.dsh\\profiles\\web\\node_modules\\dsh-pet"), 'web');
-    assert.equal(profileNameFrom('/home/u/.dsh/profiles/custom/node_modules/dsh-pet'), 'custom');
+    assert.equal(profileNameFrom("C:\\Users\\p'c\\.dsh\\profiles\\web\\node_modules\\dsh-zdd-pet"), 'web');
+    assert.equal(profileNameFrom('/home/u/.dsh/profiles/custom/node_modules/dsh-zdd-pet'), 'custom');
   });
 
   test('反推不出来 → undefined（宁可退回占位符，也不猜一个错的）', () => {
-    assert.equal(profileNameFrom('/dsh-home/profiles/node_modules/dsh-pet'), undefined);
-    assert.equal(profileNameFrom('/some/link/dsh-pet'), undefined);
+    assert.equal(profileNameFrom('/dsh-home/profiles/node_modules/dsh-zdd-pet'), undefined);
+    assert.equal(profileNameFrom('/some/link/dsh-zdd-pet'), undefined);
     assert.equal(profileNameFrom(''), undefined);
   });
 });

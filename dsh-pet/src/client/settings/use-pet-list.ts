@@ -4,7 +4,7 @@
  * 两级视图：种类条决定「看哪个种类」，宠物条只渲染该种类的实例。每只实例靠 `assetRoot`
  * 记住自己属于哪个种类，保存时据此决定写回哪个文件。
  * 列表初值来自容器拍平的成品，加载完成前先显示它；删除要确认，所以只发「请求删除」。
- * @module dsh-pet/src/client/settings/use-pet-list
+ * @module dsh-zdd-pet/src/client/settings/use-pet-list
  */
 import type { Pet } from '../../shared/types.ts';
 import type { ConfigEntry, PackWrite } from './config/index.ts';

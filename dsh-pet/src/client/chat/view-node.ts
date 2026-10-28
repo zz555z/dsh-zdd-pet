@@ -2,7 +2,7 @@
  * 面板的工具栏与输入区节点：孤儿提示、多选开关、待发送预览、输入框与发送键。
  *
  * 消息与轮在 ./view-message；这里只放「面板外壳」的交互，`confirm` 留在此处描述点击语义。
- * @module dsh-pet/src/client/chat/view-node
+ * @module dsh-zdd-pet/src/client/chat/view-node
  */
 import type { ChatPanelRuntime } from './runtime.ts';
 import type { ChatPanelState, ConfirmKind } from './types.ts';

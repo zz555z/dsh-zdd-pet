@@ -7,7 +7,7 @@
  * 始终成立：surface 必填（any 是「不关心哪一端」的明说方式，不是省略）；`web`/`desktop`/`both`
  * 仍拒绝 `display: none`，只有 `any` 放行——对话窗口这类不看渲染结果的消费方用 `any`。
  *
- * @module dsh-pet/src/host/surface
+ * @module dsh-zdd-pet/src/host/surface
  */
 
 /** 调用方期望的显示端（`?surface=` 的四个取值）。 */

@@ -3,7 +3,7 @@
  *
  * 不发起网络请求；只负责解析与把 AbortSignal 接到 Promise 上。
  * 必须始终成立：解析失败必须有明确错误，不返回半成品。
- * @module dsh-pet/src/standalone/ai-provider/request
+ * @module dsh-zdd-pet/src/standalone/ai-provider/request
  */
 import { type AiRequest } from '../ai-transport.ts';
 import { MAX_INPUT_CHARS, inputSchema, textBlock } from './limits.ts';

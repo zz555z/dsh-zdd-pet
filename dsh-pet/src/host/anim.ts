@@ -1,5 +1,5 @@
 /**
- * 点播动画（`POST /dsh-pet-7340/anim`）的纯决策层：判定该不该播、播哪一个，结论交给写入方。
+ * 点播动画（`POST /dsh-zdd-pet-7340/anim`）的纯决策层：判定该不该播、播哪一个，结论交给写入方。
  *
  * 不负责播放，也不写 S；与右键菜单「动作」树复用同一个动作处理函数。动画名必须落在菜单能点到
  * 的集合里——播放端没有兜底（名字即文件名，404 表现为「点了没反应」），所以这条校验是硬要求，
@@ -7,7 +7,7 @@
  * 的 buildMenuTree()；宿主不 import src/shared（DSH 单文件加载约束），故自包含实现一份，两侧
  * 守卫测试同时钉住这份口径。只依赖成品配置（动画池都在 animations 里），不碰文件系统。
  * 契约见 API.md 与 openapi.yaml。
- * @module dsh-pet/src/host/anim
+ * @module dsh-zdd-pet/src/host/anim
  */
 
 import { findPetInstance } from './config.ts';

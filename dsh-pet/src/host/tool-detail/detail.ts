@@ -3,7 +3,7 @@
  *
  * 不决定档位与气泡其他字段（归 ./work-status），也不发通知。
  * 必须始终成立：输出长度 ≤ TASK_TEXT_MAX + 1（含省略号），复合命令一律不猜。
- * @module dsh-pet/src/host/tool-detail/detail
+ * @module dsh-zdd-pet/src/host/tool-detail/detail
  */
 import {
   COMMAND_LIKE,

@@ -2,7 +2,7 @@
  * 一条消息与一轮对话的节点：头像、气泡（文字 + 图片）、轮（问 + 答 + 时间）。
  *
  * 纯映射，不做取数与状态；时间的位置是唯一的约定：贴着这一轮最后一条消息。
- * @module dsh-pet/src/client/chat/view-message
+ * @module dsh-zdd-pet/src/client/chat/view-message
  */
 import { attachmentUrl, LOGO_URL, memeUrl, type ChatMessageView } from './api.ts';
 import type { ChatPanelRuntime } from './runtime.ts';

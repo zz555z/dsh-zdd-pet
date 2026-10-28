@@ -5,7 +5,7 @@
  * 不 import 展示层（DSH 单文件加载约束），因此与 src/shared 各声明一份同构类型。
  * 始终成立：失败必须显式，0 余额只能来自接口。契约见 openapi.yaml。
  *
- * @module dsh-pet/src/host/balance/types
+ * @module dsh-zdd-pet/src/host/balance/types
  */
 
 /**

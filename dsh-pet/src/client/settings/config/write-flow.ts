@@ -2,7 +2,7 @@
  * 设置页的写路径编排：保存、请求同步、以及确认弹窗里那一下「确认」到底做什么。
  * 三个动作都要先过一遍表单校验（同一套规则），再把结果翻译成红字或弹窗——调用方只接状态。
  * 传进来的是回调而不是值：`save` 每次渲染重建，直接捕获状态会拿旧值存盘。
- * @module dsh-pet/src/client/settings/config/write-flow
+ * @module dsh-zdd-pet/src/client/settings/config/write-flow
  */
 import type { SaveFields } from './http.ts';
 import type { MergedConfig } from './read.ts';
@@ -68,6 +68,7 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
       chatMemory: fields.chatMemoryRounds,
       chatImageLimit: fields.chatImageLimit,
       font: fields.font,
+      pomodoro: fields.pomodoro,
     });
     if (invalid !== null) {
       setMsg({ kind: 'err', text: t(invalid) });

@@ -2,7 +2,7 @@
  * 页面打开时一次性拉取的宿主数据：落盘位置清单（`/config/meta`）与候选模型清单（`/models`）。
  * 两个请求互不依赖、失败都不阻塞表单：缺 meta 只影响两张路径卡，缺候选清单只影响下拉框。
  * 顺带把「组件已卸载」的判断留在 hook 里，避免请求回来往死掉的组件上写状态。
- * @module dsh-pet/src/client/settings/use-remote-data
+ * @module dsh-zdd-pet/src/client/settings/use-remote-data
  */
 import { type ConfigMeta, loadMeta, loadModelCatalog } from './config/index.ts';
 import type { ModelCatalogGroup } from './picker/index.ts';

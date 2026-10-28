@@ -3,7 +3,7 @@
  * 不负责写状态——动作端点只回执，数据只有一个出口；路径只按已知前后缀解析成落点
  * （见 resolveLeafPath），绝不按点号切分，因为宠物 id 允许含点号。
  * 两端共用同一份；首拉只记基线不渲染，否则刷新页面会把旧气泡重放一遍。
- * @module dsh-pet/src/shared/state
+ * @module dsh-zdd-pet/src/shared/state
  */
 import { toBalanceState, type BalanceState } from './balance/index.ts';
 import { toWorkStatus, type WorkStatusSnapshot } from './work-status.ts';

@@ -2,7 +2,7 @@
  * 第三方菜单的页面内镜像：这一页有哪些菜单项、哪一项被点了，按 owner 分键，形状与宿主 registry 一致。
  * 不做长轮询：读取即消费，返回与 `GET /menu/events` 同形的结果，消费方换调用不用换解析。
  * 页面级状态，标签页之间不共享；`/state` 首拍之前没有项，任何 owner 都算未知。
- * @module dsh-pet/src/client/menu-service
+ * @module dsh-zdd-pet/src/client/menu-service
  */
 
 /** 一个 owner 的点击映射：label → 被哪只宠物点了（null = 未点）。 */

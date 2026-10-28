@@ -7,7 +7,7 @@
  * 始终成立：每次写入都必须推进 counter，且只能经 writeSection / writePet 写。
  * 契约见 API.md 的「state 详解」与 openapi.yaml。
  *
- * @module dsh-pet/src/host/state
+ * @module dsh-zdd-pet/src/host/state
  */
 
 /** 一个叶子：计数器 + 载荷（data 为 null 表示还没有数据）。 */

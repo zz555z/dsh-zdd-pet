@@ -3,7 +3,7 @@
  *
  * 只做再导出，不含逻辑；子模块按变化原因分居 ./helper/。
  * 必须始终成立：模块外只经本文件使用 Helper 能力，不得旁路拉起进程。
- * @module dsh-pet/src/host/helper-process
+ * @module dsh-zdd-pet/src/host/helper-process
  */
 export {
   defaultElectronExe,

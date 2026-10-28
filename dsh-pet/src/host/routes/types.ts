@@ -4,7 +4,7 @@
  * 显式依赖是这一层的全部意义——路由不再从 `apply` 的闭包里"抓"变量，
  * 于是每个领域模块都能单独读、单独改、单独测，改路由不必改装配。
  * 不负责生命周期：store 的创建与销毁归 `apply`，路由只调用。
- * @module dsh-pet/src/host/routes/types
+ * @module dsh-zdd-pet/src/host/routes/types
  */
 import type { ChatMemoryMessage } from '../chat.ts';
 import type { ConfigPaths } from '../config.ts';
@@ -22,7 +22,7 @@ import type { WorkStatusStore } from '../work-status.ts';
 export interface RouteInput {
   /** 完整请求 URL（含查询串）。 */
   readonly url: URL;
-  /** 去掉 `/dsh-pet-7340/` 前缀后的剩余路径（已解码）。 */
+  /** 去掉 `/dsh-zdd-pet-7340/` 前缀后的剩余路径（已解码）。 */
   readonly rest: string;
   /** HTTP 方法（大写）。 */
   readonly method: string;

@@ -3,7 +3,7 @@
  *
  * 不同币种不能相加金额，但比例是无量纲的，所以不需要汇率——各币种按自己的基准算剩余比例后叠加。
  *
- * @module dsh-pet/src/shared/balance/handlers/money
+ * @module dsh-zdd-pet/src/shared/balance/handlers/money
  */
 
 import type { BalanceBubbleRow, BalanceView } from '../types.ts';

@@ -3,7 +3,7 @@
  * 不负责翻转之后做什么：停走位、收气泡、选动画都由 PetCard 以回调传入。
  * 依赖注入的 react 与动画链的 setFrozen；解冻定时器只在本模块持有。
  * 不变量：冻结状态只由锁叶子与本地解冻两条路径改，两条都先清定时器再翻转。
- * @module dsh-pet/src/client/pet/card/lock-freeze
+ * @module dsh-zdd-pet/src/client/pet/card/lock-freeze
  */
 import type { LockState } from '../../../shared/state.ts';
 import type { FreezeCue } from '../animation/cues.ts';

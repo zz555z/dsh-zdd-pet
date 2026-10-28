@@ -3,7 +3,7 @@
  *
  * 右侧栏在 DSH 里是可选能力：缺 `sidebarRightTabs` 服务时只告警、不注册，
  * 宠物 overlay 与设置页照常工作——一个可选面板失败不该让整个插件加载失败。
- * @module dsh-pet/src/client/chat/register
+ * @module dsh-zdd-pet/src/client/chat/register
  */
 import { LOGO_URL } from './api.ts';
 import { makePetChatPanel, type ChatPanelRuntime } from './panel.ts';
@@ -11,7 +11,7 @@ import { injectPanelCss } from './styles.ts';
 import { PET_CHAT_COMMAND_ID, registerPetChatShortcut } from './shortcut.ts';
 
 /** 标签实现身份；同时也是正文与标题插槽的 key。 */
-const TAB_ID = 'dsh-pet-chat';
+const TAB_ID = 'dsh-zdd-pet-chat';
 /** 标签类型；`openTab` 按它打开。 */
 const TAB_KIND = 'pet-chat';
 /** 标签头与指南页卡片的文案。 */
@@ -65,7 +65,7 @@ export interface PetChatTabHost {
 export function registerPetChatTab(ctx: PetChatTabHost, rt: ChatPanelRuntime): () => void {
   const tabs = ctx.get?.('sidebarRightTabs') as SidebarTabRegistry | undefined;
   if (tabs === undefined || typeof tabs.register !== 'function') {
-    console.warn('[dsh-pet] 右侧栏不可用：没有 sidebarRightTabs 服务，桌宠对话标签未注册');
+    console.warn('[dsh-zdd-pet] 右侧栏不可用：没有 sidebarRightTabs 服务，桌宠对话标签未注册');
     return () => {};
   }
   const disposeCss = injectPanelCss();

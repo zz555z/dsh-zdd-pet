@@ -2,7 +2,7 @@
  * 种类标签条：横向列出全部种类（内置 + 各 pet pack），点一下切换当前种类。
  *
  * 只负责「切到哪个种类」；实例的增删与字段编辑由宠物标签条和设置页外壳处理。
- * @module dsh-pet/src/client/settings/kind-tabs
+ * @module dsh-zdd-pet/src/client/settings/kind-tabs
  */
 import type { FunctionComponent } from 'react';
 import type { PetKind } from './use-pet-list.ts';
@@ -31,16 +31,16 @@ export function makeKindTabs(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionComp
 
   return function KindTabs(props: KindTabsProps) {
     return h('div', {
-      className: 'dsh-pet-cfg__kinds',
+      className: 'dsh-zdd-pet-cfg__kinds',
       children: [
-        h('span', { key: 'label', className: 'dsh-pet-cfg__tabsLabel', children: t('kindLabel') }),
+        h('span', { key: 'label', className: 'dsh-zdd-pet-cfg__tabsLabel', children: t('kindLabel') }),
         ...props.kinds.map((item) =>
           h('button', {
             key: item.entry,
             type: 'button',
             disabled: props.busy,
             onClick: () => props.onSelect(item.entry),
-            className: 'dsh-pet-cfg__tab' + (item.entry === props.kind ? ' is-active' : ''),
+            className: 'dsh-zdd-pet-cfg__tab' + (item.entry === props.kind ? ' is-active' : ''),
             // 主条目固定显示「内置」；文件宠物直接显示目录前缀（与素材根一致）。
             children: (item.kind === 'main' ? t('kindMain') : item.entry) + ' (' + item.count + ')',
           }),

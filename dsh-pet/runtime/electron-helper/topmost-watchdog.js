@@ -4,7 +4,7 @@
  * 又会把位写回来——查位永远得 true，宠物却已经沉底。看门狗按节拍重钉一次，不移动、不缩放、不重绘、
  * 不抢焦点；代价是会把宠物抬到所有置顶窗口之上，打断全屏游戏与截图。
  * 默认关闭：成因未查明前不长时间挂一个高副作用的后台动作，重开前先接受上述代价。
- * @module dsh-pet/runtime/electron-helper/topmost-watchdog
+ * @module dsh-zdd-pet/runtime/electron-helper/topmost-watchdog
  */
 
 'use strict';

@@ -1,9 +1,9 @@
 /**
- * 「播放进度」的页面内注册表：PetCard 挂载时注册读法，供 Cordis 只读服务 `petApi7340` 读取。
+ * 「播放进度」的页面内注册表：PetCard 挂载时注册读法，供 Cordis 只读服务 `petApiZdd` 读取。
  * 读进度是每帧都要的事，做成 HTTP 就是每秒几十次回环；页面内直接读 `<video>` 属性，零请求、零序列化。
  * 低频的播放状态（accepted / playing / ended / cancelled / failed）仍在 `GET /playback/{id}`，那是跨进程的事实来源。
  * 只服务浏览器半侧；与 pose 一样按需读取，拿到的是这一刻的状态，不是注册时的快照。
- * @module dsh-pet/src/client/progress
+ * @module dsh-zdd-pet/src/client/progress
  */
 
 /** 一次播放的进度快照，字段全部取自前台 `<video>`，无缓存、无定时器。 */

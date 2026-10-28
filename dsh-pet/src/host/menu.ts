@@ -6,7 +6,7 @@
  * 整体覆盖，菜单项生命周期与插件一致；点击是闩锁不是队列（连点两次只看到一次）；查询即清空（读取
  * 即消费，没确认也没重投）；一个 owner 只该有一个消费者，两个进程同时查会互抢。
  * 限额见下方常量；契约见 API.md 与 openapi.yaml。
- * @module dsh-pet/src/host/menu
+ * @module dsh-zdd-pet/src/host/menu
  */
 
 /** owner 长度上限。 */

@@ -2,9 +2,9 @@
  * OpenAPI 文档校验，随发布链的 prepack 门禁运行：YAML 可解析、所有 $ref 都能解析到、
  * 路径/操作/响应符合 3.1 基本要求、文档里每条路径都真实存在于宿主半侧的路由实现里（防文档漂移）。
  * 只做静态比对，不起服务、不发请求，也不校验示例内容的语义。
- * 路径一律从本文件位置解析而非 CWD：文档在仓库根，本文件在 dsh-pet/scripts/。
+ * 路径一律从本文件位置解析而非 CWD：文档在仓库根，本文件在 dsh-zdd-pet/scripts/。
  * 必须始终：任何一项失败都以非零退出码结束，坏文档不能进发布链。
- * @module dsh-pet/scripts/check-openapi
+ * @module dsh-zdd-pet/scripts/check-openapi
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const yaml = require('js-yaml');
 
-const HERE = dirname(fileURLToPath(import.meta.url)); // dsh-pet/scripts
+const HERE = dirname(fileURLToPath(import.meta.url)); // dsh-zdd-pet/scripts
 const SPEC_PATH = join(HERE, '..', '..', 'openapi.yaml'); // 仓库根
 const ROUTES_DIR = join(HERE, '..', 'src', 'host', 'routes');
 
@@ -57,7 +57,7 @@ ok.push(`${refCount} 个 $ref 全部可解析`);
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace'];
 let ops = 0;
 for (const [p, item] of Object.entries(doc.paths)) {
-  if (!p.startsWith('/dsh-pet-7340')) fail.push(`路径未使用 /dsh-pet-7340 前缀: ${p}`);
+  if (!p.startsWith('/dsh-zdd-pet-7340')) fail.push(`路径未使用 /dsh-zdd-pet-7340 前缀: ${p}`);
   const keys = Object.keys(item).filter((k) => METHODS.includes(k));
   if (keys.length === 0) fail.push(`${p} 没有任何操作`);
   for (const m of keys) {
@@ -104,7 +104,7 @@ for (const file of routeSources(ROUTES_DIR)) {
 }
 const documented = new Set();
 for (const p of Object.keys(doc.paths)) {
-  const seg = p.slice('/dsh-pet-7340/'.length).split('/')[0];
+  const seg = p.slice('/dsh-zdd-pet-7340/'.length).split('/')[0];
   if (seg && !seg.startsWith('{')) documented.add(seg);
 }
 for (const seg of documented) {

@@ -4,7 +4,7 @@
  * 百分比口径按形态分派给各自的 handler（windows 取三窗口最大，money 与 points 按基准折算），
  * 这里只保留入口与服务商无关的档位切分。
  *
- * @module dsh-pet/src/shared/balance/percent
+ * @module dsh-zdd-pet/src/shared/balance/percent
  */
 
 import { HANDLERS } from './handlers/index.ts';

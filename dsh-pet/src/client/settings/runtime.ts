@@ -2,7 +2,7 @@
  * 设置页组件的运行时依赖：react 能力与翻译函数，由宿主在 `__ModuleLoader__` 装配时注入。
  * 浏览器半侧是单文件 bundle 形态，react 只能由宿主提供，因此组件一律经工厂接收、不直接 import。
  * 依赖只有 `h`、四个 hook 与 `t`；组件里不得再取第二个翻译源，也不得读全局 `window` 上的 react。
- * @module dsh-pet/src/client/settings/runtime
+ * @module dsh-zdd-pet/src/client/settings/runtime
  */
 import type { Dispatch, SetStateAction } from 'react';
 import type * as ReactNS from 'react';

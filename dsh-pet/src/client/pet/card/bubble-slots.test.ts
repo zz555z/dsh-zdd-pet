@@ -15,6 +15,7 @@ function input(overrides: Partial<BubbleSlotInput> = {}): BubbleSlotInput {
     workTerminal: false,
     workOn: false,
     workText: null,
+    workHasTask: false,
     workStatusEnabled: true,
     whisperOn: false,
     whisperText: null,
@@ -59,6 +60,34 @@ describe('decideBubbleSlot —— 同一时刻只挂一个气泡', () => {
       input({ whisperOn: true, whisperText: '在', balanceOn: true, workOn: true, workText: '干活中' }),
     );
     assert.equal(slot, 'whisper');
+  });
+
+  test('有任务（含清单进度）时进度气泡优先：碎碎念与余额一并让位', () => {
+    // 用户要看的是「2/5」，不能被碎碎念/余额顶掉；终态仍单独最高优先。
+    assert.equal(
+      decideBubbleSlot(
+        input({ workOn: true, workText: '干活中', workHasTask: true, whisperOn: true, whisperText: '在' }),
+      ),
+      'work',
+    );
+    assert.equal(
+      decideBubbleSlot(input({ workOn: true, workText: '干活中', workHasTask: true, balanceOn: true })),
+      'work',
+    );
+  });
+
+  test('有任务但未点亮工作气泡：不占槽位（让位给说话/余额）', () => {
+    assert.equal(
+      decideBubbleSlot(input({ workOn: false, workHasTask: true, whisperOn: true, whisperText: '在' })),
+      'whisper',
+    );
+  });
+
+  test('终态在有任务时仍最高优先（完成气泡不因进度被压掉）', () => {
+    assert.equal(
+      decideBubbleSlot(input({ workTerminal: true, workOn: true, workText: '完成', workHasTask: true })),
+      'work-terminal',
+    );
   });
 
   test('余额压过非终态任务：常驻任务让位 10s 没有损失', () => {

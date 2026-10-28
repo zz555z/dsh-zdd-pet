@@ -3,7 +3,7 @@
  *
  * 负责判定请求能否进入路由，并清掉上游写出的宽 CORS 头；不处理业务语义。
  * 必须始终成立：只接受当前回环地址；令牌只出现在启动清单与请求头，绝不进日志或响应。
- * @module dsh-pet/src/standalone/request-security
+ * @module dsh-zdd-pet/src/standalone/request-security
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -31,10 +31,10 @@ function publicRead(req: IncomingMessage): boolean {
   const path = decodeURIComponent(new URL(req.url ?? '/', 'http://127.0.0.1').pathname);
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (['/standalone-ai/settings', '/shutdown'].includes(path)) return false;
-  if (/^\/dsh-pet-\d+\/(?:whisper|chat)(?:\/|$)/.test(path)) return false;
+  if (/^\/dsh-zdd-pet-\d+\/(?:whisper|chat)(?:\/|$)/.test(path)) return false;
   return (
     ['/', '/health', '/standalone-ai/', '/standalone-ai/settings.js', '/standalone-ai/settings.css'].includes(path) ||
-    /^\/dsh-pet-\d+\//.test(path)
+    /^\/dsh-zdd-pet-\d+\//.test(path)
   );
 }
 
@@ -76,7 +76,7 @@ export function createRequestSecurity(): RequestSecurity {
       } catch {
         return rejectRequest(res, 400, '请求地址无效');
       }
-      const supplied = req.headers['x-dsh-pet-token'];
+      const supplied = req.headers['x-dsh-zdd-pet-token'];
       // 先按固定形状校验，再走定时安全比较，避免长度与内容泄漏。
       if (
         typeof supplied !== 'string' ||

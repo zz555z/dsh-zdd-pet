@@ -2,7 +2,7 @@
  * 动作指令：/anim 点播动画、/position 与 /throw 摆位抛掷、/pose 姿态读写。
  *
  * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
- * @module dsh-pet/src/host/routes/motion
+ * @module dsh-zdd-pet/src/host/routes/motion
  */
 import { readAllConfig } from '../config.ts';
 import { decideAnim } from '../anim.ts';
@@ -119,7 +119,7 @@ export async function handleMotionRoutes(deps: PetRouteDeps, input: RouteInput):
   // 实况：GET /pose?pet= 读桌面端快照，POST /pose/report?pet= 由桌面渲染端上报（内部通道）。
   // 桌面宠物一窗一只，位置全局唯一一份，宿主快照语义干净；网页端的位置天生每个页面一份
   // （两个标签页本来就不同），塞进宿主快照必然错，所以网页端走页面内的 Cordis 只读服务
-  // `petApi7340`，字段名与坐标口径与这里完全一致。
+  // `petApiZdd`，字段名与坐标口径与这里完全一致。
   // 上报是变化时推 + 节流，不是轮询。本端点不要求 surface：它是读端点，定义域本身只有一个面。
   if (rest === 'pose' || rest === 'pose/report') {
     const isReport = rest === 'pose/report';

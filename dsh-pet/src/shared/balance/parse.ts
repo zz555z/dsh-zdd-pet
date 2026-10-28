@@ -4,7 +4,7 @@
  * 白名单透传——字段逐个挑选，没写进来的静默丢弃（新增字段必须在这里补上）；形状不认识或字段
  * 非法返回 null，让调用方跳过这一拍。绝不抛异常：1s 轮询里抛一次会打断整拍，其余叶子也不渲染。
  *
- * @module dsh-pet/src/shared/balance/parse
+ * @module dsh-zdd-pet/src/shared/balance/parse
  */
 
 import type { BalanceState, CustomNode, CustomTag, MoneyWalletView, RawBalanceResult } from './types.ts';

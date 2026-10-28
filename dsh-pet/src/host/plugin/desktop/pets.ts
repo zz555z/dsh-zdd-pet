@@ -3,7 +3,7 @@
  * 三个取值函数每次现读配置，不缓存判定结果——缓存后下游拿到的是解构那一刻的快照，会一直用旧结论。
  * 读配置失败一律保守降级：按没有桌面宠物处理，托盘按仍要处理。
  * 不拉进程、不管重启时序（归 ./spawn 与 ./sync）。
- * @module dsh-pet/src/host/plugin/desktop/pets
+ * @module dsh-zdd-pet/src/host/plugin/desktop/pets
  */
 import { flattenPetList, readAllConfig } from '../../config.ts';
 import type { ConfigPaths } from '../../config.ts';
@@ -74,12 +74,12 @@ export function createDesktopPets(deps: DesktopPetsInput) {
       const { pets, desktopPets } = readDecision(configPaths);
       const trayOn = readAllConfig(configPaths).main?.trayEnabled !== false;
       log.info(
-        `[dsh-pet] 桌面判定：pets=${pets.length}，桌面可见=${desktopPets.length}` +
+        `[dsh-zdd-pet] 桌面判定：pets=${pets.length}，桌面可见=${desktopPets.length}` +
           `（${desktopPets.map((pet) => String(pet.id)).join(',') || '无'}）→` +
           ` hasDesktopPet=${desktopPets.length > 0} tray=${trayOn}`,
       );
     } catch (e) {
-      log.warn(`[dsh-pet] 宠物配置非法，桌面模式已跳过：${e instanceof Error ? e.message : String(e)}`);
+      log.warn(`[dsh-zdd-pet] 宠物配置非法，桌面模式已跳过：${e instanceof Error ? e.message : String(e)}`);
     }
   };
 

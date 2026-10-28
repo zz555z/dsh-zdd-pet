@@ -6,7 +6,7 @@
  * 只发布单一 webm 格式（VP9-alpha），浏览器与桌面 Helper 共用，源码写死 .webm、发布期不做注入；
  * Safari/HEVC 兼容由仓库保留的流水线支持、需 fork 后自行启用，不参与本插件发布链。
  * 依赖 package.json 里的 bundle / build:desktop-core / types 三个脚本与本地 node_modules。
- * @module dsh-pet/scripts/prepare
+ * @module dsh-zdd-pet/scripts/prepare
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
