@@ -12,11 +12,11 @@
 > - **📍 位置与气泡优化**：
 >   - 四个角落统一只用 `marginX / marginY` 贴角，按**宠物身体**（而非透明的动画盒子）贴边，`marginX/marginY` 即身体到屏幕边缘的真实像素，`size` 调大调小都稳定。
 >   - 顶部角（左上 / 右上）的气泡改为**侧弹**（左上→气泡在身体右侧、右上→在身体左侧），避免气泡顶出屏幕被裁；底部角气泡仍在上方。桌面端与浏览器端行为一致。
-> - **🏷️ 全量改名**：包名、路由前缀（`/dsh-zdd-pet-7340`）、Cordis 服务名（`petApiZdd`）、数据目录（`~/.dsh/dsh-zdd-pet`）、桌面 helper 名等均改为 `dsh-zdd-pet` 系列。
+> - **🎊 启动吉祥话**：每次 DSH 启动时让宠物说一句吉利话（带表情包）。两种模式可配——「语言池」首次调模型预生成一批（默认 100 句）存本地、之后随机抽一句（省 token、响应快），或「每次实时生成」每次现调模型；模型不可用时用内置几句兜底，保证一定开口。设置页「启动吉祥话」卡片可开关、选模式、改预生成句数。
 >
 > ### 内置默认配置（本分支的初始状态）
 >
-> `assets/config.jsonc` 的默认值已按本人使用习惯调整：宠物 `size 300`、`display desktop`（仅桌面）、右下角 `marginX 24 / marginY 20`、字体 `yahei 21`、番茄钟开启 5 分钟、余额开关与系统托盘默认关闭。安装 / 恢复默认后即为此状态，可在设置页或 `~/.dsh/dsh-zdd-pet/main-config.jsonc` 中随时改。
+> `assets/config.jsonc` 的默认值已按本人使用习惯调整：宠物 `size 300`、`display desktop`（仅桌面）、右下角 `marginX 24 / marginY 20`、字体 `yahei 21`、番茄钟开启 5 分钟、启动吉祥话开启（语言池 100 句）、余额开关与系统托盘默认关闭。安装 / 恢复默认后即为此状态，可在设置页或 `~/.dsh/dsh-zdd-pet/main-config.jsonc` 中随时改。
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-pet?label=npm&color=blue"></a>
