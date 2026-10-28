@@ -15,6 +15,7 @@ import { createDesktopHelper } from './plugin/desktop-helper.ts';
 import { createBalancePoll } from './plugin/balance-poll.ts';
 import { createChatMemory } from './plugin/chat-memory.ts';
 import { createExtras } from './plugin/extras.ts';
+import { maybeGreeting } from './greeting.ts';
 import { createSessionNotify } from './plugin/session-notify.ts';
 import { createPetLookup } from './plugin/pet-lookup.ts';
 import { createDownloadReport } from './plugin/download-report.ts';
@@ -144,7 +145,6 @@ export function apply(ctx: any): void {
   });
 
   registerPetCommand({ ctx, effectivePetList, petDisplayName, resolveActivePetId, setActivePetId });
-
   registerChatCommand({ ctx, chatWithPet, log, publishWhisper, resolveActivePetId });
 
   registerLifecycle({
@@ -157,6 +157,10 @@ export function apply(ctx: any): void {
     stopHelper,
     stopWorkStatusFlush,
   });
+
+  // 启动吉祥话：每次 DSH 启动让宠物说一句吉利话（pool 从池抽 / live 现生成，失败用内置兜底）。
+  // 非阻塞：不 await，生成要几秒，别拖慢启动。
+  void maybeGreeting({ ctx, configPaths, state, log, memeDirsFor, userRoot }).catch(() => {});
 
   // 路由就绪后拉起桌面 Helper（Electron 缺失时仅告警，不影响 DSH 与浏览器 overlay）
   startHelper();

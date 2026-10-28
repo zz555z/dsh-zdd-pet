@@ -7,7 +7,15 @@
 import { DEFAULT_FONT } from '../../../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
-import type { FontConfig, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import { DEFAULT_GREETING } from '../../../shared/greeting.ts';
+import type {
+  FontConfig,
+  GreetingParams,
+  ModelSelection,
+  Pet,
+  PhysicsParams,
+  PomodoroParams,
+} from '../../../shared/types.ts';
 
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
@@ -30,6 +38,8 @@ export interface MainConfigPatch {
   font?: FontConfig;
   /** 番茄钟（开关 + 提醒间隔）：成品已按内置默认填满，缺子键再用内置默认兜底一次。 */
   pomodoro?: PomodoroParams;
+  /** 启动吉祥话（开关 / 模式 / 池大小）：同上，用内置默认补满。 */
+  greeting?: GreetingParams;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
   chatMemoryRounds?: number;
@@ -78,6 +88,9 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   }
   if (main.pomodoro && typeof main.pomodoro === 'object') {
     patch.pomodoro = { ...DEFAULT_POMODORO, ...(main.pomodoro as PomodoroParams) };
+  }
+  if (main.greeting && typeof main.greeting === 'object') {
+    patch.greeting = { ...DEFAULT_GREETING, ...(main.greeting as GreetingParams) };
   }
   const whisperModel = readModel(main.whisperModel);
   if (whisperModel) patch.whisperModel = whisperModel;

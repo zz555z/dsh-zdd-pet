@@ -17,6 +17,7 @@ import { defaultLog } from './log-file.ts';
 import { modelCandidates, modelLabel, type ModelRef } from './model-selection.ts';
 
 /** 生成失败原因（与 shared/whisper.ts 的 WhisperState 失败分支同构）。 */
+/** 一个生成结果（碎碎念 / 吉祥话等一句话生成共用）。 */
 export type WhisperGenerateResult =
   | { ok: true; text: string; image?: string }
   | { ok: false; reason: 'provider-missing' | 'generate-error'; message?: string };
@@ -53,6 +54,7 @@ function userTextWithMeme(meme: { name: string; desc: string }): string {
  * @param meme - 配图（开启配图时传入；缺省 = 纯文本碎碎念）。生成成功时原样带回，
  *             客户端据此展示图片（host 不判断模型是否真的贴合）。
  * @param preferred - 条目单独指定的模型（whisperModel）；缺省 / 留空 = 只用当前对话的模型。
+ * @param userPrompt - 自定义用户指令（缺省 = 日常碎碎念；首次问候等场景传自己的指令）。
  * @returns 生成的文本（+ 配图），或结构化失败（provider 缺失 / 生成错误）。
  */
 export async function generateWhisper(
@@ -60,6 +62,7 @@ export async function generateWhisper(
   system: string,
   meme?: { name: string; desc: string },
   preferred?: ModelRef,
+  userPrompt?: string,
 ): Promise<WhisperGenerateResult> {
   // 候选链：配置的模型优先 → 当前对话的模型兜底（whisperModel 留空时链上只有后者）
   const candidates = modelCandidates(ctx, preferred);
@@ -76,7 +79,7 @@ export async function generateWhisper(
   // 兜底文案与失败分支同源，避免两处字面量漂移
   let last: WhisperGenerateResult = { ok: false, reason: 'generate-error', message: noTextReason(undefined) };
   for (const [i, sel] of candidates.entries()) {
-    const result = await generateWith(ctx, llm, sel, system, meme);
+    const result = await generateWith(ctx, llm, sel, system, meme, userPrompt);
     if (result.ok) return result;
     last = result;
     // 回落要留痕：配的模型没生效时能在日志里看到原因（否则「我明明配了 A，怎么还是用 B」没法查）
@@ -97,6 +100,7 @@ async function generateWith(
   sel: ModelRef,
   system: string,
   meme?: { name: string; desc: string },
+  userPrompt?: string,
 ): Promise<WhisperGenerateResult> {
   const deadline = AbortSignal.timeout(TIMEOUT_MS);
   // 仅当模型声明支持 reasoning effort（含 "off"）时才传，否则省略：
@@ -110,7 +114,7 @@ async function generateWith(
     sessionId: PET_CALL_IDENTITY,
     messages: [
       createUserMessage({
-        content: [{ type: 'text', text: meme ? userTextWithMeme(meme) : USER_TEXT }],
+        content: [{ type: 'text', text: meme ? userTextWithMeme(meme) : (userPrompt ?? USER_TEXT) }],
         source: { kind: 'user' },
       }),
     ],

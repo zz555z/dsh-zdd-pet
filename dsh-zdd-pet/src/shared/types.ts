@@ -115,6 +115,19 @@ export interface Pet {
   font?: FontConfig;
   /** 全局默认：番茄钟 / 久坐提醒（设置页可开/关并选提醒间隔；文案池不在设置页暴露，手改 config 可自定义） */
   pomodoro?: PomodoroParams;
+  /** 全局默认：启动吉祥话（每次 DSH 启动让宠物说一句吉利话） */
+  greeting?: GreetingParams;
+}
+
+/** config.jsonc 的 greeting 段：启动吉祥话。
+ *  默认值见 shared/greeting.ts 的 DEFAULT_GREETING，与内置 config.jsonc 保持一致。 */
+export interface GreetingParams {
+  /** 是否启用启动吉祥话 */
+  enabled: boolean;
+  /** pool = 预生成一批存池、每次随机抽一句；live = 每次启动现调模型生成一句 */
+  mode: 'pool' | 'live';
+  /** pool 模式预生成句数（1~200） */
+  poolSize: number;
 }
 
 /** config.jsonc 的 pomodoro 段（设置页「番茄钟」区可编辑的部分）：开关 + 提醒间隔分钟。
@@ -201,4 +214,6 @@ export interface ClientConfig {
   eventsRefreshSec: Record<string, number>;
   /** 番茄钟 / 久坐提醒（全局默认；合并器已填默认） */
   pomodoro: PomodoroParams;
+  /** 启动吉祥话（全局默认） */
+  greeting: GreetingParams;
 }

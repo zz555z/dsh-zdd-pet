@@ -236,6 +236,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       chatImageLimit: 10,
       font: {},
       pomodoro: { enabled: false, intervalMin: 50 },
+      greeting: { enabled: true, mode: 'pool', poolSize: 100 },
     } as unknown as SaveFields;
     assert.deepEqual(Object.keys(buildSaveBody(fields)).sort(), [
       'chatImageEnabled',
@@ -248,6 +249,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       'notificationsEnabled',
       'pets',
       'physics',
+      'greeting',
       'pomodoro',
       'trayEnabled',
       'whisperImageEnabled',
@@ -271,6 +273,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       chatImageLimit: 3,
       font: { size: 20 },
       pomodoro: { enabled: true, intervalMin: 25 },
+      greeting: { enabled: true, mode: 'pool', poolSize: 100 },
     } as unknown as SaveFields;
     const body = buildSaveBody(fields);
     assert.equal(body.chatMemoryRounds, 0);

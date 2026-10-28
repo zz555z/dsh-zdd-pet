@@ -69,6 +69,7 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
       chatImageLimit: fields.chatImageLimit,
       font: fields.font,
       pomodoro: fields.pomodoro,
+      greeting: fields.greeting,
     });
     if (invalid !== null) {
       setMsg({ kind: 'err', text: t(invalid) });

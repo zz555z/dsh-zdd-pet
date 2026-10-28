@@ -12,6 +12,7 @@ import { CORNER_SET, isValidPetId, PET_DISPLAY_SET } from './constants.ts';
 import type { ConfigPaths } from './constants.ts';
 import { fontValid, modelSelectionValid, physicsValid, topFieldValid } from './validate.ts';
 import { pomodoroValid } from '../../shared/pomodoro.ts';
+import { greetingValid } from '../../shared/greeting.ts';
 
 /**
  * 保存用户层（PUT /config）：接受 pets + 全局开关 + physics / font / 两个模型 / 对话参数。
@@ -112,6 +113,10 @@ export function saveUserConfig(
   // 只写 enabled/intervalMin 两个白名单子键，texts 由 existing 透传——设置页不编辑文案池。
   const po = o.pomodoro;
   if (po !== undefined && !pomodoroValid(po)) return null;
+  // greeting（启动吉祥话：开关 / 模式 / 池大小）：与 pomodoro 同一套语义——传了就校验后进白名单，
+  // 没传则走下面的透传保留。设置页可编辑（enabled / mode / poolSize）。
+  const gr = o.greeting;
+  if (gr !== undefined && !greetingValid(gr)) return null;
   // whisperModel / chatModel（碎碎念 / 对话各自的服务商 + 模型；设置页两个下拉框写的就是它们）：
   // 与 physics 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
   // 落盘时归一化成 { provider, model } 两个 trim 过的字符串（请求体多带的键不写进用户层）。
@@ -157,6 +162,10 @@ export function saveUserConfig(
       intervalMin: Number(pv.intervalMin),
     };
   }
+  if (gr !== undefined) {
+    const gv = gr as Record<string, unknown>;
+    outConfig.greeting = { enabled: gv.enabled, mode: gv.mode, poolSize: Number(gv.poolSize) };
+  }
   if (wm !== undefined) outConfig.whisperModel = cleanModel(wm as Record<string, unknown>);
   if (cm !== undefined) outConfig.chatModel = cleanModel(cm as Record<string, unknown>);
   // 数值归一化落盘：请求体传 "9" 也存成 9（与读取侧 topFieldValid 的 Number() 口径一致）
@@ -176,6 +185,7 @@ export function saveUserConfig(
   if (ph !== undefined) bodyOwned.add('physics');
   if (fo !== undefined) bodyOwned.add('font');
   if (po !== undefined) bodyOwned.add('pomodoro');
+  if (gr !== undefined) bodyOwned.add('greeting');
   if (wm !== undefined) bodyOwned.add('whisperModel');
   if (cm !== undefined) bodyOwned.add('chatModel');
   if (cmr !== undefined) bodyOwned.add('chatMemoryRounds');

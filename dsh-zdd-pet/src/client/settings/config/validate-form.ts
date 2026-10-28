@@ -6,7 +6,15 @@
  */
 import { FONT_PRESETS, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../../shared/fonts.ts';
 import { POMODORO_MAX_INTERVAL_MIN, POMODORO_MIN_INTERVAL_MIN } from '../../../shared/pomodoro.ts';
-import type { FontConfig, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import { GREETING_POOL_MAX, GREETING_POOL_MIN } from '../../../shared/greeting.ts';
+import type {
+  FontConfig,
+  GreetingParams,
+  ModelSelection,
+  Pet,
+  PhysicsParams,
+  PomodoroParams,
+} from '../../../shared/types.ts';
 
 /** 校验失败时返回的文案键。 */
 export type InvalidKey =
@@ -16,7 +24,8 @@ export type InvalidKey =
   | 'invalidChatMemory'
   | 'invalidChatImageLimit'
   | 'invalidFont'
-  | 'invalidPomodoro';
+  | 'invalidPomodoro'
+  | 'invalidGreeting';
 
 /** 保存前要校验的全部表单值。 */
 export interface FormValues {
@@ -28,6 +37,7 @@ export interface FormValues {
   chatImageLimit: number;
   font: FontConfig;
   pomodoro: PomodoroParams;
+  greeting: GreetingParams;
 }
 
 /** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
@@ -82,6 +92,15 @@ export function validateForm(values: FormValues): InvalidKey | null {
     values.pomodoro.intervalMin > POMODORO_MAX_INTERVAL_MIN
   ) {
     return 'invalidPomodoro';
+  }
+  // 吉祥话：模式合法、池大小在范围内（与宿主 greetingValid 同名规则）。
+  if (!['pool', 'live'].includes(values.greeting.mode)) return 'invalidGreeting';
+  if (
+    !Number.isInteger(values.greeting.poolSize) ||
+    values.greeting.poolSize < GREETING_POOL_MIN ||
+    values.greeting.poolSize > GREETING_POOL_MAX
+  ) {
+    return 'invalidGreeting';
   }
   return null;
 }

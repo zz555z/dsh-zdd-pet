@@ -5,7 +5,14 @@
  * @module dsh-zdd-pet/src/client/settings/config/http
  */
 import { ROUTE_PATH } from '../../../shared/constants.ts';
-import type { FontConfig, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import type {
+  FontConfig,
+  GreetingParams,
+  ModelSelection,
+  Pet,
+  PhysicsParams,
+  PomodoroParams,
+} from '../../../shared/types.ts';
 import type { ModelCatalogGroup } from '../picker/index.ts';
 import type { MergedConfig } from './read.ts';
 
@@ -40,6 +47,7 @@ export interface SaveFields {
   chatImageLimit: number;
   font: FontConfig;
   pomodoro: PomodoroParams;
+  greeting: GreetingParams;
 }
 
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
@@ -71,6 +79,7 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     chatImageLimit: fields.chatImageLimit,
     font: fields.font,
     pomodoro: fields.pomodoro,
+    greeting: fields.greeting,
   };
 }
 
