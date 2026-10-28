@@ -22,21 +22,68 @@ DSH 设置 → 「桌宠配置」：
 
 ## 方式二：config.jsonc（单一来源）
 
-插件包内 `dsh-pet/assets/config.jsonc` 的 `pets` 数组定义**默认宠物**：
+插件包内 `dsh-zdd-pet/assets/config.jsonc` 的 `pets` 数组定义**默认宠物**：
 
 ```jsonc
 "pets": [
-  { "id": "main", "size": 462, "balanceEnabled": true, "display": "both", "position": { "corner": "top-right", "marginX": 24, "marginY": 100 } }
+  { "id": "main", "size": 300, "balanceEnabled": false, "display": "desktop", "position": { "corner": "bottom-right", "marginX": 24, "marginY": 20 } }
 ]
 ```
 
 - 每只宠物：`id`（标识）／`size`（宽度 px）／`balanceEnabled`（是否启用余额功能，必填布尔）／`display`（web/desktop/both/none，必填，见上）／`position`（corner 四角之一 + marginX/marginY 边距）
 - 余额刷新周期：`eventsRefreshSec.balance`（秒）——余额数据刷新与余额动画触发的间隔，启动时立即触发一次，之后按此周期循环（默认 1800）
-- 设置页的修改保存到用户层 `$DSH_HOME/dsh-pet/main-config.jsonc`（**完整宠物列表**，覆盖包内默认）；「同步」把包内 `config.jsonc` 原文整份写入该文件（等价于回落默认，但文件保留下来、可直接编辑）
+- 设置页的修改保存到用户层 `$DSH_HOME/dsh-zdd-pet/main-config.jsonc`（**完整宠物列表**，覆盖包内默认）；「同步」把包内 `config.jsonc` 原文整份写入该文件（等价于回落默认，但文件保留下来、可直接编辑）
+
+## 二开新增的配置项（本分支专有）
+
+以下三项是 `dsh-zdd-pet` 分支新增的可选配置，均为**条目级**（写在条目顶层，如 `main` 或 `pet/<名>-config.json` 顶层，可被种类文件覆盖）。**全部为可选项**：不写即默认关闭，不影响原版行为；这三项都已写进内置默认 `config.jsonc`（作为真实键存在），所以用户层覆盖能被正常合并。
+
+### `pomodoro` —— 番茄钟 / 久坐提醒
+
+固定间隔到点让桌宠说一句（纯定时器、零 token）。设置页「番茄钟 / 久坐提醒」用下拉框配置（关闭 / 每 15/25/45/50/60/90 分钟）；手改配置时可自由写任意 1~1440 分钟。
+
+```jsonc
+"pomodoro": {
+  "enabled": true,           // 是否启用；不显式 true 即关闭
+  "intervalMin": 5,          // 提醒间隔（分钟），1~1440，非法回落 50
+  "texts": ["起来动动呀～"]   // 可选：文案池（到点随机抽一句）；留空用内置几句。设置页不编辑它，保存时透传保留
+}
+```
+
+> 到点时从该宠物自己的表情包池随机配一张图（池空则纯文字）。设置页只写 `enabled` / `intervalMin`，`texts` 等其它子键由保存侧透传。
+
+### `taskEasterEggs` —— 任务彩蛋
+
+任务**完成 / 出错**时，气泡再配一张随机表情包 + 一句话（纯配置、零 token）。默认 `{}` = 不投。
+
+```jsonc
+"taskEasterEggs": {
+  "success": { "texts": ["今天也辛苦啦～", "收工！"], "images": ["可爱", "吃饱饱摸肚子"] },
+  "error":   { "texts": ["这次没跑通呢"], "images": ["死掉了"] }
+}
+```
+
+- `success` / `error` 两档，各含 `texts`（文案）与 `images`（表情包名，须命中该宠物 `memes` 池，写错的自动跳过）；不写某档 = 该档不投；图、文都为空 = 不投。
+
+### `balanceGag` —— 余额告急演出
+
+额度快用光（已用百分比 ≥ 阈值）时让桌宠演一段（带表情包）。**只弹一次**（阈值 + 冷却 + 已告急锁定三层防刷屏）。默认关闭。
+
+```jsonc
+"balanceGag": {
+  "enabled": true,
+  "thresholdPercent": 90,    // 已用百分比阈值（90 = 剩余不到 10%）；注意方向是"已用"，别搞反
+  "cooldownMin": 60,         // 冷却分钟（默认 60）
+  "texts": ["额度快没啦，省着点～"],   // 可选，留空用内置几句
+  "images": ["死掉了"]        // 可选，配图名（须命中 memes 池）
+}
+```
+
+> 额度回落到阈值以下会自动解除锁定，下次再耗尽还能再提醒一次。
 
 ## 方式三：手动编辑配置文件（高级，任意自由配置）
 
-用户层配置文件位于 `$DSH_HOME/dsh-pet/main-config.jsonc`。**它和包内默认配置是同一套格式**——想改什么直接照着 `assets/config.jsonc` 的结构写即可，写错的字段/缺失的字段回落默认，无需（也无法）写完整份。设置页「同步」可直接生成这份完整文件（原文复制包内 `config.jsonc`，注释齐全）：
+用户层配置文件位于 `$DSH_HOME/dsh-zdd-pet/main-config.jsonc`。**它和包内默认配置是同一套格式**——想改什么直接照着 `assets/config.jsonc` 的结构写即可，写错的字段/缺失的字段回落默认，无需（也无法）写完整份。设置页「同步」可直接生成这份完整文件（原文复制包内 `config.jsonc`，注释齐全）：
 
 | 字段                   | 作用                                                                                    | 格式与默认一致即可         |
 | ---------------------- | --------------------------------------------------------------------------------------- | -------------------------- |
@@ -45,6 +92,9 @@ DSH 设置 → 「桌宠配置」：
 | `animationWeights`     | 动画链播放权重（idle / turn / move）                                                    | 同 `animationWeights` 结构 |
 | `eventsRefreshSec`     | 事件刷新周期（秒）                                                                      | 同 `eventsRefreshSec` 结构 |
 | `notificationsEnabled` | 系统通知总开关（布尔）                                                                  | 同 `notificationsEnabled`  |
+| `pomodoro`             | 番茄钟 / 久坐提醒（本分支新增，见上）                                                   | 同 `pomodoro` 结构         |
+| `taskEasterEggs`       | 任务彩蛋（本分支新增，见上）                                                            | 同 `taskEasterEggs` 结构   |
+| `balanceGag`           | 余额告急演出（本分支新增，见上）                                                        | 同 `balanceGag` 结构       |
 
 > 覆盖语义：用户层给出即**整体替换**该字段（如写了 `animations` 就用你的整份动画池，替代默认），没写的字段回落包内默认。校验在插件加载时执行——格式错误会在 DSH 控制台显式报错，不会静默运行残缺配置。
 
@@ -53,7 +103,7 @@ DSH 设置 → 「桌宠配置」：
 方式一~三都只调整**默认宠物的实例**（数量/大小/位置），动画池始终是全局一份。要添加**全新种类的宠物**（独立动画池 + 自己的素材），在用户数据根下建 `pet/` 目录：
 
 ```
-$DSH_HOME/dsh-pet/
+$DSH_HOME/dsh-zdd-pet/
 ├─ main-config.jsonc           ← 主宠物配置（现有，不动）
 ├─ main-animation/webm/*.webm  ← 主宠物素材（现有，只属于 main）
 └── pet/
