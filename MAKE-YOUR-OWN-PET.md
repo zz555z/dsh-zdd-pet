@@ -48,18 +48,18 @@ python encode_thumbs.py      # 转码 640×360 播放变体 → step04/
 插件默认只发布 `.webm`（VP9-alpha），Safari/WKWebView 不认 webm alpha（黑底），macOS 需要在 GitHub Release 下载官方转码的 **HEVC-with-Alpha `.mov`** 素材使用，两步：
 
 1. **下载**：<https://github.com/PC2005-cloud/dsh-pet/releases/tag/assets-mov>（固定 tag，保持最新；zip 解压后文件名与 webm 一一对应）
-2. **放入**：`.mov` 文件放进 `$DSH_HOME/dsh-pet/main-animation/mov/`（pet pack 宠物则是 `pet/<种类名>-animation/mov/`）
+2. **放入**：`.mov` 文件放进 `$DSH_HOME/dsh-zdd-pet/main-animation/mov/`（pet pack 宠物则是 `pet/<种类名>-animation/mov/`）
 
 ## ③ 动画 → 插件
 
 ```sh
 # 把 step04 的播放变体同步进插件包（webm 直接 cp）
-cp step04/*.webm dsh-pet/assets/webm/   # 播放格式（VP9-alpha）
+cp step04/*.webm dsh-zdd-pet/assets/webm/   # 播放格式（VP9-alpha）
 
 # 本地安装插件（--profile 填实际在用的那个：dsh web → web；
 # 桌面应用（Electron 版）改用应用内「插件管理」，见「快速开始（安装插件）」；
-# file: 指向插件目录 dsh-pet/dsh-pet）
-dsh plugin --profile web add file:D:/path/to/dsh-pet/dsh-pet
+# file: 指向插件目录 dsh-zdd-pet/dsh-zdd-pet）
+dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 ```
 
 > 中间产物（step01-04）由脚本生成、不入仓库；`video/` 源视频和脚本是成果、入库维护。

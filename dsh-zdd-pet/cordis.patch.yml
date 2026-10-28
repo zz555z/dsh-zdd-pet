@@ -16,7 +16,7 @@
 #     整份提交被判 SUBMISSION_ENTRY_MISSING（与 id 叫什么名字无关）
 #   - name: 'dsh-pet' 会解析包入口 lib/index.js（宿主半侧）
 #   - 因为 package.json 声明了 dsh.client，DSH 的模块系统同时会把
-#     这个包扫描为"浏览器插件"，提供 /plugins/dsh-pet/client.js 给页面
+#     这个包扫描为"浏览器插件"，提供 /plugins/dsh-zdd-pet/client.js 给页面
 #
 # ============================================================================
 

@@ -1709,7 +1709,7 @@ paths:
       summary: 读取合并后的成品配置
       description: |
         返回**合并成品**：内置默认（`assets/config.jsonc`）与用户层
-        （`$DSH_HOME/dsh-pet/main-config.jsonc`）深度合并后的结果，
+        （`$DSH_HOME/dsh-zdd-pet/main-config.jsonc`）深度合并后的结果，
         每个条目的字段都已填满（动画池、权重、物理参数、工作状态文案等），
         浏览器/桌面/设置页直接消费，**无需任何校验或兜底**。
 
@@ -1857,7 +1857,7 @@ paths:
 
         **层归属由宿主反查，调用方不要传**：`id` 在合并后是**全局唯一**的（`mergePet` 会跳过
         重复实例），宿主用 `findPetInstance` 定位后按条目归属决定写哪个文件——`main` 条目写
-        `$DSH_HOME/dsh-pet/main-config.jsonc`，文件宠物写 `pet/<前缀>-config.json`（`.jsonc` 同样支持）。
+        `$DSH_HOME/dsh-zdd-pet/main-config.jsonc`，文件宠物写 `pet/<前缀>-config.json`（`.jsonc` 同样支持）。
 
         写入语义与 `PUT /config` 一致：白名单重建 + 磁盘原值透传（不抹掉手写的精调字段）。
         写盘后同样**异步**重启桌面 Helper、不阻塞响应——响应可能来不及送达（发起者往往就是
@@ -2031,7 +2031,7 @@ paths:
                   logs:
                     type: string
                     description: |
-                      统一日志文件绝对路径（`$DSH_HOME/dsh-pet/logs.txt`）。
+                      统一日志文件绝对路径（`$DSH_HOME/dsh-zdd-pet/logs.txt`）。
                       桌面版 DSH 没有控制台，插件的运行日志全部落在这一个文件上，
                       单文件上限 1 MB，写满后只保留最新的 512 KB。
                   storage:
@@ -2298,7 +2298,7 @@ paths:
           按素材根决定**素材归属**，与动画（`/thumb`）同一套语义：
           1. `pet/<素材根>-memes/` 存在（种类自带表情包）：**只查该目录**，查不到即 `404` 显式报错，
              **绝不回落**别的目录；
-          2. 不存在：用户目录 `$DSH_HOME/dsh-pet/memes/` 优先，其次包内 `assets/memes/`（逐文件合并，
+          2. 不存在：用户目录 `$DSH_HOME/dsh-zdd-pet/memes/` 优先，其次包内 `assets/memes/`（逐文件合并，
              与 `main-animation/<ext> → 包内 assets/<ext>` 的主素材链同构）。
 
           素材根 = 该宠物的条目 key（`assetRoot`：主配置宠物为 `main`，文件宠物为配置文件前缀）。
