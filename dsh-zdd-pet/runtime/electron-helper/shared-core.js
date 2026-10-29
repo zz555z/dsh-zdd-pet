@@ -1856,15 +1856,27 @@ function bindSend(binding) {
 		if (!text) return;
 		sending = true;
 		binding.input.disabled = true;
-		sendChat(binding.url, text, binding.attachment()).then((state) => {
-			if (state.ok) binding.onOk();
-			else {
-				binding.err.textContent = "对话失败：" + (state.message ?? state.reason);
-				binding.err.style.display = "block";
+		const request = sendChat(binding.url, text, binding.attachment());
+		const closeEarly = binding.closeOnSend === true;
+		if (closeEarly) binding.onOk();
+		request.then((state) => {
+			if (state.ok) {
+				if (!closeEarly) binding.onOk();
+			} else {
+				const message = "对话失败：" + (state.message ?? state.reason);
+				if (closeEarly) console.warn("[dsh-zdd-pet] " + message);
+				else {
+					binding.err.textContent = message;
+					binding.err.style.display = "block";
+				}
 			}
 		}).catch((e) => {
-			binding.err.textContent = "对话异常：" + String(e && e.message ? e.message : e);
-			binding.err.style.display = "block";
+			const message = "对话异常：" + String(e && e.message ? e.message : e);
+			if (closeEarly) console.warn("[dsh-zdd-pet] " + message);
+			else {
+				binding.err.textContent = message;
+				binding.err.style.display = "block";
+			}
 		}).finally(() => {
 			sending = false;
 			binding.input.disabled = false;
@@ -1920,7 +1932,8 @@ function mountChatDialog(opts) {
 		},
 		attachment: () => dom.getAttachment(),
 		isEncoding: () => dom.isEncoding(),
-		notify: (text) => dom.flash(text)
+		notify: (text) => dom.flash(text),
+		closeOnSend: opts.closeOnSend === true
 	});
 	dom.resizeInput();
 	place();

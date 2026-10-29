@@ -34,6 +34,8 @@ interface SendBinding {
   readonly isEncoding: () => boolean;
   /** 非错误提示（"图片还在处理"这类）。 */
   readonly notify: (text: string) => void;
+  /** 发送即关闭（不等待生成结果）：回复稍后经 /state 气泡出现。桌面借用气泡时用这条。 */
+  readonly closeOnSend?: boolean;
 }
 
 /** 点弹窗外或按 Esc 关闭；返回解绑函数。 */
@@ -66,17 +68,31 @@ function bindSend(binding: SendBinding): void {
     if (!text) return;
     sending = true;
     binding.input.disabled = true;
-    sendChat(binding.url, text, binding.attachment())
+    const request = sendChat(binding.url, text, binding.attachment());
+    // 发送即收起输入气泡（closeOnSend）：回复稍后走 /state 气泡，不必等生成完。
+    // 失败时输入框已关，错误只记控制台；非 closeOnSend 模式仍在弹窗里显式提示。
+    const closeEarly = binding.closeOnSend === true;
+    if (closeEarly) binding.onOk();
+    request
       .then((state) => {
-        if (state.ok) binding.onOk();
-        else {
-          binding.err.textContent = '对话失败：' + (state.message ?? state.reason);
-          binding.err.style.display = 'block';
+        if (state.ok) {
+          if (!closeEarly) binding.onOk();
+        } else {
+          const message = '对话失败：' + (state.message ?? state.reason);
+          if (closeEarly) console.warn('[dsh-zdd-pet] ' + message);
+          else {
+            binding.err.textContent = message;
+            binding.err.style.display = 'block';
+          }
         }
       })
       .catch((e) => {
-        binding.err.textContent = '对话异常：' + String(e && e.message ? e.message : e);
-        binding.err.style.display = 'block';
+        const message = '对话异常：' + String(e && e.message ? e.message : e);
+        if (closeEarly) console.warn('[dsh-zdd-pet] ' + message);
+        else {
+          binding.err.textContent = message;
+          binding.err.style.display = 'block';
+        }
       })
       .finally(() => {
         sending = false;
@@ -110,6 +126,8 @@ export interface ChatDialogOptions {
   initialImage?: File;
   /** 截屏实现：浏览器传 getDisplayMedia 抓帧，桌面传 preload 的 IPC 调用；缺省 = 不支持。 */
   capture?: () => Promise<EncodedImage>;
+  /** 发送即关闭（不等生成结果）。桌面把对话输入借用气泡时置 true：发完立刻收起，回复走气泡。 */
+  closeOnSend?: boolean;
 }
 
 /** 挂载一个对话输入弹窗（两端共用；位置为视口坐标，超出 clamp 矩形自动夹回）。
@@ -161,6 +179,7 @@ export function mountChatDialog(opts: ChatDialogOptions): ChatDialogMount {
     attachment: () => dom.getAttachment(),
     isEncoding: () => dom.isEncoding(),
     notify: (text) => dom.flash(text),
+    closeOnSend: opts.closeOnSend === true,
   });
   // 截屏按钮的接线在 dom 里（依赖注入的 capture），这里只负责发送与关闭
 

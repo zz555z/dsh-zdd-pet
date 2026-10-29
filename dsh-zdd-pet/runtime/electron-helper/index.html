@@ -336,6 +336,13 @@
       .pet-bubble.is-chat .dsh-zdd-pet-chat-input {
         min-height: 40px;
       }
+      /* 对话输入与它的回复气泡同宽，发送后从输入切到回复时尺寸不跳 */
+      .pet-bubble.is-chat,
+      .pet-bubble.is-whisper {
+        width: min(300px, 100%);
+        min-width: 0;
+        max-width: 100%;
+      }
     </style>
   </head>
   <body>

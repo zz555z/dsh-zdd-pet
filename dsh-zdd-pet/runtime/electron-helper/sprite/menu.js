@@ -175,6 +175,8 @@ Object.assign(PetSprite.prototype, {
       petId: this.pet.id,
       baseUrl: BASE + '/chat',
       surface: 'desktop',
+      // 发送后立即收起输入气泡，不等模型回复（回复稍后走 /state 气泡）
+      closeOnSend: true,
       // 位置先给 0：下面会把根节点移进气泡，由气泡负责定位，place() 的结果会被 CSS 覆盖
       x: 0,
       y: 0,

@@ -29,6 +29,8 @@ export interface ChatDialogOptions {
     initialImage?: File;
     /** 截屏实现：浏览器传 getDisplayMedia 抓帧，桌面传 preload 的 IPC 调用；缺省 = 不支持。 */
     capture?: () => Promise<EncodedImage>;
+    /** 发送即关闭（不等生成结果）。桌面把对话输入借用气泡时置 true：发完立刻收起，回复走气泡。 */
+    closeOnSend?: boolean;
 }
 /** 挂载一个对话输入弹窗（两端共用；位置为视口坐标，超出 clamp 矩形自动夹回）。
  *  输入框 + 上传/截屏两枚图标按钮 + 图片预览（本轮只有界面与本地预览，编码与发送待接入）。
