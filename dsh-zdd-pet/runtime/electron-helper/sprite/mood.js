@@ -77,6 +77,40 @@ Object.assign(PetSprite.prototype, {
     this.saveMood();
   },
 
+  /** 彩蛋：心情拉到 101 触发「到处乱跑」特效，跑完回落到 100。 */
+  superHappy() {
+    this.mood = 101; // 内存里临时超过 100（写盘时会被夹到 100，不影响彩蛋）
+    this.moodSavedAt = Date.now();
+    this.saveMood();
+    this.showWhisper('心情 101！开心到到处乱跑～', undefined, undefined, 9000, false);
+    this.runAround();
+    window.setTimeout(() => {
+      if ((this.mood ?? 0) > 100) {
+        this.mood = 100;
+        this.moodSavedAt = Date.now();
+        this.saveMood();
+      }
+    }, 11000);
+  },
+
+  /** 到处乱跑：一段时间内反复左右随机、真实位移地走（tryMove 自带随机距离/目标）。 */
+  runAround() {
+    const acts = (this.animations.moves && this.animations.moves.actions) || [];
+    if (!acts.length) return;
+    if (this.runAroundTimer) window.clearInterval(this.runAroundTimer);
+    let left = 16;
+    this.runAroundTimer = window.setInterval(() => {
+      if (left-- <= 0) {
+        window.clearInterval(this.runAroundTimer);
+        this.runAroundTimer = null;
+        return;
+      }
+      // 随机换朝向 → 左右乱窜（tryMove 按 facing 决定走的方向）；busy 时自弃，密集尝试自然接续。
+      this.facing = Math.random() < 0.5 ? 'left' : 'right';
+      this.tryMove();
+    }, 700);
+  },
+
   /** 气泡显示当前心情（悬浮时用；duration 给足，离开时由 onMouseMove 收起）。 */
   showMoodOnHover() {
     const p = this.moodParams();
