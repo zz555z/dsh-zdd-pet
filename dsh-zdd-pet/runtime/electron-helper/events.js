@@ -9,7 +9,8 @@
 'use strict';
 
 // 工作状态联动：容器每秒轮询 /state，counter 变化才递增 tick，各宠物按 workStatusEnabled 门控。
-// 气泡驻留：thinking/working/result/waiting 常驻到状态切走，success/error 10s 自动收起，state=null 收起。
+// 气泡驻留：非终态（thinking/working/result/waiting）每轮最多 15s 自动收起，任务详情变化/新一轮再点亮；
+// success/error 10s 自动收起；state=null 收起。
 // 动画：进行中档位循环播，终态播一遍回 idle 链；回空闲时把正在循环的那段改成「播完即停」。
 PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
   if (!this.pet.workStatusEnabled) return; // 未启用工作状态联动 -> 该宠物完全免疫（与浏览器一致）
@@ -20,6 +21,8 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
   // 宿主侧不挡这个全局段：sections.workStatus 是所有宠物共用一份，跳过写入会连带静音别的宠物。
   if (this.frozen) return;
   const state = snapshot && snapshot.state ? snapshot.state : null;
+  // 新一轮（thinking）重置「本轮气泡已点亮」：同一轮里 working/result 反复切换不再反复弹气泡。
+  if (state === 'thinking') this._workBubbleShown = false;
   // 快照整份留在 sprite 上：renderBubble 是只读渲染路径，需要 task/progress 才知道「有没有任务」
   // （进度气泡优先判定）以及进度角标该写什么
   this.workStatusSnap = snapshot || null;
@@ -44,6 +47,8 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
     this.workOn = false;
     this.workText = null;
     this.workStatusSnap = null; // 回空闲 → 没有任务，碎碎念/余额可以正常占气泡
+    this._workBubbleShown = false;
+    this._prevTaskText = null;
     this.renderBubble();
     return;
   }
@@ -80,16 +85,29 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
       : undefined;
   this.workText = (snapshot && snapshot.task) || configuredText || null;
   const terminal = state === 'success' || state === 'error';
-  // 气泡点亮/收起只在状态变化时动作：同状态后续 tick 不重新点亮已自动收起的终态气泡，否则会被反复弹回。
-  if (stateChanged) {
+  // 任务详情（稳定值）变化才需要重新点亮；随机档位文案每次可能不同，不参与判定，
+  // 否则每次 tool/result tick 都会把气泡重新弹回来（表现为「一直在」）。
+  const taskText = (snapshot && snapshot.task) || null;
+  const taskChanged = this._prevTaskText !== taskText;
+  this._prevTaskText = taskText;
+  // 终态：状态变化时点亮 10s；非终态：每轮最多展示 WORK_BUBBLE_MS，任务详情变化或新一轮再点亮。
+  if (terminal) {
+    if (stateChanged) {
+      this.workOn = true;
+      if (this.workTimer !== null) window.clearTimeout(this.workTimer);
+      this.workTimer = window.setTimeout(() => {
+        this.workOn = false;
+        this.renderBubble();
+      }, BUBBLE_DURATION_MS);
+    }
+  } else if ((stateChanged && !this._workBubbleShown) || taskChanged) {
     this.workOn = true;
+    this._workBubbleShown = true;
     if (this.workTimer !== null) window.clearTimeout(this.workTimer);
-    this.workTimer = terminal
-      ? window.setTimeout(() => {
-          this.workOn = false;
-          this.renderBubble();
-        }, BUBBLE_DURATION_MS)
-      : null; // 非终态：常驻，不设自动收起
+    this.workTimer = window.setTimeout(() => {
+      this.workOn = false;
+      this.renderBubble();
+    }, WORK_BUBBLE_MS);
   }
   this.renderBubble();
   // 循环语义：终态播一遍回 idle；非终态多候选档位播一遍 → ended 轮换到下一候选；

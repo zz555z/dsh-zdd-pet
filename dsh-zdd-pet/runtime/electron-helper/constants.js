@@ -141,6 +141,9 @@ const POSE_REPORT_URL = BASE + '/pose/report';
 // （到点读当前值推一次），否则第三方读到的永远是走位中途的位置，且没有任何报错。
 const POSE_THROTTLE_MS = 400;
 const BUBBLE_DURATION_MS = 10 * 1000; // 余额/碎碎念气泡展示时长（与浏览器一致：定时消失，与动画解耦）
+// 工作状态（非终态）气泡单次展示时长：到时自动收起，只有新一轮或任务详情变化才重新点亮，
+// 避免一个长期挂着的 working/残留任务气泡一直挡在宠物上。
+const WORK_BUBBLE_MS = 15 * 1000;
 // 余额气泡换内容前的等待（ms）：与 .pet-bubble 的 opacity 过渡同为 .25s，淡出走完再换，
 // 否则内容会在半透明时被替换 = 看得见的硬切（与浏览器 bubble.ts 同值）
 const BALANCE_FADE_MS = 250;
