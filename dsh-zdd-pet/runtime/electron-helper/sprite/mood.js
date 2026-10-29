@@ -97,7 +97,8 @@ Object.assign(PetSprite.prototype, {
     const origRx = this.currentCenterX() / W;
     const origRy = this.currentCenterY() / H;
     // 真步态乱跑：连续 tryMove（走路引擎自动挑移动动画 + 真实位移），随机换朝向满屏跑一阵
-    let runs = 10;
+    let runs = 6;
+    this._exciteRate = 4; // 跑动期间视频 4x 播放（位移跟随动画进度，故又快又远）
     const run = () => {
       if (runs-- <= 0) {
         // 跑完回原位 → 委屈表情 → 心情降到 50
@@ -109,14 +110,19 @@ Object.assign(PetSprite.prototype, {
           const p = this.moodParams ? this.moodParams() : null;
           const sad = (p && p.sadAnim) || '工作状态-垂头叹气冒汗';
           if (this._hasAnim(sad)) this.playOnce(sad);
+          // 恢复常规播放速度
+          this._exciteRate = 0;
+          if (this.videoA) this.videoA.playbackRate = 1;
+          if (this.videoB) this.videoB.playbackRate = 1;
           window.clearTimeout(safety);
           this._exciteRunning = false;
         }, 400);
         return;
       }
       this.facing = Math.random() < 0.5 ? 'left' : 'right';
-      this.tryMove(); // 走一段（busy 时自弃：密集尝试自然接续成一段段奔跑）
-      window.setTimeout(run, 1200);
+      // 大距离 + 缩短前后缓冲：一段走过半个多屏幕
+      this.tryMove(undefined, undefined, { minDist: 1000, maxDist: 2200, leadSec: 0.15, tailSec: 0.15 });
+      window.setTimeout(run, 2700);
     };
     run();
   },

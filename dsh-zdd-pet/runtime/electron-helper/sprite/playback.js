@@ -294,7 +294,7 @@ Object.assign(PetSprite.prototype, {
 
   // 漫游（rAF 驱动，动画首尾各 leadSec/tailSec 秒原地不动；几何在 shared/planMove）。
   // preferredName 传入时固定用该动画（菜单点播移动动画），否则与随机链一致随机选。
-  tryMove(preferredName, playbackId) {
+  tryMove(preferredName, playbackId, override) {
     if (this.moveRef !== null || this.pendingMove || this.throwRef !== null) return true;
     const moves = this.animations.moves;
     const actions = moves.actions;
@@ -303,7 +303,7 @@ Object.assign(PetSprite.prototype, {
       ? actions.find((a) => a.name === preferredName) || null
       : actions[Math.floor(Math.random() * actions.length)];
     if (!chosen) return false;
-    const mp = Object.assign({}, moves.default, chosen.params || {});
+    const mp = Object.assign({}, moves.default, chosen.params || {}, override || {});
     // 朝向 → 走路方向：只看当前 facing。turn 播完会立即同步朝向，所以这里不能再做 XOR 修正，
     // 否则方向会多翻一次（镜像朝右、人往左走）。
     const dir = this.facing === 'right' ? 1 : -1;
