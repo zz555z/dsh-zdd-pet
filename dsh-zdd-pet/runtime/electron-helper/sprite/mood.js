@@ -62,7 +62,13 @@ Object.assign(PetSprite.prototype, {
     const p = this.moodParams();
     if (!p.enabled) return;
     const g = Number.isFinite(gain) ? gain : p.touchGain;
-    this.mood = S.clampMood((this.mood ?? p.initial) + g);
+    const next = (this.mood ?? p.initial) + g;
+    // 点满到 101：直接触发「绕圈跑」彩蛋（不再夹回 100）
+    if (next > 100) {
+      this.triggerExcite();
+      return;
+    }
+    this.mood = S.clampMood(next);
     this.moodSavedAt = Date.now();
     this.saveMood();
   },
@@ -78,37 +84,46 @@ Object.assign(PetSprite.prototype, {
   },
 
   /** 彩蛋：心情拉到 101 触发「到处乱跑」特效，跑完回落到 100。 */
-  superHappy() {
-    this.mood = 101; // 内存里临时超过 100（写盘时会被夹到 100，不影响彩蛋）
+  /** 彩蛋：点击把心情点满到 101 时自动触发 —— 快速绕屏幕一圈 → 摔回原位 → 委屈 → 心情降到 50。 */
+  triggerExcite() {
+    if (this._exciteRunning) return;
+    this._exciteRunning = true;
+    this.mood = 101;
     this.moodSavedAt = Date.now();
-    this.saveMood();
-    this.showWhisper('心情 101！开心到到处乱跑～', undefined, undefined, 9000, false);
-    this.runAround();
-    window.setTimeout(() => {
-      if ((this.mood ?? 0) > 100) {
-        this.mood = 100;
+    this.saveMood(); // 写盘会夹到 100，不影响内存里的 101
+    this.showWhisper('心情 101！开心到绕圈跑～', undefined, undefined, 8000, false);
+    const W = VIEW.w;
+    const H = VIEW.h;
+    const origRx = this.currentCenterX() / W;
+    const origRy = this.currentCenterY() / H;
+    // 沿屏幕边缘快速绕一圈，最后回到原位
+    const path = [
+      [0.5, 0.08],
+      [0.92, 0.08],
+      [0.92, 0.92],
+      [0.08, 0.92],
+      [0.08, 0.08],
+      [origRx, origRy],
+    ];
+    const SEG = 380; // 每段时长(ms)：越小越快
+    let i = 0;
+    const step = () => {
+      if (i >= path.length) {
+        // 回到原位：委屈表情（垂头叹气）+ 心情掉到 50
+        this.mood = 50;
         this.moodSavedAt = Date.now();
         this.saveMood();
-      }
-    }, 11000);
-  },
-
-  /** 到处乱跑：一段时间内反复左右随机、真实位移地走（tryMove 自带随机距离/目标）。 */
-  runAround() {
-    const acts = (this.animations.moves && this.animations.moves.actions) || [];
-    if (!acts.length) return;
-    if (this.runAroundTimer) window.clearInterval(this.runAroundTimer);
-    let left = 16;
-    this.runAroundTimer = window.setInterval(() => {
-      if (left-- <= 0) {
-        window.clearInterval(this.runAroundTimer);
-        this.runAroundTimer = null;
+        const p = this.moodParams ? this.moodParams() : null;
+        const sad = (p && p.sadAnim) || '工作状态-垂头叹气冒汗';
+        if (this._hasAnim(sad)) this.playOnce(sad);
+        this._exciteRunning = false;
         return;
       }
-      // 随机换朝向 → 左右乱窜（tryMove 按 facing 决定走的方向）；busy 时自弃，密集尝试自然接续。
-      this.facing = Math.random() < 0.5 ? 'left' : 'right';
-      this.tryMove();
-    }, 700);
+      const pt = path[i++];
+      this.moveToCenter(pt[0], pt[1], 'line', SEG);
+      window.setTimeout(step, SEG);
+    };
+    step();
   },
 
   /** 气泡显示当前心情（悬浮时用；duration 给足，离开时由 onMouseMove 收起）。 */
