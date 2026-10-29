@@ -12,8 +12,6 @@ Object.assign(PetSprite.prototype, {
     const pm = this.pendingMove;
     if (!pm || this.moveRef !== null) return;
     this.pendingMove = null;
-    // 彩蛋乱跑期间加速视频播放（位移跟随动画进度，加速=移动也更快）
-    if (this._exciteRate && Number.isFinite(this._exciteRate)) el.playbackRate = this._exciteRate;
     const { startRatio, startYRatio, targetRatio, leadSec, tailSec } = pm;
     const duration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 10.09;
     const travelWindow = Math.max(0.1, duration - leadSec - tailSec);

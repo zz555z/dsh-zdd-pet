@@ -70,13 +70,22 @@ function enableAutoResize(input: HTMLTextAreaElement, root: HTMLElement): () => 
  * @param opts - 可选的截屏实现；不传时按钮只给"当前环境不支持"的提示。
  * @returns 元素引用与行为（清理附件、临时提示、自适应、释放计时器）。
  */
-export function createChatDom(opts: { capture?: () => Promise<EncodedImage> } = {}): ChatDom {
+export function createChatDom(
+  opts: {
+    capture?: () => Promise<EncodedImage>;
+    /** 挂到指定容器（借用气泡时传气泡元素）；缺省挂到 document.body。 */
+    container?: HTMLElement;
+    /** 是否让输入框随文本自适应宽度；借用气泡时关掉，由气泡宽高决定。 */
+    autoWidth?: boolean;
+  } = {},
+): ChatDom {
   const root = document.createElement('div');
   root.className = 'dsh-zdd-pet-chat';
 
   const input = document.createElement('textarea');
   input.className = 'dsh-zdd-pet-chat-input';
   input.placeholder = '说点什么…';
+  input.setAttribute('aria-label', '与桌宠对话的输入框');
   input.maxLength = 2000;
   input.rows = 1;
 
@@ -121,9 +130,9 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage> } = 
   actions.append(pickBtn, shotBtn, fileInput, attach);
 
   root.append(input, actions, hint, err);
-  document.body.appendChild(root);
+  (opts.container ?? document.body).appendChild(root);
 
-  const resizeInput = enableAutoResize(input, root);
+  const resizeInput = opts.autoWidth === false ? (): void => {} : enableAutoResize(input, root);
 
   let attachment: ChatAttachment | undefined;
   let encoding = false;

@@ -3,8 +3,8 @@
  * 都写成具名常量而不是散在调用点：气泡时长与动画生命周期解耦，轮询间隔决定空闲时的请求频率。
  * @module dsh-zdd-pet/src/client/pet/timings
  */
-/** 余额与工作状态气泡的展示时长（ms），与动画生命周期解耦。 */
-export declare const BUBBLE_DURATION_MS: number;
+/** 余额与工作状态气泡的展示时长（ms），与动画生命周期解耦。与共享层同一份事实。 */
+export { BUBBLE_DURATION_MS, WORK_BUBBLE_MS } from '../../shared/timings.ts';
 /** `/state` 长轮询的挂起时长（ms）：空闲时约 1 请求/秒，有变化宿主立刻返回。 */
 export declare const STATE_WAIT_MS = 1000;
 /** 老宿主或请求失败时的轮询间隔（ms）；不退避会变成忙等。 */

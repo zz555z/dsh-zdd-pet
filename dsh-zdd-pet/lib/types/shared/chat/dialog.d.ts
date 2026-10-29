@@ -31,6 +31,12 @@ export interface ChatDialogOptions {
     capture?: () => Promise<EncodedImage>;
     /** 发送即关闭（不等生成结果）。桌面把对话输入借用气泡时置 true：发完立刻收起，回复走气泡。 */
     closeOnSend?: boolean;
+    /** 发送失败回调（配合 closeOnSend：输入框已关时把失败提示出去）。 */
+    onError?: (message: string) => void;
+    /** 直接挂到指定容器（借用气泡时传气泡元素）；缺省 append 到 body 并按 x/y 定位。 */
+    container?: HTMLElement;
+    /** 是否让输入框随文本自适应宽度；借用气泡时关掉。 */
+    autoWidth?: boolean;
 }
 /** 挂载一个对话输入弹窗（两端共用；位置为视口坐标，超出 clamp 矩形自动夹回）。
  *  输入框 + 上传/截屏两枚图标按钮 + 图片预览（本轮只有界面与本地预览，编码与发送待接入）。

@@ -25,4 +25,5 @@ export * from './score-popup.ts';
 export * from './work-status.ts';
 export * from './mood.ts';
 export * from './state.ts';
+export * from './timings.ts';
 export * from './tooltip.ts';

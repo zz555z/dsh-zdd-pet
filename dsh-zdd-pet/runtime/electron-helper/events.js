@@ -107,7 +107,7 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
     this.workTimer = window.setTimeout(() => {
       this.workOn = false;
       this.renderBubble();
-    }, WORK_BUBBLE_MS);
+    }, S.WORK_BUBBLE_MS);
   }
   this.renderBubble();
   // 循环语义：终态播一遍回 idle；非终态多候选档位播一遍 → ended 轮换到下一候选；
@@ -410,13 +410,10 @@ function applyBalanceLeaf(leaf) {
 function applySayLeaf(petId, leaf) {
   const said = S.readSay(leaf);
   if (!said) return;
-  // 气泡停留时长：文本越长给越久（10s 起，长回复最多 60s），避免对话回复稍长就一眼看不到。
-  // 短碎碎念仍按 10s；显式 duration（含 0 = 不显示）优先。clear 叶子没有 text，不能读 .length。
+  // 气泡停留时长：文本越长给越久（10s 起，长回复最多 60s），策略在 shared/timings（两端口径一致）。
+  // 显式 duration（含 0 = 不显示）优先。clear 叶子没有 text，不能读 .length。
   const text = said.kind === 'clear' ? '' : said.text;
-  const duration =
-    said.duration === undefined
-      ? Math.min(60_000, Math.max(10_000, 3_000 + text.length * 250))
-      : said.duration;
+  const duration = said.duration === undefined ? S.sayBubbleDurationMs(text) : said.duration;
   for (const s of sprites) {
     if (s.pet.id !== petId) continue;
     if (said.kind === 'clear') s.clearWhisper();

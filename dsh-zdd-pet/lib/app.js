@@ -3,7 +3,7 @@ import { createRequire as createRequire$1 } from "node:module";
 import { dirname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { appendFileSync, chmodSync, closeSync, constants, createReadStream, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { execFileSync, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -7082,6 +7082,13 @@ function createMemoryOrphans(deps) {
 
 //#endregion
 //#region src/host/plugin/chat-memory.ts
+/** 记忆文件最多保留的轮数（1 轮 = 2 条消息）；超出按最旧截断，避免文件无限增长。 */
+const MEMORY_MAX_ROUNDS = 200;
+/** 每个会话按轮数裁剪到上限；就地修改，调用方随后序列化。 */
+function pruneMemory(mem) {
+	const keep = MEMORY_MAX_ROUNDS * 2;
+	for (const entry of Object.values(mem)) for (const bucket of Object.values(entry)) if (Array.isArray(bucket.messages) && bucket.messages.length > keep) bucket.messages = bucket.messages.slice(-keep);
+}
 function createChatMemory(deps) {
 	const { ctx, configPaths, log: log$1, memeDirsFor, state: state$1, userRoot } = deps;
 	let activePetId = "";
@@ -7105,9 +7112,16 @@ function createChatMemory(deps) {
 			return {};
 		}
 	};
+	/**
+	* 写记忆文件：先裁剪到保留上限，再写临时文件 + rename 原子替换。
+	* 直接 writeFile 在进程异常退出时可能留下半个 JSON，导致下次对话整份记忆被判坏。
+	*/
 	const writeMemory = async (mem) => {
 		await mkdir(userRoot, { recursive: true });
-		await writeFile(memoryPath, JSON.stringify(mem, null, 2), "utf8");
+		pruneMemory(mem);
+		const tmp = memoryPath + ".tmp-" + process.pid + "-" + Date.now();
+		await writeFile(tmp, JSON.stringify(mem, null, 2), "utf8");
+		await rename(tmp, memoryPath);
 	};
 	/** 把一次读写封进串行队列（同进程内防交错），返回 fn 的结果 */
 	const withMemoryLock = (fn) => {

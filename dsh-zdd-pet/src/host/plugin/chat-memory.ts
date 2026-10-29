@@ -7,7 +7,7 @@
  */
 import { join } from 'node:path';
 import { generateChat, type ChatMemoryMessage } from '../chat.ts';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { composeSystemPrompt, petPersona } from '../persona.ts';
 import { findPetInstance, readAllConfig, removeRoundsByTs, sliceMemoryRounds } from '../config.ts';
 import type { PetImageRef } from '../image-attachment.ts';
@@ -17,6 +17,23 @@ import { createMemoryOrphans } from './memory-orphans.ts';
 import { configuredModel } from '../model-selection.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
+
+/** 记忆文件最多保留的轮数（1 轮 = 2 条消息）；超出按最旧截断，避免文件无限增长。 */
+const MEMORY_MAX_ROUNDS = 200;
+
+type MemoryFile = Record<string, Record<string, { messages: ChatMemoryMessage[] }>>;
+
+/** 每个会话按轮数裁剪到上限；就地修改，调用方随后序列化。 */
+function pruneMemory(mem: MemoryFile): void {
+  const keep = MEMORY_MAX_ROUNDS * 2;
+  for (const entry of Object.values(mem)) {
+    for (const bucket of Object.values(entry)) {
+      if (Array.isArray(bucket.messages) && bucket.messages.length > keep) {
+        bucket.messages = bucket.messages.slice(-keep);
+      }
+    }
+  }
+}
 
 /** 对话与记忆的输入：装配期对象与更早的工厂。 */
 export type ChatMemoryInput = {
@@ -67,9 +84,16 @@ export function createChatMemory(deps: ChatMemoryInput) {
     }
   };
 
+  /**
+   * 写记忆文件：先裁剪到保留上限，再写临时文件 + rename 原子替换。
+   * 直接 writeFile 在进程异常退出时可能留下半个 JSON，导致下次对话整份记忆被判坏。
+   */
   const writeMemory = async (mem: Record<string, Record<string, { messages: ChatMemoryMessage[] }>>): Promise<void> => {
     await mkdir(userRoot, { recursive: true });
-    await writeFile(memoryPath, JSON.stringify(mem, null, 2), 'utf8');
+    pruneMemory(mem);
+    const tmp = memoryPath + '.tmp-' + process.pid + '-' + Date.now();
+    await writeFile(tmp, JSON.stringify(mem, null, 2), 'utf8');
+    await rename(tmp, memoryPath);
   };
 
   /** 把一次读写封进串行队列（同进程内防交错），返回 fn 的结果 */

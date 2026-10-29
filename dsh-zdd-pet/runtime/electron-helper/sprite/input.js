@@ -276,6 +276,18 @@ Object.assign(PetSprite.prototype, {
     if (window.petBridge) window.petBridge.setInputBusy(busy);
   },
 
+  /**
+   * 合并同一帧内的多次同步请求：ResizeObserver / MutationObserver 可能在一个动作里连续触发多次，
+   * 而 syncInputRegions 要做 querySelectorAll + 逐元素 getBoundingClientRect，集中到下一帧做一次。
+   */
+  scheduleSyncInputRegions() {
+    if (this._syncInputRaf) return;
+    this._syncInputRaf = requestAnimationFrame(() => {
+      this._syncInputRaf = 0;
+      this.syncInputRegions();
+    });
+  },
+
   syncInputRegions() {
     if (!window.petBridge || !window.petBridge.setInputRegions) return;
     const rects = [];

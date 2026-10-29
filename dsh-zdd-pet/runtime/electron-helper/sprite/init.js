@@ -171,9 +171,11 @@ Object.assign(PetSprite.prototype, {
     const ac = new AbortController();
     this.ac = ac;
     // 级联菜单新增面板、聊天输入增长都可能在鼠标停住时发生，不能只等下一次 mousemove。
-    this.inputRegionResize = new ResizeObserver(() => this.syncInputRegions());
+    // 观察器可能一拍内连续触发，用 rAF 合并到下一帧，避免重复做 querySelectorAll + 布局读取。
+    this._syncInputRaf = 0;
+    this.inputRegionResize = new ResizeObserver(() => this.scheduleSyncInputRegions());
     this.inputRegionElements = new Set();
-    this.inputRegionMutation = new MutationObserver(() => this.syncInputRegions());
+    this.inputRegionMutation = new MutationObserver(() => this.scheduleSyncInputRegions());
     this.inputRegionMutation.observe(document.body, { childList: true, subtree: true });
     this.hit.addEventListener('pointerdown', (e) => this.onPointerDown(e), { signal: ac.signal });
     this.hit.addEventListener('pointermove', (e) => this.onPointerMove(e), { signal: ac.signal });

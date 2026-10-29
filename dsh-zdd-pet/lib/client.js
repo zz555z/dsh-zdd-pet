@@ -5079,8 +5079,20 @@ function createAnimationFlow(rt) {
 }
 
 //#endregion
-//#region src/client/pet/timings.ts
+//#region src/shared/timings.ts
 const BUBBLE_DURATION_MS = 10 * 1e3;
+const WORK_BUBBLE_MS = 15 * 1e3;
+const SAY_BUBBLE_MIN_MS = 10 * 1e3;
+const SAY_BUBBLE_MAX_MS = 60 * 1e3;
+const SAY_BUBBLE_BASE_MS = 3 * 1e3;
+const SAY_BUBBLE_PER_CHAR_MS = 250;
+function sayBubbleDurationMs(text) {
+	const points = Array.from(String(text ?? "")).length;
+	return Math.min(SAY_BUBBLE_MAX_MS, Math.max(SAY_BUBBLE_MIN_MS, SAY_BUBBLE_BASE_MS + points * SAY_BUBBLE_PER_CHAR_MS));
+}
+
+//#endregion
+//#region src/client/pet/timings.ts
 const STATE_WAIT_MS = 1e3;
 const STATE_FALLBACK_MS = 1e3;
 
@@ -5154,7 +5166,7 @@ function createBubbleSlots(rt, components) {
 		const lightWork = (terminal) => {
 			setWorkOn(true);
 			if (workTimerRef.current !== null) window.clearTimeout(workTimerRef.current);
-			workTimerRef.current = terminal ? window.setTimeout(() => setWorkOn(false), BUBBLE_DURATION_MS) : null;
+			workTimerRef.current = window.setTimeout(() => setWorkOn(false), terminal ? BUBBLE_DURATION_MS : WORK_BUBBLE_MS);
 		};
 		const hideWork = () => {
 			if (workTimerRef.current !== null) window.clearTimeout(workTimerRef.current);
@@ -6640,6 +6652,7 @@ function createChatDom(opts = {}) {
 	const input = document.createElement("textarea");
 	input.className = "dsh-zdd-pet-chat-input";
 	input.placeholder = "说点什么…";
+	input.setAttribute("aria-label", "与桌宠对话的输入框");
 	input.maxLength = 2e3;
 	input.rows = 1;
 	const err = document.createElement("div");
@@ -6678,8 +6691,8 @@ function createChatDom(opts = {}) {
 	actions.className = "dsh-zdd-pet-chat-actions";
 	actions.append(pickBtn, shotBtn, fileInput, attach);
 	root.append(input, actions, hint, err);
-	document.body.appendChild(root);
-	const resizeInput = enableAutoResize(input, root);
+	(opts.container ?? document.body).appendChild(root);
+	const resizeInput = opts.autoWidth === false ? () => {} : enableAutoResize(input, root);
 	let attachment;
 	let encoding = false;
 	let capturing = false;
@@ -6822,7 +6835,8 @@ function bindSend(binding) {
 				if (!closeEarly) binding.onOk();
 			} else {
 				const message = "对话失败：" + (state.message ?? state.reason);
-				if (closeEarly) console.warn("[dsh-zdd-pet] " + message);
+				if (closeEarly) if (binding.onError) binding.onError(message);
+				else console.warn("[dsh-zdd-pet] " + message);
 				else {
 					binding.err.textContent = message;
 					binding.err.style.display = "block";
@@ -6830,7 +6844,8 @@ function bindSend(binding) {
 			}
 		}).catch((e) => {
 			const message = "对话异常：" + String(e && e.message ? e.message : e);
-			if (closeEarly) console.warn("[dsh-zdd-pet] " + message);
+			if (closeEarly) if (binding.onError) binding.onError(message);
+			else console.warn("[dsh-zdd-pet] " + message);
 			else {
 				binding.err.textContent = message;
 				binding.err.style.display = "block";
@@ -6859,7 +6874,11 @@ function mountChatDialog(opts) {
 		w: window.innerWidth,
 		h: window.innerHeight
 	};
-	const dom = createChatDom({ capture: opts.capture });
+	const dom = createChatDom({
+		capture: opts.capture,
+		container: opts.container,
+		autoWidth: opts.autoWidth
+	});
 	const { root, input, err } = dom;
 	/** 以 (x,y) 落点，超出 clamp 矩形夹回。 */
 	const place = () => {
@@ -6891,10 +6910,11 @@ function mountChatDialog(opts) {
 		attachment: () => dom.getAttachment(),
 		isEncoding: () => dom.isEncoding(),
 		notify: (text) => dom.flash(text),
-		closeOnSend: opts.closeOnSend === true
+		closeOnSend: opts.closeOnSend === true,
+		...opts.onError === void 0 ? {} : { onError: opts.onError }
 	});
 	dom.resizeInput();
-	place();
+	if (!opts.container) place();
 	if (opts.initialImage) dom.setImageFile(opts.initialImage);
 	input.focus();
 	return {
@@ -7029,6 +7049,7 @@ function createCardEntry(rt) {
 				petId: cfgRef.current.id,
 				baseUrl: ROUTE_PATH + "/chat",
 				surface: "web",
+				closeOnSend: true,
 				x: hitRect ? hitRect.right + 6 : window.innerWidth - 256,
 				y: hitRect ? hitRect.top + 6 : 8,
 				...image ? { initialImage: image } : {},
@@ -7883,6 +7904,8 @@ function createCueEffects(rt) {
 		const prevNoticeRef = useRef(0);
 		const prevWorkRef = useRef(0);
 		const prevWorkStateRef = useRef(void 0);
+		const workBubbleShownRef = useRef(false);
+		const prevTaskTextRef = useRef(void 0);
 		const prevSayRef = useRef(0);
 		const prevAnimRef = useRef(0);
 		const prevPosRef = useRef(0);
@@ -7938,6 +7961,8 @@ function createCueEffects(rt) {
 			if (!workStatus || workStatus.state === null) {
 				log("pet=" + cfg.id + " " + (prevWorkStateRef.current ?? "null") + "->null    播完即停（回待机，收起气泡）");
 				prevWorkStateRef.current = null;
+				workBubbleShownRef.current = false;
+				prevTaskTextRef.current = null;
 				if (poolIncludes(hub.anims().events?.workStatus ?? [], card.animRef.current)) hub.ownAnim.stopLoopingFront();
 				hub.bubbles.resetWork();
 				return;
@@ -7957,13 +7982,22 @@ function createCueEffects(rt) {
 			log("pet=" + cfg.id + " " + (prevWorkStateRef.current ?? "null") + "->" + workStatus.state + "    " + name);
 			const stateChanged = prevWorkStateRef.current !== workStatus.state;
 			prevWorkStateRef.current = workStatus.state;
+			if (workStatus.state === "thinking") workBubbleShownRef.current = false;
 			if (stateChanged) hub.pokeRest?.();
 			hub.stopMotion();
 			const textGroup = Array.isArray(cfg.workStatusTexts) ? cfg.workStatusTexts[idx] : void 0;
 			const configuredText = Array.isArray(textGroup) && textGroup.length > 0 ? textGroup[Math.floor(Math.random() * textGroup.length)] : void 0;
 			hub.bubbles.updateWorkText(workStatus.task ?? configuredText ?? null);
 			const terminal = workStatus.state === "success" || workStatus.state === "error";
-			if (stateChanged) hub.bubbles.lightWork(terminal);
+			const taskText = workStatus.task ?? null;
+			const taskChanged = prevTaskTextRef.current !== taskText;
+			prevTaskTextRef.current = taskText;
+			if (terminal) {
+				if (stateChanged) hub.bubbles.lightWork(true);
+			} else if (stateChanged && !workBubbleShownRef.current || taskChanged) {
+				workBubbleShownRef.current = true;
+				hub.bubbles.lightWork(false);
+			}
 			if (workStatus.state === "success" && stateChanged) {
 				const cel = cfg.celebrate;
 				if (cel && cel.enabled !== false && typeof cel.anim === "string" && cel.anim && hasAnimIn(hub.anims(), cel.anim)) name = cel.anim;
@@ -7981,7 +8015,8 @@ function createCueEffects(rt) {
 				hub.bubbles.clearWhisper();
 				return;
 			}
-			hub.speak(say.text, say.image, say.url, say.duration, say.anim);
+			const duration = say.duration === void 0 ? sayBubbleDurationMs(say.text) : say.duration;
+			hub.speak(say.text, say.image, say.url, duration, say.anim);
 		};
 		/** 点播动画：url 插播一段，名称走菜单同一套动作。 */
 		const consumeAnimCue = () => {

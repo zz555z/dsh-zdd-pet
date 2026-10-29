@@ -34,6 +34,8 @@ export interface BalanceGagState {
 export declare function newBalanceGagState(): BalanceGagState;
 /**
  * 一次采样 → 是否该演。
+ * @param cfg 告急阈值与冷却配置
+ * @param state 告急内存态（触发后会就地推进）
  * @param percent 已用百分比（0~100；undefined = 给不出，跳过）
  * @param now 当前时间戳（可注入，便于单测）
  * @returns 该演则返回 true，并把 state 推进（lastFireAt=now、armed=true）

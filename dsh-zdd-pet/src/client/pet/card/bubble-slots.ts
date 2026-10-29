@@ -6,7 +6,7 @@
  * @module dsh-zdd-pet/src/client/pet/card/bubble-slots
  */
 import { customViews, type BalanceState } from '../../../shared/balance/index.ts';
-import { BUBBLE_DURATION_MS } from '../timings.ts';
+import { BUBBLE_DURATION_MS, WORK_BUBBLE_MS } from '../timings.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
@@ -229,8 +229,11 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     const lightWork = (terminal: boolean) => {
       setWorkOn(true);
       if (workTimerRef.current !== null) window.clearTimeout(workTimerRef.current);
-      // 非终态常驻，不设自动收起。
-      workTimerRef.current = terminal ? window.setTimeout(() => setWorkOn(false), BUBBLE_DURATION_MS) : null;
+      // 终态 10s；非终态 15s 后自动收起（新一轮/任务详情变化再点亮），与桌面端同一口径。
+      workTimerRef.current = window.setTimeout(
+        () => setWorkOn(false),
+        terminal ? BUBBLE_DURATION_MS : WORK_BUBBLE_MS,
+      );
     };
 
     const hideWork = () => {

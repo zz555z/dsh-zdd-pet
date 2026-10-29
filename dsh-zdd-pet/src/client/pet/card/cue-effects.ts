@@ -8,6 +8,7 @@
 import { balanceEventIndex, balancePercent } from '../../../shared/balance/index.ts';
 import { pickSlot, poolIncludes } from '../../../shared/pickers.ts';
 import { WORK_STATUS_INDEX } from '../../../shared/work-status.ts';
+import { sayBubbleDurationMs } from '../../../shared/timings.ts';
 import type { CardHub } from './hub.ts';
 import type { PetCardProps } from './props.ts';
 import type * as ReactNS from 'react';
@@ -70,6 +71,9 @@ export function createCueEffects(rt: CueEffectsRuntime) {
     const prevWorkRef = useRef(0);
     // 调试日志：上一档位，null 表示空闲，undefined 表示启动后尚未触发。
     const prevWorkStateRef = useRef<string | null | undefined>(undefined);
+    // 本轮工作气泡是否已点亮（同一轮 working/result 反复切换不再反复弹）；任务详情变化才再点亮。
+    const workBubbleShownRef = useRef(false);
+    const prevTaskTextRef = useRef<string | null | undefined>(undefined);
     const prevSayRef = useRef(0);
     const prevAnimRef = useRef(0);
     const prevPosRef = useRef(0);
@@ -134,6 +138,8 @@ export function createCueEffects(rt: CueEffectsRuntime) {
       if (!workStatus || workStatus.state === null) {
         log('pet=' + cfg.id + ' ' + (prevWorkStateRef.current ?? 'null') + '->null    播完即停（回待机，收起气泡）');
         prevWorkStateRef.current = null;
+        workBubbleShownRef.current = false;
+        prevTaskTextRef.current = null;
         // 回空闲时把循环中的工作动画改成「播完即停」：否则 ended 永不触发，动画链拿不到
         // 推进信号，宠物会一直卡在工作动画上。
         if (poolIncludes(hub.anims().events?.workStatus ?? [], card.animRef.current)) hub.ownAnim.stopLoopingFront();
@@ -155,6 +161,8 @@ export function createCueEffects(rt: CueEffectsRuntime) {
       log('pet=' + cfg.id + ' ' + (prevWorkStateRef.current ?? 'null') + '->' + workStatus.state + '    ' + name);
       const stateChanged = prevWorkStateRef.current !== workStatus.state;
       prevWorkStateRef.current = workStatus.state;
+      // 新一轮（thinking）重置「本轮气泡已点亮」，让 working 阶段还能点亮一次。
+      if (workStatus.state === 'thinking') workBubbleShownRef.current = false;
       if (stateChanged) hub.pokeRest?.();
       hub.stopMotion();
       // 气泡文本：任务详情优先，否则从 workStatusTexts[档位] 随机抽一句。
@@ -166,8 +174,16 @@ export function createCueEffects(rt: CueEffectsRuntime) {
       // 文本总是更新，任务详情可能在同一状态下变化。
       hub.bubbles.updateWorkText(workStatus.task ?? configuredText ?? null);
       const terminal = workStatus.state === 'success' || workStatus.state === 'error';
-      // 只在状态变化时点亮或收起气泡：同状态后续 tick 不重新点亮已自动收起的终态气泡。
-      if (stateChanged) hub.bubbles.lightWork(terminal);
+      // 任务详情（稳定值）变化才重新点亮；随机档位文案变化不触发，避免每次 tick 都弹回来。
+      const taskText = workStatus.task ?? null;
+      const taskChanged = prevTaskTextRef.current !== taskText;
+      prevTaskTextRef.current = taskText;
+      if (terminal) {
+        if (stateChanged) hub.bubbles.lightWork(true);
+      } else if ((stateChanged && !workBubbleShownRef.current) || taskChanged) {
+        workBubbleShownRef.current = true;
+        hub.bubbles.lightWork(false);
+      }
       // 任务成功完成：若配了 celebrate 且动画存在，用 celebrate.anim 代替完成档做庆祝
       if (workStatus.state === 'success' && stateChanged) {
         const cel = cfg.celebrate;
@@ -196,7 +212,8 @@ export function createCueEffects(rt: CueEffectsRuntime) {
         hub.bubbles.clearWhisper();
         return;
       }
-      hub.speak(say.text, say.image, say.url, say.duration, say.anim);
+      const duration = say.duration === undefined ? sayBubbleDurationMs(say.text) : say.duration;
+      hub.speak(say.text, say.image, say.url, duration, say.anim);
     };
 
     /** 点播动画：url 插播一段，名称走菜单同一套动作。 */

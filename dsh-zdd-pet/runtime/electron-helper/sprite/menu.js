@@ -171,59 +171,74 @@ Object.assign(PetSprite.prototype, {
       this.chatClose(); // 已开着：先关旧的（onClose 会复位 chatOn 与气泡）
       return;
     }
-    const m = S.mountChatDialog({
-      petId: this.pet.id,
-      baseUrl: BASE + '/chat',
-      surface: 'desktop',
-      // 发送后立即收起输入气泡，不等模型回复（回复稍后走 /state 气泡）
-      closeOnSend: true,
-      // 位置先给 0：下面会把根节点移进气泡，由气泡负责定位，place() 的结果会被 CSS 覆盖
-      x: 0,
-      y: 0,
-      // 拖拽落到宠物身上时直接带着图开弹窗
-      ...(image ? { initialImage: image } : {}),
-      // 截屏：主进程取宠物所在屏的一帧（JPEG base64），形状与浏览器侧一致
-      capture: async () => {
-        if (!window.petBridge || typeof window.petBridge.captureScreen !== 'function') {
-          throw new Error('当前环境不支持截屏');
-        }
-        const shot = await window.petBridge.captureScreen();
-        if (!shot) throw new Error('没有取到屏幕画面');
-        return {
-          base64: shot.data,
-          mediaType: shot.mediaType,
-          bytes: shot.bytes,
-          width: shot.width,
-          height: shot.height,
-          resized: true,
-          previewUrl: 'data:' + shot.mediaType + ';base64,' + shot.data,
-        };
-      },
-      onSent: () => {
-        // 发送成功：回复已写进 S → 版本号变 → 挂着的长轮询立刻返回并弹气泡
-        console.info('[dsh-zdd-pet] 对话已发送 pet=' + this.pet.id);
-      },
-      onClose: () => {
-        this.chatClose = null;
-        this.chatOn = false;
-        this.chatOpen = false;
-        this.bubble.classList.remove('is-chat');
-        window.__dshPetDebug.chatOpen = false;
-        this.renderBubble(); // 恢复常规气泡（或隐藏）
-        this.syncInputBusy();
-        if (!this.menuOpen) this.setInteractive(false); // 无菜单时恢复命中区穿透
-      },
-    });
-    // 借用气泡：把对话 DOM 直接挪进 .pet-bubble，位置、外观、尾巴全部复用气泡，不另起浮层。
+    // 借用气泡：先把气泡切到 is-chat 状态，再把对话 DOM 直接挂进气泡（不再另起浮层）。
     this.chatOn = true;
     this.chatOpen = true;
-    this.chatClose = m.close;
+    this.syncInputBusy(); // 建立输入租约：弹窗打开即刻上报（后续补齐控件矩形）
     this.bubble.innerHTML = '';
     this.bubble.dataset.side = 'up'; // 统一从宠物上方弹，尺寸由 is-chat 覆盖
     this.bubble.classList.remove('is-whisper', 'is-clickable', 'is-expanded', S.MEME_BUBBLE_CLASS);
     this.bubble.classList.add('is-on', 'is-chat');
-    m.el.classList.add('dsh-zdd-pet-chat--in-bubble');
-    this.bubble.appendChild(m.el);
+    let m;
+    try {
+      m = S.mountChatDialog({
+        petId: this.pet.id,
+        baseUrl: BASE + '/chat',
+        surface: 'desktop',
+        // 直接挂进气泡：由气泡负责定位与宽度，输入框不再自己做宽度自适应
+        container: this.bubble,
+        autoWidth: false,
+        // 发送后立即收起输入气泡，不等模型回复（回复稍后走 /state 气泡）
+        closeOnSend: true,
+        x: 0,
+        y: 0,
+        // 拖拽落到宠物身上时直接带着图开弹窗
+        ...(image ? { initialImage: image } : {}),
+        // 截屏：主进程取宠物所在屏的一帧（JPEG base64），形状与浏览器侧一致
+        capture: async () => {
+          if (!window.petBridge || typeof window.petBridge.captureScreen !== 'function') {
+            throw new Error('当前环境不支持截屏');
+          }
+          const shot = await window.petBridge.captureScreen();
+          if (!shot) throw new Error('没有取到屏幕画面');
+          return {
+            base64: shot.data,
+            mediaType: shot.mediaType,
+            bytes: shot.bytes,
+            width: shot.width,
+            height: shot.height,
+            resized: true,
+            previewUrl: 'data:' + shot.mediaType + ';base64,' + shot.data,
+          };
+        },
+        onSent: () => {
+          // 发送成功：回复已写进 S → 版本号变 → 挂着的长轮询立刻返回并弹气泡
+          console.info('[dsh-zdd-pet] 对话已发送 pet=' + this.pet.id);
+        },
+        onError: (message) => {
+          // 输入气泡已关，失败用一条纯文字气泡提示用户，而不是静默丢失
+          this.showWhisper(message, undefined, undefined, 6000, false);
+        },
+        onClose: () => {
+          this.chatClose = null;
+          this.chatOn = false;
+          this.chatOpen = false;
+          this.bubble.classList.remove('is-chat');
+          window.__dshPetDebug.chatOpen = false;
+          this.renderBubble(); // 恢复常规气泡（或隐藏）
+          this.syncInputBusy();
+          if (!this.menuOpen) this.setInteractive(false); // 无菜单时恢复命中区穿透
+        },
+      });
+    } catch (e) {
+      this.chatOn = false;
+      this.chatOpen = false;
+      this.bubble.innerHTML = '';
+      this.bubble.classList.remove('is-chat');
+      this.renderBubble();
+      throw e;
+    }
+    this.chatClose = m.close;
     window.__dshPetDebug.chatOpen = true;
     this.syncInputBusy();
     this.setInteractive(true);

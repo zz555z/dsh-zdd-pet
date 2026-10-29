@@ -124,6 +124,8 @@ export function createCardEntry(rt: CardEntryRuntime) {
         petId: cfgRef.current.id,
         baseUrl: ROUTE_PATH + '/chat',
         surface: 'web',
+        // 与桌面一致：发送即收起输入弹窗，回复走 /state 气泡
+        closeOnSend: true,
         x: hitRect ? hitRect.right + 6 : window.innerWidth - 256,
         y: hitRect ? hitRect.top + 6 : 8,
         ...(image ? { initialImage: image } : {}),

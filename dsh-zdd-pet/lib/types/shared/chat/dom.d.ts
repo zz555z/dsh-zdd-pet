@@ -36,4 +36,8 @@ export interface ChatDom {
  */
 export declare function createChatDom(opts?: {
     capture?: () => Promise<EncodedImage>;
+    /** 挂到指定容器（借用气泡时传气泡元素）；缺省挂到 document.body。 */
+    container?: HTMLElement;
+    /** 是否让输入框随文本自适应宽度；借用气泡时关掉，由气泡宽高决定。 */
+    autoWidth?: boolean;
 }): ChatDom;

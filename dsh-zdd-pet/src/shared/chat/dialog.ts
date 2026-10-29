@@ -36,6 +36,8 @@ interface SendBinding {
   readonly notify: (text: string) => void;
   /** 发送即关闭（不等待生成结果）：回复稍后经 /state 气泡出现。桌面借用气泡时用这条。 */
   readonly closeOnSend?: boolean;
+  /** 发送失败回调（closeOnSend 时输入框已关，用它把失败提示出去）。 */
+  readonly onError?: (message: string) => void;
 }
 
 /** 点弹窗外或按 Esc 关闭；返回解绑函数。 */
@@ -79,8 +81,10 @@ function bindSend(binding: SendBinding): void {
           if (!closeEarly) binding.onOk();
         } else {
           const message = '对话失败：' + (state.message ?? state.reason);
-          if (closeEarly) console.warn('[dsh-zdd-pet] ' + message);
-          else {
+          if (closeEarly) {
+            if (binding.onError) binding.onError(message);
+            else console.warn('[dsh-zdd-pet] ' + message);
+          } else {
             binding.err.textContent = message;
             binding.err.style.display = 'block';
           }
@@ -88,8 +92,10 @@ function bindSend(binding: SendBinding): void {
       })
       .catch((e) => {
         const message = '对话异常：' + String(e && e.message ? e.message : e);
-        if (closeEarly) console.warn('[dsh-zdd-pet] ' + message);
-        else {
+        if (closeEarly) {
+          if (binding.onError) binding.onError(message);
+          else console.warn('[dsh-zdd-pet] ' + message);
+        } else {
           binding.err.textContent = message;
           binding.err.style.display = 'block';
         }
@@ -128,6 +134,12 @@ export interface ChatDialogOptions {
   capture?: () => Promise<EncodedImage>;
   /** 发送即关闭（不等生成结果）。桌面把对话输入借用气泡时置 true：发完立刻收起，回复走气泡。 */
   closeOnSend?: boolean;
+  /** 发送失败回调（配合 closeOnSend：输入框已关时把失败提示出去）。 */
+  onError?: (message: string) => void;
+  /** 直接挂到指定容器（借用气泡时传气泡元素）；缺省 append 到 body 并按 x/y 定位。 */
+  container?: HTMLElement;
+  /** 是否让输入框随文本自适应宽度；借用气泡时关掉。 */
+  autoWidth?: boolean;
 }
 
 /** 挂载一个对话输入弹窗（两端共用；位置为视口坐标，超出 clamp 矩形自动夹回）。
@@ -145,7 +157,7 @@ export function mountChatDialog(opts: ChatDialogOptions): ChatDialogMount {
       ? clamp
       : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
 
-  const dom = createChatDom({ capture: opts.capture });
+  const dom = createChatDom({ capture: opts.capture, container: opts.container, autoWidth: opts.autoWidth });
   const { root, input, err } = dom;
 
   /** 以 (x,y) 落点，超出 clamp 矩形夹回。 */
@@ -180,11 +192,12 @@ export function mountChatDialog(opts: ChatDialogOptions): ChatDialogMount {
     isEncoding: () => dom.isEncoding(),
     notify: (text) => dom.flash(text),
     closeOnSend: opts.closeOnSend === true,
+    ...(opts.onError === undefined ? {} : { onError: opts.onError }),
   });
   // 截屏按钮的接线在 dom 里（依赖注入的 capture），这里只负责发送与关闭
 
   dom.resizeInput(); // append 后再量一次（此时样式已生效）
-  place();
+  if (!opts.container) place(); // 挂进气泡时由气泡负责定位，不做 fixed 落点
   if (opts.initialImage) void dom.setImageFile(opts.initialImage);
   input.focus();
   return { el: root, close };

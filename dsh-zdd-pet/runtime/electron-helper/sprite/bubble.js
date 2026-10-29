@@ -56,7 +56,7 @@ Object.assign(PetSprite.prototype, {
       this.bubble.classList.add('is-on', 'is-chat');
       this.bubble.classList.remove('is-whisper', 'is-clickable', 'is-expanded', S.MEME_BUBBLE_CLASS);
       window.__dshPetDebug.lastBubbleTitle = 'chat';
-      this.syncInputBusy();
+      // 聊天气泡的尺寸变化由 ResizeObserver 触发同步，这里不必每个 state tick 重算一遍。
       return;
     }
     // 气泡单槽：同一时刻只显示一个（优先级：终态任务 > 碎碎念/对话 > 余额 > 非终态任务）。
