@@ -131,18 +131,18 @@ describe('pwsh —— 命令 / 子命令查表', () => {
 
   test('没有语义的命令（npm / python / node）→ 兜底，带上命令名', () => {
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'npm test' })), [
-      '跑一下 npm 咯',
-      'npm 跑起来了',
+      '跑一下 npm 看看',
+      '让 npm 跑一下',
       '让 npm 干点活',
     ]);
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'python train.py --epochs 10' })), [
-      '跑一下 python 咯',
-      'python 跑起来了',
+      '跑一下 python 看看',
+      '让 python 跑一下',
       '让 python 干点活',
     ]);
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'node script.js' })), [
-      '跑一下 node 咯',
-      'node 跑起来了',
+      '跑一下 node 看看',
+      '让 node 跑一下',
       '让 node 干点活',
     ]);
   });
@@ -187,8 +187,8 @@ describe('安全与健壮性', () => {
       assert.equal(toolDetailFromEvent(call(name)), '让我研究下这是啥～', name);
     }
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'constructor' })), [
-      '跑一下 constructor 咯',
-      'constructor 跑起来了',
+      '跑一下 constructor 看看',
+      '让 constructor 跑一下',
       '让 constructor 干点活',
     ]);
     // 命令表同理：`git constructor` 命中通用 git 文案，不把 `constructor` 当子命令
@@ -259,8 +259,8 @@ describe('目标过长 —— 换一句不带名字的氛围兜底', () => {
 
   test('短命令名仍然上屏（npm / python 这种有信息量）', () => {
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'npm test' })), [
-      '跑一下 npm 咯',
-      'npm 跑起来了',
+      '跑一下 npm 看看',
+      '让 npm 跑一下',
       '让 npm 干点活',
     ]);
   });
