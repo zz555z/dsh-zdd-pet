@@ -119,7 +119,6 @@ Object.assign(PetSprite.prototype, {
       this.facing = Math.random() < 0.5 ? 'left' : 'right';
       // 用「原地冲刺跑」纯跑段大距离跑，一段跨大半屏；设 once=false 循环播放，避免每段播完切到随机动作
       this.tryMove('原地冲刺跑', undefined, { minDist: 1000, maxDist: 2200, leadSec: 0.15, tailSec: 0.15 });
-      this.once = false;
       window.setTimeout(run, 2500);
     };
     run();
