@@ -232,6 +232,14 @@ PetSprite.prototype.checkRest = function checkRest() {
     this.playOnce(p.happyAnim);
     return;
   }
+  // 低落且配了叹气动画：更早（阈值减半）叹口气，隔一段再来，不直接睡。
+  if (tier === 'low' && p && p.sadAnim && this._hasAnim(p.sadAnim)) {
+    if (idleMs < sec * 0.5 * 1000) return;
+    this.lastActivity = Date.now();
+    this.stopMove();
+    this.playOnce(p.sadAnim);
+    return;
+  }
   const effSec = tier === 'low' ? sec * 0.5 : sec;
   if (idleMs < effSec * 1000) return;
   const sleepAnim = r.sleepAnim && this._hasAnim(r.sleepAnim) ? r.sleepAnim : null;
@@ -519,9 +527,12 @@ function startLoops() {
   }, 15000);
 
   // 心情衰减：每 5 分钟按经过时间补算一次（久不理掉心情）。
-  setInterval(() => {
-    for (const s of sprites) {
-      if (s && s.decayMoodTick) s.decayMoodTick();
-    }
-  }, 5 * 60 * 1000);
+  setInterval(
+    () => {
+      for (const s of sprites) {
+        if (s && s.decayMoodTick) s.decayMoodTick();
+      }
+    },
+    5 * 60 * 1000,
+  );
 }

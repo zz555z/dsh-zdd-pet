@@ -2543,6 +2543,7 @@ function readMoodParams(raw) {
 		low: num("low", 0, 100),
 		high: num("high", 0, 100),
 		happyAnim: typeof o.happyAnim === "string" ? o.happyAnim : void 0,
+		sadAnim: typeof o.sadAnim === "string" ? o.sadAnim : void 0,
 		texts: {
 			low: arr(texts.low),
 			normal: arr(texts.normal),

@@ -63,12 +63,14 @@ describe('readMoodParams —— 配置解析', () => {
       low: 10,
       high: 90,
       happyAnim: '撒娇',
+      sadAnim: '叹气',
       texts: { low: ['a', '', 1], normal: [], high: ['b'] },
     });
     assert.equal(p.enabled, false);
     assert.equal(p.initial, 20);
     assert.equal(p.touchGain, 8);
     assert.equal(p.happyAnim, '撒娇');
+    assert.equal(p.sadAnim, '叹气');
     assert.deepEqual(p.texts.low, ['a']); // 空串/非字符串被滤掉
     assert.deepEqual(p.texts.high, ['b']);
   });

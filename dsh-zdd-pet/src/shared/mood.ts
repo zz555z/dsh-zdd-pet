@@ -77,6 +77,7 @@ export function readMoodParams(raw: unknown): MoodParams {
     low: num('low', 0, 100),
     high: num('high', 0, 100),
     happyAnim: typeof o.happyAnim === 'string' ? o.happyAnim : undefined,
+    sadAnim: typeof o.sadAnim === 'string' ? o.sadAnim : undefined,
     texts: { low: arr(texts.low), normal: arr(texts.normal), high: arr(texts.high) },
   };
 }

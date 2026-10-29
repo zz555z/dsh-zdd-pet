@@ -167,6 +167,8 @@ export interface MoodParams {
   high: number;
   /** 开心时空闲撒娇用的动画名（可选） */
   happyAnim?: string;
+  /** 低落时空闲叹气/垂头用的动画名（可选） */
+  sadAnim?: string;
   /** 各档位点击台词池（空则回退 clickTexts） */
   texts: { low: string[]; normal: string[]; high: string[] };
 }
