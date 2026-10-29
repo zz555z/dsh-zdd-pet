@@ -73,6 +73,16 @@ Object.assign(PetSprite.prototype, {
             : workOn
               ? 'work'
               : 'none';
+    // 隐藏时必须先返回：不能在下面把影响字号的状态类（is-whisper / is-expanded）关掉再隐藏。
+    // 否则气泡内容还在、只是随 opacity 淡出，那 0.25s 里字号会从碎碎念的小字号跳回基础大字号，
+    // 表现就是「鼠标挪开的一瞬间字突然变大」。
+    if (slot === 'none') {
+      // 三者都没有可显示的内容：隐藏（不占位，也就不会挡住任何一层）
+      this.bubble.classList.remove('is-on');
+      window.__dshPetDebug.lastBubbleTitle = '';
+      this.syncInputBusy(); // 气泡没了 → 撤销它的控件矩形与 busy 标记（否则整窗还留着可点区域）
+      return;
+    }
     // 气泡弹出方向：顶部角气泡改到侧边弹（左上→右侧、右上→左侧），宠物才能贴顶且气泡不被屏幕顶裁；
     // 底部角气泡照旧在上方弹。方向写进 data-side 由 CSS 决定定位与尾巴朝向。
     const corner = this.pet.position.corner;
@@ -97,13 +107,6 @@ Object.assign(PetSprite.prototype, {
     const expanded = clickable && !isCustom && this.balanceViewIndex > 0;
     this.bubble.classList.toggle('is-clickable', clickable);
     this.bubble.classList.toggle('is-expanded', expanded);
-    if (slot === 'none') {
-      // 三者都没有可显示的内容：隐藏（不占位，也就不会挡住任何一层）
-      this.bubble.classList.remove('is-on');
-      window.__dshPetDebug.lastBubbleTitle = '';
-      this.syncInputBusy(); // 气泡没了 → 撤销它的控件矩形与 busy 标记（否则整窗还留着可点区域）
-      return;
-    }
     this.bubble.innerHTML = '';
     if (slot === 'work') {
       // 进度角标（如「▰▰▱▱▱  2/5」）：先看「第几步」，再看这步在做什么。与浏览器端 bubble.ts 的
