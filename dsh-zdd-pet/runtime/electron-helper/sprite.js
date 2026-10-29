@@ -85,6 +85,10 @@ class PetSprite {
     this.assetRoot = pet.assetRoot || pet.id;
     this.assetBase = BASE + '/thumb/' + encodeURIComponent(this.assetRoot) + '/';
 
+    // 宠物作息：最近一次交互时刻 + 是否在打瞌睡（空闲久了打盹、有交互醒来，见 events.js checkRest/rememberActivity）
+    this.lastActivity = Date.now();
+    this.sleeping = false;
+
     this.initPlayback(pet);
     this.initMotion();
     this.initPanels();

@@ -113,6 +113,12 @@ export interface Pet {
   chatModel?: ModelSelection;
   /** 全局默认：字体（种类 / 字号 / 是否随宠物大小缩放） */
   font?: FontConfig;
+  /** 条目级：点击台词池（点击宠物时随机说一句；空 = 只播动画不说）。 */
+  clickTexts?: string[];
+  /** 条目级：宠物作息（空闲打瞌睡、活动醒来）。 */
+  rest?: PetRest;
+  /** 条目级：任务完成庆祝。 */
+  celebrate?: PetCelebrate;
   /** 全局默认：番茄钟 / 久坐提醒（设置页可开/关并选提醒间隔；文案池不在设置页暴露，手改 config 可自定义） */
   pomodoro?: PomodoroParams;
   /** 全局默认：启动吉祥话（每次 DSH 启动让宠物说一句吉利话） */
@@ -128,6 +134,20 @@ export interface GreetingParams {
   mode: 'pool' | 'live';
   /** pool 模式预生成句数（1~200） */
   poolSize: number;
+}
+
+/** 宠物作息（config.jsonc 的 rest 段）：空闲 sleepAfterSec 秒播 sleepAnim 打瞌睡，活动时播 wakeAnim 醒来。 */
+export interface PetRest {
+  enabled: boolean;
+  sleepAfterSec: number;
+  sleepAnim: string;
+  wakeAnim: string;
+}
+
+/** 任务完成庆祝（config.jsonc 的 celebrate 段）：workStatus 变 success 时播 anim。 */
+export interface PetCelebrate {
+  enabled: boolean;
+  anim: string;
 }
 
 /** config.jsonc 的 pomodoro 段（设置页「番茄钟」区可编辑的部分）：开关 + 提醒间隔分钟。

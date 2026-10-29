@@ -11,6 +11,7 @@ Object.assign(PetSprite.prototype, {
   onPointerDown(e) {
     // 只认左键：右键进入拖拽判定会与右键菜单打架
     if (e.button !== 0) return;
+    this.rememberActivity(); // 按下即算活动（打瞌睡时被点醒）
     // 占用锁：用户点了或拖了这只宠物 = 用户接管，立刻撤掉第三方占用。这是唯一一处「渲染端 → 宿主」
     // 的锁上报——宿主看不见鼠标，而锁在它手里（/lock/release 的 force 形态）。
     // 先本地解冻再上报：等叶子往返会让宠物「点了半天才动」，而此刻 frozen 为真说明这次释放必然成功。
@@ -378,6 +379,8 @@ Object.assign(PetSprite.prototype, {
     this.stopMove();
     // 点击音效与浏览器同位置：放在「按下已触发积分」的早退之后、点击动画判断之前
     playClickSound();
+    // 点击台词：从 clickTexts 随机说一句（气泡），不受点击动画是否存在影响
+    this.sayClickText();
     if (!this.animations.clicks.length) return;
     this.pendingSquash = true; // 等新点击动画切到前台后 Q 弹（压新首帧，与浏览器一致）
     this.playOnce(S.pick(this.animations.clicks));

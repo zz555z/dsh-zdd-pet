@@ -25,6 +25,7 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
   this.workStatusSnap = snapshot || null;
   this.workState = state; // 当前工作状态：互动/事件动画播完恢复档位循环用
   const stateChanged = this.prevWorkState !== state;
+  if (stateChanged) this.rememberActivity();
   this.prevWorkState = state;
   if (!state) {
     // 回空闲：把正在循环播的进行中档位动画改成「播完即停」。进行中档位走 switchTo(name, false)
@@ -94,8 +95,15 @@ PetSprite.prototype.onWorkTick = function onWorkTick(snapshot, tick) {
   // 循环语义：终态播一遍回 idle；非终态多候选档位播一遍 → ended 轮换到下一候选；
   // 非终态单候选档位无限循环。
   const rotating = !terminal && Array.isArray(slot) && slot.length > 1;
-  if (terminal || rotating) this.playOnce(name);
-  else this.switchTo(name, false); // 进行中循环播（单动画/单候选档位）
+  if (terminal || rotating) {
+    // 任务成功完成：若配了 celebrate 且动画存在，用它代替默认完成档做庆祝
+    let playName = name;
+    if (state === 'success' && stateChanged) {
+      const cel = this.pet.celebrate;
+      if (cel && cel.enabled !== false && cel.anim && this._hasAnim(cel.anim)) playName = cel.anim;
+    }
+    this.playOnce(playName);
+  } else this.switchTo(name, false); // 进行中循环播（单动画/单候选档位）
 };
 
 // 余额事件：自动轮询按 balanceEnabled 门控，手动请求无条件。
@@ -150,7 +158,72 @@ PetSprite.prototype.clearWhisper = function clearWhisper() {
 // 由字段名区分、不靠嗅探。anim === false 时整段跳过动画联动（不查池、不换源、不 stopMove），
 // 于是缺 events.whisper 时只弹气泡也走得通。duration === 0 表示这一条不显示，且不动当前气泡
 // （要收起请用 POST /bubble/clear，两件事不重叠）。
+// ---- 点击台词 ----
+/** 点击台词：从条目级 clickTexts 随机说一句（只弹气泡、不额外换动画；点击动画由 onClick 播）。 */
+PetSprite.prototype.sayClickText = function sayClickText() {
+  const arr = Array.isArray(this.pet.clickTexts)
+    ? this.pet.clickTexts.filter((t) => typeof t === 'string' && t.trim() !== '')
+    : [];
+  if (arr.length === 0) return;
+  this.showWhisper(arr[Math.floor(Math.random() * arr.length)], undefined, undefined, undefined, false);
+};
+
+// ---- 宠物作息 / 活动记忆 ----
+/** 该动画名是否存在于本宠物的任意动画池（避免播一个不存在的名字导致 404 卡住）。 */
+PetSprite.prototype._hasAnim = function _hasAnim(name) {
+  const seen = new Set();
+  const stack = [this.animations];
+  while (stack.length) {
+    const o = stack.pop();
+    if (!o || seen.has(o)) continue;
+    if (typeof o === 'string') {
+      if (o === name) return true;
+      continue;
+    }
+    if (Array.isArray(o)) {
+      for (const x of o) stack.push(x);
+      continue;
+    }
+    if (typeof o === 'object') {
+      seen.add(o);
+      for (const k in o) stack.push(o[k]);
+    }
+  }
+  return false;
+};
+
+/** 记一次「有活动」：刷新空闲计时；若正在打瞌睡则醒来（播 wakeAnim）。交互/说话/工作状态变化都调它。 */
+PetSprite.prototype.rememberActivity = function rememberActivity() {
+  this.lastActivity = Date.now();
+  if (!this.sleeping) return;
+  this.sleeping = false;
+  const wake = this.pet.rest && this.pet.rest.wakeAnim;
+  if (wake && this._hasAnim(wake)) {
+    this.stopMove();
+    this.playOnce(wake);
+  } else if (this.animations.idle && this.animations.idle.length) {
+    this.playOnce(S.pick(this.animations.idle, this.anim));
+  }
+};
+
+/** 空闲检查（定时调用）：空闲超过 rest.sleepAfterSec 秒就进入打瞌睡（循环播 sleepAnim）。 */
+PetSprite.prototype.checkRest = function checkRest() {
+  const r = this.pet.rest;
+  if (!r || r.enabled === false || this.sleeping) return;
+  const sec = Number(r.sleepAfterSec);
+  if (!Number.isFinite(sec) || sec <= 0) return;
+  if (Date.now() - this.lastActivity < sec * 1000) return;
+  const sleepAnim = r.sleepAnim && this._hasAnim(r.sleepAnim) ? r.sleepAnim : null;
+  if (!sleepAnim) return;
+  this.sleeping = true;
+  this.stopMove();
+  this.stopThrow();
+  this.switchTo(sleepAnim, false); // 循环播打瞌睡，直到记住活动醒来
+  console.log('[dsh-zdd-pet] ' + new Date().toTimeString().slice(0, 8) + ' 打瞌睡 pet=' + this.pet.id);
+};
+
 PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duration, anim) {
+  this.rememberActivity();
   let name = null;
   if (anim !== false) {
     const pool = this.animations.events?.whisper;
@@ -416,4 +489,11 @@ function startLoops() {
     setTimeout(() => void stateLoop(), hit && stateLongPoll ? 0 : 1000);
   };
   void stateLoop();
+
+  // 宠物作息：每 15s 检查各宠物是否该打瞌睡（空闲久了）；醒来由 rememberActivity 负责。
+  setInterval(() => {
+    for (const s of sprites) {
+      if (s && s.checkRest) s.checkRest();
+    }
+  }, 15000);
 }

@@ -114,6 +114,9 @@ DSH 设置 → 「桌宠配置」：
 | `balanceGag`           | 余额告急演出（本分支新增，见上）                                                        | 同 `balanceGag` 结构       |
 | `greeting`             | 启动吉祥话（本分支新增，见上）                                                          | 同 `greeting` 结构         |
 | `bubbleImageEnabled`   | 气泡表情包总开关（布尔；关=所有气泡纯文字，管碎碎念/对话/番茄钟/彩蛋/余额/吉祥话）         | 布尔，默认 true            |
+| `clickTexts`           | 点击台词池（桌面端；数组；空=只播动画不说）                                              | 字符串数组                  |
+| `rest`                 | 宠物作息（桌面端；空闲打瞌睡/活动醒来）                                                  | `{enabled,sleepAfterSec,sleepAnim,wakeAnim}` |
+| `celebrate`            | 任务完成庆祝（桌面端；success 时播的动画）                                                | `{enabled,anim}`            |
 
 > 覆盖语义：用户层给出即**整体替换**该字段（如写了 `animations` 就用你的整份动画池，替代默认），没写的字段回落包内默认。校验在插件加载时执行——格式错误会在 DSH 控制台显式报错，不会静默运行残缺配置。
 
