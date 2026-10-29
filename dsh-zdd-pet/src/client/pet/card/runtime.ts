@@ -19,6 +19,7 @@ import { createAnimationFlow } from './animation-flow.ts';
 import { createBubbleSlots } from './bubble-slots.ts';
 import { createCardAnimation } from './animation.ts';
 import { createCardDrag } from './drag.ts';
+import { createCardRest } from './rest.ts';
 import { createCardEntry, type CardEntry } from './entry.ts';
 import { createCardMotion } from './motion.ts';
 import { createCardState } from './state.ts';
@@ -54,6 +55,7 @@ export function createCardRuntime(rt: PetRuntime) {
   const useCardAnimation = createCardAnimation({ useEffect, useRef });
   const useCardMotion = createCardMotion({ useEffect, useRef });
   const useCardDrag = createCardDrag({ useRef });
+  const useCardRest = createCardRest({ useEffect, useRef });
   const useCardEntry = createCardEntry({ useEffect, useRef });
 
   return function useCardRuntime(props: PetCardProps): CardViewProps {
@@ -152,6 +154,10 @@ export function createCardRuntime(rt: PetRuntime) {
       setOnce: actions.setOnce,
     });
 
+    // 宠物作息：空闲打瞌睡、点击/说话/工作状态活动时醒来。
+    const rest = useCardRest({ cfgRef, actions });
+    const markActivity = (): void => rest.poke();
+
     const drag = useCardDrag({
       bumpSeq: actions.bumpSeq,
       card,
@@ -166,6 +172,11 @@ export function createCardRuntime(rt: PetRuntime) {
       setOnce: actions.setOnce,
       setTipOn: actions.setTipOn,
       stage: () => stageRef.current,
+      onSayText: (text: string) => {
+        bubbles.showWhisper(text, {});
+        markActivity();
+      },
+      onActivity: markActivity,
     });
 
     // 右键菜单、对话与悬浮提示：动作派发经 ref 转发，避免与 menu-actions 构造期成环。
@@ -243,6 +254,7 @@ export function createCardRuntime(rt: PetRuntime) {
       playByName: (anim, playbackId, keepFacing) => menuActions.run({ anim, label: anim }, playbackId, keepFacing),
       posFollow: motion.posFollow,
       speak: (text, image, url, duration, anim) => liveRef.current.flow?.speak(text, image, url, duration, anim),
+      pokeRest: markActivity,
       stopMotion: motion.stopMove,
       tryWalk: motion.walk.tryMove,
     };

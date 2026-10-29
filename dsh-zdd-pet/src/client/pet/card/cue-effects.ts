@@ -28,6 +28,29 @@ const log = (message: string): void => {
   console.log('[dsh-zdd-pet] ' + stamp() + ' ' + message);
 };
 
+/** 动画名是否存在于动画池的任意位置（防播不存在的名字）。 */
+const hasAnimIn = (anims: unknown, target: string): boolean => {
+  const seen = new Set<unknown>();
+  const stack: unknown[] = [anims];
+  while (stack.length) {
+    const o = stack.pop();
+    if (!o || seen.has(o)) continue;
+    if (typeof o === 'string') {
+      if (o === target) return true;
+      continue;
+    }
+    if (Array.isArray(o)) {
+      for (const x of o) stack.push(x);
+      continue;
+    }
+    if (typeof o === 'object') {
+      seen.add(o);
+      for (const v of Object.values(o as Record<string, unknown>)) stack.push(v);
+    }
+  }
+  return false;
+};
+
 /**
  * 制造指令处理的 hook。
  *
@@ -128,10 +151,11 @@ export function createCueEffects(rt: CueEffectsRuntime) {
         console.error('[dsh-zdd-pet] work-status 档位索引越界：state=' + workStatus.state + ' idx=' + idx);
         return;
       }
-      const name = pickSlot(slot, card.animRef.current); // 档内随机抽 1，并避开当前正播动画。
+      let name = pickSlot(slot, card.animRef.current); // 档内随机抽 1，并避开当前正播动画。
       log('pet=' + cfg.id + ' ' + (prevWorkStateRef.current ?? 'null') + '->' + workStatus.state + '    ' + name);
       const stateChanged = prevWorkStateRef.current !== workStatus.state;
       prevWorkStateRef.current = workStatus.state;
+      if (stateChanged) hub.pokeRest?.();
       hub.stopMotion();
       // 气泡文本：任务详情优先，否则从 workStatusTexts[档位] 随机抽一句。
       const textGroup = Array.isArray(cfg.workStatusTexts) ? cfg.workStatusTexts[idx] : undefined;
@@ -144,6 +168,19 @@ export function createCueEffects(rt: CueEffectsRuntime) {
       const terminal = workStatus.state === 'success' || workStatus.state === 'error';
       // 只在状态变化时点亮或收起气泡：同状态后续 tick 不重新点亮已自动收起的终态气泡。
       if (stateChanged) hub.bubbles.lightWork(terminal);
+      // 任务成功完成：若配了 celebrate 且动画存在，用 celebrate.anim 代替完成档做庆祝
+      if (workStatus.state === 'success' && stateChanged) {
+        const cel = cfg.celebrate;
+        if (
+          cel &&
+          cel.enabled !== false &&
+          typeof cel.anim === 'string' &&
+          cel.anim &&
+          hasAnimIn(hub.anims(), cel.anim)
+        ) {
+          name = cel.anim;
+        }
+      }
       // 循环语义：终态播一遍；非终态单候选无限循环，多候选播一遍后由播完判定轮换。
       const rotating = !terminal && Array.isArray(slot) && slot.length > 1;
       card.actions.setOnce(terminal || rotating);
@@ -154,6 +191,7 @@ export function createCueEffects(rt: CueEffectsRuntime) {
     const consumeSay = (): void => {
       if (!say || say.seq === prevSayRef.current) return;
       prevSayRef.current = say.seq;
+      hub.pokeRest?.();
       if (say.kind === 'clear') {
         hub.bubbles.clearWhisper();
         return;

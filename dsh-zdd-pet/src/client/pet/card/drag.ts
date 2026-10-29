@@ -47,6 +47,10 @@ export interface CardDragInput {
   setDragging: (on: boolean) => void;
   /** 悬浮提示显隐。 */
   setTipOn: (on: boolean) => void;
+  /** 点击台词：弹一句台词（由上层接到气泡单槽）。 */
+  onSayText?: (text: string) => void;
+  /** 记一次活动（用于宠物作息唤醒）。 */
+  onActivity?: () => void;
 }
 
 /**
@@ -74,6 +78,9 @@ export function createCardDrag(rt: CardDragRuntime) {
         physics: cfgRef.current.physics,
         dragAnims: cfgRef.current.animations.drag,
         clickAnims: cfgRef.current.animations.clicks,
+        clickTexts: Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [],
+        sayText: (text) => input.onSayText?.(text),
+        onActivity: () => input.onActivity?.(),
         idleAnims: cfgRef.current.animations.idle,
         currentAnim: card.animRef.current,
         setOnce: (on) => setOnce(on),

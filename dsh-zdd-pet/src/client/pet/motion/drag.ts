@@ -56,6 +56,12 @@ export interface DragCard {
   dragAnims: string[];
   /** 点击动画池。 */
   clickAnims: string[];
+  /** 点击台词池（空 = 不弹台词）。 */
+  clickTexts: string[];
+  /** 点击时弹一句台词（气泡）。 */
+  sayText: (text: string) => void;
+  /** 记一次活动（点击/按下都算，用于宠物作息唤醒）。 */
+  onActivity: () => void;
   /** 待机动画池。 */
   idleAnims: string[];
   /** 当前动画名，抽待机时用来避开自己。 */
@@ -398,6 +404,7 @@ export function createDrag(card: () => DragCard): Drag {
 
   const onClick = (): void => {
     const c = card();
+    c.onActivity();
     if (press.active || press.dragging || performance.now() < justDraggedUntil) return;
     // 本次按下已触发过积分：只收手停住，不再播普通点击动画。
     if (pressScoreFired) {
@@ -411,6 +418,8 @@ export function createDrag(card: () => DragCard): Drag {
     // 点击音效放在所有「不播点击动画」的早退分支之后。
     c.playClickSound();
     c.setOnce(true);
+    // 点击台词：从 clickTexts 随机说一句（气泡），不受点击动画是否存在影响
+    if (c.clickTexts.length) c.sayText(pick(c.clickTexts));
     if (!c.clickAnims.length) return;
     const name = pick(c.clickAnims);
     log(c.petId, '-> [CLICK] ' + name);

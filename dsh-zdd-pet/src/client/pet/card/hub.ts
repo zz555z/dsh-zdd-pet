@@ -44,4 +44,6 @@ export interface CardHub {
   playByName: PlayByName;
   /** 说一句。 */
   speak: Speak;
+  /** 记一次活动（宠物作息唤醒：收到说话/工作状态变化时调）。 */
+  pokeRest?: () => void;
 }
