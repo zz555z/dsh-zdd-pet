@@ -57,16 +57,21 @@ Object.assign(PetSprite.prototype, {
     return S.moodTier(this.mood ?? p.initial, p.low, p.high);
   },
 
-  /** 摸它：心情 +gain（默认 touchGain），夹在 0~100，写回。 */
+  /**
+   * 摸它：心情 +gain（默认 touchGain），夹在 0~100，写回。
+   * @returns 本次点击后是否由彩蛋接管动画（点满触发，或彩蛋进行中）——调用方据此跳过普通点击台词/动画。
+   */
   touchMood(gain) {
     const p = this.moodParams();
-    if (!p.enabled) return;
+    if (!p.enabled) return false;
     const g = Number.isFinite(gain) ? gain : p.touchGain;
     this.mood = S.clampMood((this.mood ?? p.initial) + g);
     this.moodSavedAt = Date.now();
     this.saveMood();
-    // 点满（到 100）就触发一次「乱跑」彩蛋（_exciteRunning 防重复触发）
+    // 点满（到 100）就触发一次「原地冲刺跑」彩蛋（_exciteRunning 防重复触发）
     if (this.mood >= 100 && !this._exciteRunning) this.triggerExcite();
+    // 彩蛋进行中同样返回 true：期间点击不再用普通点击动画/台词覆盖它
+    return this._exciteRunning === true;
   },
 
   /** 定时衰减（由 startLoops 定期调用）：按与上次保存的时间差补算。 */
@@ -79,49 +84,50 @@ Object.assign(PetSprite.prototype, {
     this.saveMood();
   },
 
-  /** 彩蛋：心情拉到 101 触发「到处乱跑」特效，跑完回落到 100。 */
-  /** 彩蛋：点击把心情点满到 101 时自动触发 —— 快速绕屏幕一圈 → 摔回原位 → 委屈 → 心情降到 50。 */
+  /**
+   * 彩蛋：心情点满到 100 时触发 —— 播一次「原地冲刺跑」，播完随机掉一点心情，
+   * 但结果始终保持在 60 以上（落在 61~99）。
+   */
   triggerExcite() {
     if (this._exciteRunning) return;
     this._exciteRunning = true;
-    // 兜底：万一动画链中途异常没走到复位，22s 后强制解锁，避免永久点不动
-    const safety = window.setTimeout(() => {
-      this._exciteRunning = false;
-    }, 22000);
+    // 兜底：万一动作没触发 ended（视频异常/被切走）没走到结算，15s 后强制结算，避免永久点不动
+    if (this._exciteSafety) window.clearTimeout(this._exciteSafety);
+    this._exciteSafety = window.setTimeout(() => {
+      this._exciteSafety = null;
+      this.finishExcite();
+    }, 15000);
+    // 内存里标记「彩蛋进行中」；saveMood 会 clamp 回 100，落盘仍是满值
     this.mood = 101;
     this.moodSavedAt = Date.now();
     this.saveMood();
-    this.showWhisper('心情 101！开心到乱跑～', undefined, undefined, 9000, false);
-    const W = VIEW.w;
-    const H = VIEW.h;
-    const origRx = this.currentCenterX() / W;
-    const origRy = this.currentCenterY() / H;
-    // 真步态乱跑：连续 tryMove（走路引擎自动挑移动动画 + 真实位移），随机换朝向满屏跑一阵
-    let runs = 6;
-    const run = () => {
-      if (runs-- <= 0) {
-        // 跑完回原位 → 委屈表情 → 心情降到 50
-        this.moveToCenter(origRx, origRy, 'line', 320);
-        window.setTimeout(() => {
-          this.mood = 50;
-          this.moodSavedAt = Date.now();
-          this.saveMood();
-          this.playOnce('绊倒摔倒'); // 摔倒收尾（跑段与摔倒已拆成两个动作）
-          // 恢复常规播放速度
-          this._exciteRate = 0;
-          if (this.videoA) this.videoA.playbackRate = 1;
-          if (this.videoB) this.videoB.playbackRate = 1;
-          window.clearTimeout(safety);
-          this._exciteRunning = false;
-        }, 400);
-        return;
-      }
-      this.facing = Math.random() < 0.5 ? 'left' : 'right';
-      // 用「原地冲刺跑」纯跑段大距离跑，一段跨大半屏；设 once=false 循环播放，避免每段播完切到随机动作
-      this.tryMove('原地冲刺跑', undefined, { minDist: 1000, maxDist: 2200, leadSec: 0.15, tailSec: 0.15 });
-      window.setTimeout(run, 2500);
-    };
-    run();
+    this.showWhisper('心情满格！原地冲刺跑～', undefined, undefined, 6000, false);
+    // 只执行「原地冲刺跑」这个动作（与右键菜单点播同一入口）；播完由 handleEnded 调用 finishExcite 结算
+    this.playOnce('原地冲刺跑');
+  },
+
+  /**
+   * 彩蛋收尾：随机掉心情，但结果必须 >60（落在 61~99）；写回 localStorage 后解锁。
+   * 由 handleEnded（动作播完）或 triggerExcite 的兜底超时调用；重复调用无副作用。
+   */
+  finishExcite() {
+    if (!this._exciteRunning) return;
+    this._exciteRunning = false;
+    if (this._exciteSafety) {
+      window.clearTimeout(this._exciteSafety);
+      this._exciteSafety = null;
+    }
+    // 随机掉心情：从满值掉 1~39 点 → 61~99，恒大于 60
+    this.mood = S.clampMood(61 + Math.floor(Math.random() * 39));
+    this.moodSavedAt = Date.now();
+    this.saveMood();
+    this.showWhisper(
+      '心情 ' + this.mood + '/100（' + S.moodLabel(this.moodTier()) + '）',
+      undefined,
+      undefined,
+      4000,
+      false,
+    );
   },
 
   /** 气泡显示当前心情（悬浮时用；duration 给足，离开时由 onMouseMove 收起）。 */

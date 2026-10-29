@@ -1318,6 +1318,13 @@ function mountContextMenu(opts) {
 					hint.textContent = node.hint;
 					item.appendChild(hint);
 				}
+				item.addEventListener("mouseenter", () => {
+					const prev = openChild.get(panel);
+					if (prev) {
+						openChild.delete(panel);
+						hideChain(prev);
+					}
+				});
 				item.addEventListener("click", (e) => {
 					e.preventDefault();
 					e.stopPropagation();

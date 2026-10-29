@@ -222,10 +222,10 @@ Object.assign(PetSprite.prototype, {
       this.reportPlayback(done, 'ended');
     }
     if (this.dragState.active) return;
-    // 彩蛋乱跑期间：跑段播完自动重播同一跑步动画，不切随机/待机（既有动作又不闪别的东西）
+    // 彩蛋：「原地冲刺跑」只播一次，播完结算（随机掉心情但 >60），不 return——
+    // 让下面的常规动画链接着挑下一个动作。
     if (this._exciteRunning && this.anim === '原地冲刺跑') {
-      this.playOnce('原地冲刺跑');
-      return;
+      this.finishExcite();
     }
     // 占用锁：冻结期间动画链一律不推进，事件动画播完就停在最后一帧。下面几条路都会换源播放，
     // 而它们读的是实时 workState、与 workTick 无关，onWorkTick 的门禁拦不住——尤其「事件动画播完

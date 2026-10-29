@@ -380,6 +380,9 @@ Object.assign(PetSprite.prototype, {
       if (window.petBridge) window.petBridge.openDshSite(ORIGIN);
       return;
     }
+    // 摸它：心情 +touchGain（写回 localStorage）。放在「积分早退」之前，保证每次点击都计入心情，
+    // 也保证点满的那一刻无论是否触发点击积分，彩蛋都能拿到动画控制权。
+    const excited = this.touchMood();
     // 积分判定已在 onPointerDown（按下即触发）完成：已触发过就只收手停住，不再播普通点击动画
     if (this.pressScoreFired) {
       this.pressScoreFired = false;
@@ -391,8 +394,8 @@ Object.assign(PetSprite.prototype, {
     this.stopMove();
     // 点击音效与浏览器同位置：放在「按下已触发积分」的早退之后、点击动画判断之前
     playClickSound();
-    // 摸它：心情 +touchGain（会写回 localStorage）
-    this.touchMood();
+    // 点满触发了彩蛋（或彩蛋进行中）：动画与气泡归彩蛋，别再用普通点击台词/动画把它顶掉
+    if (excited) return;
     // 点击台词：从 clickTexts 随机说一句（气泡），不受点击动画是否存在影响
     this.sayClickText();
     if (!this.animations.clicks.length) return;

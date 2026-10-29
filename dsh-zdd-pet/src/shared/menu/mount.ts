@@ -123,6 +123,15 @@ export function mountContextMenu(opts: {
           hint.textContent = node.hint;
           item.appendChild(hint);
         }
+        // 悬停到叶子项：本面板不再指向任何子菜单，收起它当前展开的整条子面板链。
+        // 否则从「动作」等分支移开后，上一分支的二级菜单会一直残留在屏幕上（不随悬停项变化）。
+        item.addEventListener('mouseenter', () => {
+          const prev = openChild.get(panel);
+          if (prev) {
+            openChild.delete(panel);
+            hideChain(prev);
+          }
+        });
         item.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
