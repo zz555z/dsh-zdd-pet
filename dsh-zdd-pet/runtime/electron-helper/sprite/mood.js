@@ -106,9 +106,7 @@ Object.assign(PetSprite.prototype, {
           this.mood = 50;
           this.moodSavedAt = Date.now();
           this.saveMood();
-          const p = this.moodParams ? this.moodParams() : null;
-          const sad = (p && p.sadAnim) || '工作状态-垂头叹气冒汗';
-          if (this._hasAnim(sad)) this.playOnce(sad);
+          this.playOnce('绊倒摔倒'); // 摔倒收尾（跑段与摔倒已拆成两个动作）
           // 恢复常规播放速度
           this._exciteRate = 0;
           if (this.videoA) this.videoA.playbackRate = 1;
@@ -121,7 +119,7 @@ Object.assign(PetSprite.prototype, {
       this.facing = Math.random() < 0.5 ? 'left' : 'right';
       // 用「原地冲刺跑」(3s 纯跑段) 大距离跑，一段跨大半屏
       this.tryMove('原地冲刺跑', undefined, { minDist: 1000, maxDist: 2200, leadSec: 0.15, tailSec: 0.15 });
-      window.setTimeout(run, 3200);
+      window.setTimeout(run, 2700);
     };
     run();
   },
