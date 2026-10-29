@@ -281,7 +281,7 @@ Object.assign(PetSprite.prototype, {
     const rects = [];
     // 控件矩形 = 主进程允许接收点击的区域，矩形外继续穿透。可点的余额气泡悬在余量区，不登记就点不到。
     const controls = [
-      ...document.querySelectorAll('.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-clickable'),
+      ...document.querySelectorAll('.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-chat, .pet-bubble.is-clickable'),
     ];
     for (const el of this.inputRegionElements) {
       if (!controls.includes(el)) {
@@ -353,7 +353,7 @@ Object.assign(PetSprite.prototype, {
     // 心情悬浮气泡：进入身体时气泡显示当前心情，离开时收起（mood.enabled 才管，别误清正常碎碎念）
     const moodOn = (() => {
       const p = this.moodParams ? this.moodParams() : null;
-      return !!(p && p.enabled);
+      return !!(p && p.enabled) && !this.chatOpen;
     })();
     if (moodOn) {
       if (inBody && !wasHoverBody) this.showMoodOnHover();

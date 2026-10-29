@@ -168,16 +168,16 @@ Object.assign(PetSprite.prototype, {
   // 弹窗是窗口内 DOM，期间整窗保持可交互，关闭后恢复命中区穿透。
   showChatFromMenu(image) {
     if (this.chatClose) {
-      this.chatClose();
-      this.chatClose = null;
-      return; // 已开着：先关旧的
+      this.chatClose(); // 已开着：先关旧的（onClose 会复位 chatOn 与气泡）
+      return;
     }
     const m = S.mountChatDialog({
       petId: this.pet.id,
       baseUrl: BASE + '/chat',
       surface: 'desktop',
-      x: Math.max(4, this.hit.getBoundingClientRect().right + 6),
-      y: Math.max(4, this.hit.getBoundingClientRect().top + 6),
+      // 位置先给 0：下面会把根节点移进气泡，由气泡负责定位，place() 的结果会被 CSS 覆盖
+      x: 0,
+      y: 0,
       // 拖拽落到宠物身上时直接带着图开弹窗
       ...(image ? { initialImage: image } : {}),
       // 截屏：主进程取宠物所在屏的一帧（JPEG base64），形状与浏览器侧一致
@@ -197,22 +197,31 @@ Object.assign(PetSprite.prototype, {
           previewUrl: 'data:' + shot.mediaType + ';base64,' + shot.data,
         };
       },
-      // 弹窗同菜单：只允许在「窗口 ∩ 工作区」内显示，贴边时不被屏幕裁掉
-      clamp: this.visibleClampRect(),
       onSent: () => {
         // 发送成功：回复已写进 S → 版本号变 → 挂着的长轮询立刻返回并弹气泡
         console.info('[dsh-zdd-pet] 对话已发送 pet=' + this.pet.id);
       },
       onClose: () => {
         this.chatClose = null;
+        this.chatOn = false;
         this.chatOpen = false;
+        this.bubble.classList.remove('is-chat');
         window.__dshPetDebug.chatOpen = false;
-        this.syncInputBusy(); // 弹窗关：交还常规判定（菜单还开着的话仍保持忙）
+        this.renderBubble(); // 恢复常规气泡（或隐藏）
+        this.syncInputBusy();
         if (!this.menuOpen) this.setInteractive(false); // 无菜单时恢复命中区穿透
       },
     });
+    // 借用气泡：把对话 DOM 直接挪进 .pet-bubble，位置、外观、尾巴全部复用气泡，不另起浮层。
+    this.chatOn = true;
+    this.chatOpen = true;
     this.chatClose = m.close;
-    this.chatOpen = true; // 穿透守卫：弹窗期间整窗保持可交互
+    this.bubble.innerHTML = '';
+    this.bubble.dataset.side = 'up'; // 统一从宠物上方弹，尺寸由 is-chat 覆盖
+    this.bubble.classList.remove('is-whisper', 'is-clickable', 'is-expanded', S.MEME_BUBBLE_CLASS);
+    this.bubble.classList.add('is-on', 'is-chat');
+    m.el.classList.add('dsh-zdd-pet-chat--in-bubble');
+    this.bubble.appendChild(m.el);
     window.__dshPetDebug.chatOpen = true;
     this.syncInputBusy();
     this.setInteractive(true);

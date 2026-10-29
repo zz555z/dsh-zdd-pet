@@ -104,6 +104,8 @@ Object.assign(PetSprite.prototype, {
     // 期间整窗保持可交互，否则光标移到输入框就会被 onMouseMove 翻回穿透、点击全被透传。
     this.chatClose = null;
     this.chatOpen = false;
+    // 对话输入是否占用气泡容器（借用气泡显示输入框，而不是另开浮层）
+    this.chatOn = false;
   },
 
   /** 建 DOM 并把首帧位置落到窗口；布局数值全部来自上面算好的 geometry。 */

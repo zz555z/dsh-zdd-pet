@@ -307,6 +307,35 @@
           transition: none;
         }
       }
+      /* 对话输入借用气泡：is-chat 时气泡本身就是输入框容器，不再另起浮层。
+         位置沿用 .pet-bubble 的基础定位（宠物上方），只覆盖尺寸/背景/可交互。 */
+      .pet-bubble.is-chat {
+        width: min(300px, 100%);
+        min-width: 0;
+        max-width: 100%;
+        padding: 0;
+        background: rgba(255, 255, 255, 0.97);
+        pointer-events: auto;
+      }
+      .pet-bubble.is-chat::after {
+        border-top-color: rgba(255, 255, 255, 0.97);
+      }
+      /* 把独立弹窗的定位/背景/阴影剥掉，让它融进气泡 */
+      .pet-bubble.is-chat .dsh-zdd-pet-chat {
+        position: static !important;
+        left: auto !important;
+        top: auto !important;
+        width: 100% !important;
+        max-width: none;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        user-select: text;
+      }
+      .pet-bubble.is-chat .dsh-zdd-pet-chat-input {
+        min-height: 40px;
+      }
     </style>
   </head>
   <body>

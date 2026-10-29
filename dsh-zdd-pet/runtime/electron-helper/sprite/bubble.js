@@ -50,6 +50,15 @@ Object.assign(PetSprite.prototype, {
     window.__dshPetDebug.tooltipOn = this.tipOn;
   },
   renderBubble() {
+    // 对话输入借用气泡：聊天开启时气泡容器里就是输入框，绝不能清空重建（会把输入框与焦点清掉）。
+    if (this.chatOn) {
+      this.bubble.dataset.side = 'up';
+      this.bubble.classList.add('is-on', 'is-chat');
+      this.bubble.classList.remove('is-whisper', 'is-clickable', 'is-expanded', S.MEME_BUBBLE_CLASS);
+      window.__dshPetDebug.lastBubbleTitle = 'chat';
+      this.syncInputBusy();
+      return;
+    }
     // 气泡单槽：同一时刻只显示一个（优先级：终态任务 > 碎碎念/对话 > 余额 > 非终态任务）。
     // 终态任务不让位：完成/失败气泡只活 10s，被顶掉就彻底看不到；非终态气泡常驻，让位零损失。
     // 工作气泡与碎碎念同款样式（宽度自适应 + 自动换行）；配图标记交给 CSS（带图时取消 min-width）。
