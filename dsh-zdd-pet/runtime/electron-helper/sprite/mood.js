@@ -92,9 +92,6 @@ Object.assign(PetSprite.prototype, {
     this.moodSavedAt = Date.now();
     this.saveMood(); // 写盘会夹到 100，不影响内存里的 101
     this.showWhisper('心情 101！开心到绕圈跑～', undefined, undefined, 8000, false);
-    // 绕圈固定用「螃蟹走路」动作（moveToCenter 只平移不改视频源，这里把螃蟹走路切上去循环播）
-    const runName = '螃蟹走路';
-    if (this._hasAnim(runName)) this.switchTo(runName, false);
     const W = VIEW.w;
     const H = VIEW.h;
     const origRx = this.currentCenterX() / W;
@@ -122,6 +119,10 @@ Object.assign(PetSprite.prototype, {
         this._exciteRunning = false;
         return;
       }
+      // 绕圈阶段用「原地漂浮踏步」；最后一段回原位用「原地左转奔跑」
+      const isLast = i === path.length - 1;
+      const anim = isLast ? '原地左转奔跑' : '原地漂浮踏步';
+      if (this.anim !== anim && this._hasAnim(anim)) this.switchTo(anim, false);
       const pt = path[i++];
       this.moveToCenter(pt[0], pt[1], 'line', SEG);
       window.setTimeout(step, SEG);
