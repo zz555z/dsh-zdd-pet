@@ -310,7 +310,7 @@
       /* 对话输入借用气泡：is-chat 时气泡本身就是输入框容器，不再另起浮层。
          位置沿用 .pet-bubble 的基础定位（宠物上方），只覆盖尺寸/背景/可交互。 */
       .pet-bubble.is-chat {
-        width: min(300px, 100%);
+        width: min(220px, 100%);
         min-width: 0;
         max-width: 100%;
         padding: 0;
@@ -335,13 +335,6 @@
       }
       .pet-bubble.is-chat .dsh-zdd-pet-chat-input {
         min-height: 40px;
-      }
-      /* 对话输入与它的回复气泡同宽，发送后从输入切到回复时尺寸不跳 */
-      .pet-bubble.is-chat,
-      .pet-bubble.is-whisper {
-        width: min(300px, 100%);
-        min-width: 0;
-        max-width: 100%;
       }
     </style>
   </head>
