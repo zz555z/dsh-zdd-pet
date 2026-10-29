@@ -119,10 +119,9 @@ Object.assign(PetSprite.prototype, {
         this._exciteRunning = false;
         return;
       }
-      // 绕圈阶段用「原地漂浮踏步」；最后一段回原位用「原地左转奔跑」
-      const isLast = i === path.length - 1;
-      const anim = isLast ? '原地左转奔跑' : '原地漂浮踏步';
-      if (this.anim !== anim && this._hasAnim(anim)) this.switchTo(anim, false);
+      // 只在首段切「原地漂浮踏步」、末段回原位切「原地左转奔跑」；中间段不重切（每段重切会反复重载视频 → 闪/乱晃）
+      if (i === 0 && this._hasAnim('原地漂浮踏步')) this.switchTo('原地漂浮踏步', false);
+      else if (i === path.length - 1 && this._hasAnim('原地左转奔跑')) this.switchTo('原地左转奔跑', false);
       const pt = path[i++];
       this.moveToCenter(pt[0], pt[1], 'line', SEG);
       window.setTimeout(step, SEG);
