@@ -184,7 +184,7 @@ describe('安全与健壮性', () => {
 
   test('原型链上的名字不命中表：constructor / toString / __proto__ 按未知处理', () => {
     for (const name of ['constructor', 'toString', '__proto__', 'valueOf']) {
-      assert.equal(toolDetailFromEvent(call(name)), '这工具是干嘛的', name);
+      assert.equal(toolDetailFromEvent(call(name)), '让我研究下这是啥～', name);
     }
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'constructor' })), [
       '跑一下 constructor 咯',
@@ -254,7 +254,7 @@ describe('目标过长 —— 换一句不带名字的氛围兜底', () => {
   });
 
   test('命令名太长 → 不带名字的兜底', () => {
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'Get-NetTCPConnectionDetail' })), '跑一个命令咯');
+    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'Get-NetTCPConnectionDetail' })), '跑个小命令，稍等哈');
   });
 
   test('短命令名仍然上屏（npm / python 这种有信息量）', () => {
@@ -268,7 +268,7 @@ describe('目标过长 —— 换一句不带名字的氛围兜底', () => {
 
 describe('兜底与跳过', () => {
   test('未知工具 → 一句氛围话，不报工具名', () => {
-    assert.equal(toolDetailFromEvent(call('frobnicate')), '这工具是干嘛的');
+    assert.equal(toolDetailFromEvent(call('frobnicate')), '让我研究下这是啥～');
   });
 
   test('语义已由别处表达的工具 → null（不许盖掉更具体的文案）', () => {

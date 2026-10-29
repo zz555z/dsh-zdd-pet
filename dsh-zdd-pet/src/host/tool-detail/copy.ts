@@ -85,13 +85,13 @@ export const TOOL_COPY: Readonly<Record<string, ToolCopy>> = {
 };
 
 /** 未知工具：只说一句氛围话，不报工具名（`str_replace_editor` 这种名字上屏很怪）。 */
-export const UNKNOWN_TOOL_LINE: CopyLine = '这工具是干嘛的';
+export const UNKNOWN_TOOL_LINE: CopyLine = '让我研究下这是啥～';
 
 /** 兜底：没进表的命令（npm / python / node / tsc / eslint / docker…），短命令名会上屏。 */
 export const COMMAND_FALLBACK: readonly CopyLine[] = ['跑一下 {cmd} 咯', '{cmd} 跑起来了', '让 {cmd} 干点活'];
 
 /** 兜底：命令名本身太长（如 Get-NetTCPConnection）时用，不带名字。 */
-export const COMMAND_NAME_TOO_LONG: CopyLine = '跑一个命令咯';
+export const COMMAND_NAME_TOO_LONG: CopyLine = '跑个小命令，稍等哈';
 
 const CD_COPY: readonly CopyLine[] = ['先把位置挪一挪', '切到那个目录去', '挪个地方继续干活'];
 
