@@ -90,43 +90,34 @@ Object.assign(PetSprite.prototype, {
     this._exciteRunning = true;
     this.mood = 101;
     this.moodSavedAt = Date.now();
-    this.saveMood(); // 写盘会夹到 100，不影响内存里的 101
-    this.showWhisper('心情 101！开心到绕圈跑～', undefined, undefined, 8000, false);
+    this.saveMood();
+    this.showWhisper('心情 101！开心到乱跑～', undefined, undefined, 9000, false);
     const W = VIEW.w;
     const H = VIEW.h;
     const origRx = this.currentCenterX() / W;
     const origRy = this.currentCenterY() / H;
-    // 沿屏幕边缘快速绕一圈，最后回到原位
-    const path = [
-      [0.5, 0.08],
-      [0.92, 0.08],
-      [0.92, 0.92],
-      [0.08, 0.92],
-      [0.08, 0.08],
-      [origRx, origRy],
-    ];
-    const SEG = 240; // 每段时长(ms)：越小越快（已调快）
-    let i = 0;
-    const step = () => {
-      if (i >= path.length) {
-        // 回到原位：委屈表情（垂头叹气）+ 心情掉到 50
-        this.mood = 50;
-        this.moodSavedAt = Date.now();
-        this.saveMood();
-        const p = this.moodParams ? this.moodParams() : null;
-        const sad = (p && p.sadAnim) || '工作状态-垂头叹气冒汗';
-        if (this._hasAnim(sad)) this.playOnce(sad);
-        this._exciteRunning = false;
+    // 真步态乱跑：连续 tryMove（走路引擎自动挑移动动画 + 真实位移），随机换朝向满屏跑一阵
+    let runs = 10;
+    const run = () => {
+      if (runs-- <= 0) {
+        // 跑完回原位 → 委屈表情 → 心情降到 50
+        this.moveToCenter(origRx, origRy, 'line', 320);
+        window.setTimeout(() => {
+          this.mood = 50;
+          this.moodSavedAt = Date.now();
+          this.saveMood();
+          const p = this.moodParams ? this.moodParams() : null;
+          const sad = (p && p.sadAnim) || '工作状态-垂头叹气冒汗';
+          if (this._hasAnim(sad)) this.playOnce(sad);
+          this._exciteRunning = false;
+        }, 400);
         return;
       }
-      // 只在首段切「原地漂浮踏步」、末段回原位切「原地左转奔跑」；中间段不重切（每段重切会反复重载视频 → 闪/乱晃）
-      if (i === 0 && this._hasAnim('原地漂浮踏步')) this.switchTo('原地漂浮踏步', false);
-      else if (i === path.length - 1 && this._hasAnim('原地左转奔跑')) this.switchTo('原地左转奔跑', false);
-      const pt = path[i++];
-      this.moveToCenter(pt[0], pt[1], 'line', SEG);
-      window.setTimeout(step, SEG);
+      this.facing = Math.random() < 0.5 ? 'left' : 'right';
+      this.tryMove(); // 走一段（busy 时自弃：密集尝试自然接续成一段段奔跑）
+      window.setTimeout(run, 1200);
     };
-    step();
+    run();
   },
 
   /** 气泡显示当前心情（悬浮时用；duration 给足，离开时由 onMouseMove 收起）。 */
