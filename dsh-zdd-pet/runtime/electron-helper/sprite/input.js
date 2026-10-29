@@ -381,6 +381,8 @@ Object.assign(PetSprite.prototype, {
     this.stopMove();
     // 点击音效与浏览器同位置：放在「按下已触发积分」的早退之后、点击动画判断之前
     playClickSound();
+    // 摸它：心情 +touchGain（会写回 localStorage）
+    this.touchMood();
     // 点击台词：从 clickTexts 随机说一句（气泡），不受点击动画是否存在影响
     this.sayClickText();
     if (!this.animations.clicks.length) return;

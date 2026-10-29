@@ -36,6 +36,7 @@ export function flattenConfigPets(merged: Record<string, Record<string, unknown>
         clickTexts: conf.clickTexts as string[] | undefined,
         rest: conf.rest as Pet['rest'],
         celebrate: conf.celebrate as Pet['celebrate'],
+        mood: conf.mood as Pet['mood'],
         whisperModel: conf.whisperModel as ModelSelection | undefined,
         chatModel: conf.chatModel as ModelSelection | undefined,
         assetRoot: entry,

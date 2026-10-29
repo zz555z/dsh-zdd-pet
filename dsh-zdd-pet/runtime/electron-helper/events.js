@@ -161,9 +161,18 @@ PetSprite.prototype.clearWhisper = function clearWhisper() {
 // ---- 点击台词 ----
 /** 点击台词：从条目级 clickTexts 随机说一句（只弹气泡、不额外换动画；点击动画由 onClick 播）。 */
 PetSprite.prototype.sayClickText = function sayClickText() {
-  const arr = Array.isArray(this.pet.clickTexts)
-    ? this.pet.clickTexts.filter((t) => typeof t === 'string' && t.trim() !== '')
-    : [];
+  // 优先按心情档位选台词池（mood.texts[档位]）；该档为空则回退 clickTexts。
+  let arr = [];
+  const p = this.moodParams ? this.moodParams() : null;
+  if (p && p.enabled) {
+    const pool = p.texts[this.moodTier()];
+    if (Array.isArray(pool) && pool.length) arr = pool;
+  }
+  if (arr.length === 0) {
+    arr = Array.isArray(this.pet.clickTexts)
+      ? this.pet.clickTexts.filter((t) => typeof t === 'string' && t.trim() !== '')
+      : [];
+  }
   if (arr.length === 0) return;
   this.showWhisper(arr[Math.floor(Math.random() * arr.length)], undefined, undefined, undefined, false);
 };
@@ -212,7 +221,19 @@ PetSprite.prototype.checkRest = function checkRest() {
   if (!r || r.enabled === false || this.sleeping) return;
   const sec = Number(r.sleepAfterSec);
   if (!Number.isFinite(sec) || sec <= 0) return;
-  if (Date.now() - this.lastActivity < sec * 1000) return;
+  const idleMs = Date.now() - this.lastActivity;
+  // 心情影响：低落更易打瞌睡（阈值减半）；开心则空闲时撒个娇（播 happyAnim 一遍，不睡）。
+  const p = this.moodParams ? this.moodParams() : null;
+  const tier = p && p.enabled ? this.moodTier() : 'normal';
+  if (tier === 'high' && p && p.happyAnim && this._hasAnim(p.happyAnim)) {
+    if (idleMs < sec * 1000) return;
+    this.lastActivity = Date.now(); // 撒娇后重置，隔一段再来
+    this.stopMove();
+    this.playOnce(p.happyAnim);
+    return;
+  }
+  const effSec = tier === 'low' ? sec * 0.5 : sec;
+  if (idleMs < effSec * 1000) return;
   const sleepAnim = r.sleepAnim && this._hasAnim(r.sleepAnim) ? r.sleepAnim : null;
   if (!sleepAnim) return;
   this.sleeping = true;
@@ -496,4 +517,11 @@ function startLoops() {
       if (s && s.checkRest) s.checkRest();
     }
   }, 15000);
+
+  // 心情衰减：每 5 分钟按经过时间补算一次（久不理掉心情）。
+  setInterval(() => {
+    for (const s of sprites) {
+      if (s && s.decayMoodTick) s.decayMoodTick();
+    }
+  }, 5 * 60 * 1000);
 }

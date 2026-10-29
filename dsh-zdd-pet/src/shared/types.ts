@@ -119,6 +119,8 @@ export interface Pet {
   rest?: PetRest;
   /** 条目级：任务完成庆祝。 */
   celebrate?: PetCelebrate;
+  /** 条目级：心情/亲密度系统。 */
+  mood?: MoodParams;
   /** 全局默认：番茄钟 / 久坐提醒（设置页可开/关并选提醒间隔；文案池不在设置页暴露，手改 config 可自定义） */
   pomodoro?: PomodoroParams;
   /** 全局默认：启动吉祥话（每次 DSH 启动让宠物说一句吉利话） */
@@ -148,6 +150,25 @@ export interface PetRest {
 export interface PetCelebrate {
   enabled: boolean;
   anim: string;
+}
+
+/** 心情/亲密度（config.jsonc 的 mood 段）：摸它涨、久不理掉，分档影响台词与动作。 */
+export interface MoodParams {
+  enabled: boolean;
+  /** 首次心情（0~100） */
+  initial: number;
+  /** 每次交互涨几点 */
+  touchGain: number;
+  /** 每小时自然衰减几点 */
+  decayPerHour: number;
+  /** 低于此值算「低落」 */
+  low: number;
+  /** 高于此值算「开心」 */
+  high: number;
+  /** 开心时空闲撒娇用的动画名（可选） */
+  happyAnim?: string;
+  /** 各档位点击台词池（空则回退 clickTexts） */
+  texts: { low: string[]; normal: string[]; high: string[] };
 }
 
 /** config.jsonc 的 pomodoro 段（设置页「番茄钟」区可编辑的部分）：开关 + 提醒间隔分钟。

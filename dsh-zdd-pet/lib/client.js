@@ -3620,6 +3620,7 @@ function flattenConfigPets(merged) {
 			clickTexts: conf.clickTexts,
 			rest: conf.rest,
 			celebrate: conf.celebrate,
+			mood: conf.mood,
 			whisperModel: conf.whisperModel,
 			chatModel: conf.chatModel,
 			assetRoot: entry,

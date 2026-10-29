@@ -862,6 +862,7 @@ function flattenConfigPets(merged) {
 			clickTexts: conf.clickTexts,
 			rest: conf.rest,
 			celebrate: conf.celebrate,
+			mood: conf.mood,
 			whisperModel: conf.whisperModel,
 			chatModel: conf.chatModel,
 			assetRoot: entry,
@@ -2492,6 +2493,65 @@ function progressText(ws) {
 }
 
 //#endregion
+//#region src/shared/mood.ts
+const MOOD_MIN = 0;
+const MOOD_MAX = 100;
+function clampMood(v) {
+	if (!Number.isFinite(v)) return MOOD_MIN;
+	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, Math.round(v)));
+}
+function moodTier(value, low, high) {
+	const v = clampMood(value);
+	if (v < low) return "low";
+	if (v > high) return "high";
+	return "normal";
+}
+function decayMood(value, elapsedMs, decayPerHour) {
+	if (!Number.isFinite(elapsedMs) || elapsedMs <= 0 || !Number.isFinite(decayPerHour) || decayPerHour <= 0) return clampMood(value);
+	const hours = elapsedMs / 36e5;
+	return clampMood(value - hours * decayPerHour);
+}
+function moodLabel(tier) {
+	return tier === "low" ? "有点闷" : tier === "high" ? "超开心" : "还不错";
+}
+function readMoodParams(raw) {
+	const d = {
+		enabled: true,
+		initial: 60,
+		touchGain: 4,
+		decayPerHour: 4,
+		low: 30,
+		high: 70,
+		texts: {
+			low: [],
+			normal: [],
+			high: []
+		}
+	};
+	const o = raw && typeof raw === "object" ? raw : {};
+	const num = (k, min, max) => {
+		const v = Number(o[k]);
+		return Number.isFinite(v) && v >= min && v <= max ? v : d[k];
+	};
+	const texts = o.texts && typeof o.texts === "object" ? o.texts : {};
+	const arr = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim() !== "") : [];
+	return {
+		enabled: o.enabled !== false,
+		initial: num("initial", 0, 100),
+		touchGain: num("touchGain", 0, 100),
+		decayPerHour: num("decayPerHour", 0, 100),
+		low: num("low", 0, 100),
+		high: num("high", 0, 100),
+		happyAnim: typeof o.happyAnim === "string" ? o.happyAnim : void 0,
+		texts: {
+			low: arr(texts.low),
+			normal: arr(texts.normal),
+			high: arr(texts.high)
+		}
+	};
+}
+
+//#endregion
 //#region src/shared/state.ts
 /** 叶子规范化：形状不对（非对象或 counter 非数字）→ null，不让脏数据进渲染层。 */
 function normLeaf(value) {
@@ -2771,6 +2831,8 @@ exports.MEME_BUBBLE_CSS = MEME_BUBBLE_CSS
 exports.MEME_IMG_CLASS = MEME_IMG_CLASS
 exports.MENU_CSS = MENU_CSS
 exports.MIN_SPAN_MS = MIN_SPAN_MS
+exports.MOOD_MAX = MOOD_MAX
+exports.MOOD_MIN = MOOD_MIN
 exports.MORE_MENU_LABEL = MORE_MENU_LABEL
 exports.NOTIFY_ICONS = NOTIFY_ICONS
 exports.PEAK_WEIGHT = PEAK_WEIGHT
@@ -2821,6 +2883,7 @@ exports.bubbleMaxHeightPx = bubbleMaxHeightPx
 exports.bubbleTopMarginPx = bubbleTopMarginPx
 exports.buildMenuTree = buildMenuTree
 exports.buildMoreBranch = buildMoreBranch
+exports.clampMood = clampMood
 exports.clampPointInRect = clampPointInRect
 exports.clampPointToRegion = clampPointToRegion
 exports.clickScore = clickScore
@@ -2829,6 +2892,7 @@ exports.createMemeImage = createMemeImage
 exports.createMemeImageFromUrl = createMemeImageFromUrl
 exports.customClickable = customClickable
 exports.customViews = customViews
+exports.decayMood = decayMood
 exports.decideBalanceNotice = decideBalanceNotice
 exports.displayMenuBranch = displayMenuBranch
 exports.distToRectSq = distToRectSq
@@ -2852,6 +2916,8 @@ exports.isTypingTarget = isTypingTarget
 exports.isWebVisible = isWebVisible
 exports.landingSquash = landingSquash
 exports.memeImageUrl = memeImageUrl
+exports.moodLabel = moodLabel
+exports.moodTier = moodTier
 exports.mountChatDialog = mountChatDialog
 exports.mountContextMenu = mountContextMenu
 exports.mountScorePopup = mountScorePopup
@@ -2874,6 +2940,7 @@ exports.readAnim = readAnim
 exports.readBalance = readBalance
 exports.readLock = readLock
 exports.readMenuItems = readMenuItems
+exports.readMoodParams = readMoodParams
 exports.readPosition = readPosition
 exports.readSay = readSay
 exports.readThrow = readThrow

@@ -243,7 +243,8 @@ const GLOBAL_DEFAULT_KEYS = [
 	"eventsRefreshSec",
 	"clickTexts",
 	"rest",
-	"celebrate"
+	"celebrate",
+	"mood"
 ];
 /** 已告警过的 文件:字段（进程内去重：同一问题只告警一次，避免每请求刷屏；重启重置） */
 const warnedKeys = new Set();
