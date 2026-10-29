@@ -75,7 +75,10 @@ function createBridge({ isBridge, prefix, origin, token }) {
       });
     });
     server.on('error', (e) => {
-      console.error('[dsh-zdd-pet-desktop-helper] bridge callback server error:', String(e && e.message ? e.message : e));
+      console.error(
+        '[dsh-zdd-pet-desktop-helper] bridge callback server error:',
+        String(e && e.message ? e.message : e),
+      );
     });
     server.listen(0, '127.0.0.1', () => {
       const addr = server.address();

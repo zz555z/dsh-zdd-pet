@@ -177,15 +177,15 @@ dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 
 - **能做什么**：让它说一句指定的话、播一段指定动画、与它对话；读它当前说的话、工作状态、系统通知与余额
 - **为什么开放**：桌宠不该只是个摆设——比如一个「女仆」插件巡检验完想说句话，就能让桌宠当它的「实体」开口；也方便任何人基于它做二次开发
-- **通道一 · HTTP**：挂在 DSH 自己的 Web 服务上（前缀 `/dsh-pet-7340`，只监听本机、无鉴权），跨进程、脚本可直接调。动作类接口只回 `{ok}`，数据统一从 `GET /state` 读
-- **通道二 · Cordis 服务**：客户端半侧在 DSH web 页面内注册，同页客户端插件用 `ctx.get('petApi7340')` 直接取，零网络、零端口；只在该页面实例内有效，方法与返回见 [`CORDIS.md`](CORDIS.md)
+- **通道一 · HTTP**：挂在 DSH 自己的 Web 服务上（前缀 `/dsh-zdd-pet-7340`，只监听本机、无鉴权），跨进程、脚本可直接调。动作类接口只回 `{ok}`，数据统一从 `GET /state` 读
+- **通道二 · Cordis 服务**：客户端半侧在 DSH web 页面内注册，同页客户端插件用 `ctx.get('petApiZdd')` 直接取，零网络、零端口；只在该页面实例内有效，方法与返回见 [`CORDIS.md`](CORDIS.md)
 
 相关文件（HTTP 与 Cordis 各一套）：
 
 - [`API.md`](API.md) —— HTTP 接口一览（每个接口一句话，功能预览）
 - [`openapi.yaml`](openapi.yaml) —— 完整契约（OpenAPI 3.1，可直接导入 Swagger UI / Postman）
 - [`CORDIS-API.md`](CORDIS-API.md) —— Cordis 服务一览（每个成员一句话，功能预览）
-- [`CORDIS.md`](CORDIS.md) —— 对外 Cordis 服务（客户端半侧，页面内 `ctx.get('petApi7340')`，不走网络）
+- [`CORDIS.md`](CORDIS.md) —— 对外 Cordis 服务（客户端半侧，页面内 `ctx.get('petApiZdd')`，不走网络）
 - [`tools/api-tester.html`](tools/api-tester.html) —— HTTP 侧示例：桌宠控制台，扮演第三方消费方，可直观试用（`node tools/api-tester.cjs` 启动）
 - [`tools/cordis-probe`](tools/cordis-probe/README.md) —— Cordis 侧示例：扮演同页客户端插件，用 `ctx.get()` 消费服务
 
@@ -205,7 +205,7 @@ dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 - **依赖**：首次启动自动探测/下载 Electron（`~/.dsh/electron/`，也可 `cd dsh-pet && npm run ensure:electron` 手动触发）；缺失时仅日志告警，不影响浏览器形态
 - **开关 = 每只宠物的必填字段 `display`**：`web` = 仅浏览器 / `desktop` = 仅桌面 / `both` = 两者 / `none` = 都不显示；桌面模式渲染 display 含 desktop 的**全部**宠物（多开同屏，与浏览器一致），设置页「桌宠配置」编辑即时生效
 - 桌面端数据走独立进程管道，不依赖 DSH 的 HTTP 路由，不受 web 访问闸门影响
-- 本地调试：`cd dsh-pet && npm run start:desktop -- http://127.0.0.1:3080/dsh-pet-7340/config`（无宿主时自动回落 HTTP 路径）
+- 本地调试：`cd dsh-pet && npm run start:desktop -- http://127.0.0.1:3080/dsh-zdd-pet-7340/config`（无宿主时自动回落 HTTP 路径）
 
 ## 🧍 独立运行（完全不打开 DSH）
 
@@ -213,7 +213,7 @@ dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 
 ```sh
 npm install -g dsh-pet        # 必须 npm 装；dsh plugin add 装进 profile，bin 不在 PATH 上
-dsh-pet-standalone            # http://127.0.0.1:3080/dsh-pet-7340/（占用则顺延）
+dsh-pet-standalone            # http://127.0.0.1:3080/dsh-zdd-pet-7340/（占用则顺延）
 dsh-pet-standalone --check    # 只体检
 dsh-pet-standalone --port 3100
 

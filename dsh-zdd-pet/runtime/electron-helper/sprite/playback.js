@@ -43,7 +43,9 @@ Object.assign(PetSprite.prototype, {
     const loadGuard = (why) => {
       if (!this.pending || this.pending.gen !== gen) return;
       this.pending = null;
-      console.warn('[dsh-zdd-pet] 素材加载失败 pet=' + this.pet.id + ' anim=' + next + '：' + why + '（已释放本次切换）');
+      console.warn(
+        '[dsh-zdd-pet] 素材加载失败 pet=' + this.pet.id + ' anim=' + next + '：' + why + '（已释放本次切换）',
+      );
       // 播放回执：这一段没能播起来 → 如实回 failed（而不是让调用方干等到 timeout）
       if (playbackId) {
         if (this.playback === playbackId) this.playback = null;

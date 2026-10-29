@@ -280,7 +280,9 @@ Object.assign(PetSprite.prototype, {
     if (!window.petBridge || !window.petBridge.setInputRegions) return;
     const rects = [];
     // 控件矩形 = 主进程允许接收点击的区域，矩形外继续穿透。可点的余额气泡悬在余量区，不登记就点不到。
-    const controls = [...document.querySelectorAll('.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-clickable')];
+    const controls = [
+      ...document.querySelectorAll('.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-clickable'),
+    ];
     for (const el of this.inputRegionElements) {
       if (!controls.includes(el)) {
         this.inputRegionResize.unobserve(el);
