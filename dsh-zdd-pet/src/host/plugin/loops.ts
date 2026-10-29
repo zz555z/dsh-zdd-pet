@@ -203,8 +203,8 @@ export function registerLoops(deps: LoopsInput): void {
           }
           const text = pickPomodoroText(pomo);
           for (const petId of petIds) {
-            // 配图从该宠物自己的表情包池抽（池空 → 纯文字）；提醒文案本身来自 pomodoro 配置。
-            const image = pickPetMeme(petId);
+            // 配图从该宠物自己的表情包池抽（池空 → 纯文字）；受气泡表情包总开关约束。
+            const image = conf.bubbleImageEnabled !== false ? pickPetMeme(petId) : undefined;
             void deliverCue(petId, image ? { text, image } : { text });
           }
           lastFireAt.set(entry, now);

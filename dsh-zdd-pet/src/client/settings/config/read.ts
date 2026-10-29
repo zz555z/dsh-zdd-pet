@@ -28,8 +28,7 @@ export interface MainConfigPatch {
   entryPrompt?: string;
   notificationsEnabled?: boolean;
   clickSoundEnabled?: boolean;
-  whisperImageEnabled?: boolean;
-  chatImageEnabled?: boolean;
+  bubbleImageEnabled?: boolean;
   confineToScreen?: boolean;
   trayEnabled?: boolean;
   /** 物理参数：成品已按「内置默认 ← 用户层」填满，缺子键再用内置默认兜底一次。 */
@@ -76,8 +75,7 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   if (typeof main.whisperPrompt === 'string') patch.entryPrompt = main.whisperPrompt;
   if (typeof main.notificationsEnabled === 'boolean') patch.notificationsEnabled = main.notificationsEnabled;
   if (typeof main.clickSoundEnabled === 'boolean') patch.clickSoundEnabled = main.clickSoundEnabled;
-  if (typeof main.whisperImageEnabled === 'boolean') patch.whisperImageEnabled = main.whisperImageEnabled;
-  if (typeof main.chatImageEnabled === 'boolean') patch.chatImageEnabled = main.chatImageEnabled;
+  if (typeof main.bubbleImageEnabled === 'boolean') patch.bubbleImageEnabled = main.bubbleImageEnabled;
   if (typeof main.confineToScreen === 'boolean') patch.confineToScreen = main.confineToScreen;
   if (typeof main.trayEnabled === 'boolean') patch.trayEnabled = main.trayEnabled;
   if (main.physics && typeof main.physics === 'object') {

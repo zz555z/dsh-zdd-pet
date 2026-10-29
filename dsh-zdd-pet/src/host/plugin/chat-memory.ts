@@ -119,7 +119,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     const system = petSystemPrompt(found);
     // 配图：开关关闭 / 池为空 / 池内图片全缺失 → 纯文本（不报错，只是没有图）
     const meme =
-      found.conf.whisperImageEnabled === true
+      found.conf.bubbleImageEnabled !== false
         ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)))
         : undefined;
     // 模型：条目配置的 whisperModel 优先（留空 = 不指定）；生成侧失败会回落到当前对话的模型重试一次
@@ -170,7 +170,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
       // 配图：开关关闭 → 空池（指令与解析都不介入）；目录链按所属条目取。
       // 张数上限（chatImageLimit，0 = 不限制）：整张清单每条消息都要附，截断后费用上限可控。
       const pool =
-        found.conf.chatImageEnabled === true
+        found.conf.bubbleImageEnabled !== false
           ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit))
           : [];
       const mem = await readMemory();

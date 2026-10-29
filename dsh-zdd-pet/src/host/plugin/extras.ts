@@ -82,8 +82,10 @@ export function createExtras(deps: ExtrasInput) {
         for (const pet of pets) {
           const petId = String(pet.id ?? '');
           if (!petId) continue;
-          const cue = pickEasterEgg(eggs, state, poolNames, rand);
-          if (!cue) continue;
+          // 气泡表情包总开关关闭：彩蛋只投文字（不配图）
+          const cueRaw = pickEasterEgg(eggs, state, poolNames, rand);
+          if (!cueRaw) continue;
+          const cue = conf.bubbleImageEnabled === false ? { text: cueRaw.text } : cueRaw;
           if (deliverCue(petId, cue)) delivered += 1;
         }
       } catch {

@@ -36,8 +36,7 @@ export interface SaveFields {
   pets: readonly Pet[];
   notificationsEnabled: boolean;
   clickSoundEnabled: boolean;
-  whisperImageEnabled: boolean;
-  chatImageEnabled: boolean;
+  bubbleImageEnabled: boolean;
   confineToScreen: boolean;
   trayEnabled: boolean;
   physics: PhysicsParams;
@@ -68,8 +67,7 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     pets: fields.pets,
     notificationsEnabled: fields.notificationsEnabled,
     clickSoundEnabled: fields.clickSoundEnabled,
-    whisperImageEnabled: fields.whisperImageEnabled,
-    chatImageEnabled: fields.chatImageEnabled,
+    bubbleImageEnabled: fields.bubbleImageEnabled,
     confineToScreen: fields.confineToScreen,
     trayEnabled: fields.trayEnabled,
     physics: fields.physics,

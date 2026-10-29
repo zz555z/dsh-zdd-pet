@@ -106,6 +106,9 @@ export const zh = {
   clickSoundToggle: '点击音效',
   clickSoundToggleHint:
     '点一下宠物播一声内置音效（assets/sound/click-duck.wav，音量 0.5；100ms 内的连续点击只响一次，多开也不会叠音）。关掉即完全静音。随「保存」写入用户配置。',
+  bubbleImageToggle: '气泡表情包',
+  bubbleImageToggleHint:
+    '总开关：控制所有气泡消息是否带表情包配图——碎碎念、对话、番茄钟、任务彩蛋、余额告急演出、启动吉祥话 统一受它管。关掉 = 全部只显示文字（更安静、省 token）；开 = 各功能按自己的逻辑配图（图片映射在配置文件顶层 memes）。',
   whisperImageToggle: '碎碎念配图',
   whisperImageToggleHint:
     '碎碎念时从表情包池随机抽一张，连同那句话一起显示（图片映射在配置文件顶层 memes）。token：碎碎念本来就每次生成都要调一次模型，配图只是把抽中那张的名称+描述（约 100 字符 / ≈60 token）加进同一次请求，增量可忽略。',
@@ -332,6 +335,9 @@ export const en: Record<Key, string> = {
   clickSoundToggle: 'Click sound',
   clickSoundToggleHint:
     'Plays the built-in click sound (assets/sound/click-duck.wav, volume 0.5) when a pet is clicked; repeated clicks within 100ms play only once, so multiple pets never stack up. Turn it off for silence. Written to the user config together with Save.',
+  bubbleImageToggle: 'Bubble memes',
+  bubbleImageToggleHint:
+    'Master switch for memes in all bubble messages — whispers, chat, pomodoro, task easter eggs, balance-gag show and startup greeting all follow it. Off = text only everywhere (quieter, saves tokens); On = each feature attaches memes per its own logic (mapping lives in the top-level `memes` config field).',
   whisperImageToggle: 'Whisper images',
   whisperImageToggleHint:
     'Attach one random meme from the pool to each whisper line (image mapping lives in the top-level `memes` config field). Tokens: a whisper already calls the model every cycle, so the image only appends the name + description of that one meme (~100 chars / ~60 tokens) to the same request — negligible.',
@@ -461,7 +467,7 @@ export const en: Record<Key, string> = {
   uninstallStep2:
     '2. Remove the plugin — preferably via DSH\'s "Plugin manager" page, uninstalling {name} (easiest; also drops it from the profile dependencies and bundle layer).',
   uninstallStep3:
-    '3. If no usable dsh command is available (common when DSH runs inside the desktop app), uninstall manually: edit {profileDir}/package.json — remove "{name}" from dependencies and from dsh.profile.bundles; delete the node_modules/{name} directory; then restart DSH.',
+    '3. If no usable dsh command is available (common when DSH runs inside the desktop app), uninstall manually: edit {profileDir}/package.json — remove "{name}" from dependencies and "{name}" from dsh.profile.bundles; delete the node_modules/{name} directory; then restart DSH.',
   uninstallStep4:
     '4. Delete the locations above as needed: cache folders (Electron runtime / desktop cache / download cache) are harmless and re-download or rebuild automatically; deleting "plugin user data" loses your config and chat memory (back up main-config.jsonc first if you want to keep it).',
   uninstallCmd: 'dsh plugin --profile {profile} remove {name}',

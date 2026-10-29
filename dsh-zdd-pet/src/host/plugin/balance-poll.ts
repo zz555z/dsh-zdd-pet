@@ -70,7 +70,8 @@ export function createBalancePoll(deps: BalancePollInput) {
         if (!shouldFireBalanceGag(gag, st, percent, now)) continue;
         const gagCue = pickBalanceGag(gag);
         // 配图名必须命中该宠物表情包池，否则退回纯文字（不破图）。
-        const image = gagCue.image && memeValid(petId, gagCue.image) ? gagCue.image : undefined;
+        const allowImg = conf.bubbleImageEnabled !== false;
+        const image = allowImg && gagCue.image && memeValid(petId, gagCue.image) ? gagCue.image : undefined;
         if (deliverCue(petId, image ? { text: gagCue.text, image } : { text: gagCue.text })) {
           log.info(`[dsh-zdd-pet] 余额告急演出 pet=${petId} 已用 ${percent.toFixed(1)}%`);
         }

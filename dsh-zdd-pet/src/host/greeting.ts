@@ -155,7 +155,7 @@ export async function maybeGreeting(deps: GreetingDeps): Promise<boolean> {
 
     // 配图：开启配图且池非空时，从该宠物自己的表情包池抽一张（与碎碎念同源）
     const meme =
-      found.conf.whisperImageEnabled === true
+      found.conf.bubbleImageEnabled !== false
         ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)))
         : undefined;
     state.writePet(petId, 'say', meme ? { text, image: meme.name } : { text });

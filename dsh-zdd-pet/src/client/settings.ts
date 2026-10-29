@@ -110,9 +110,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const [notifyEnabled, setNotifyEnabled] = useState(true);
     // 点击音效开关：同通知开关，随「保存」整包写入；初值 false 是内置默认，加载效应会用成品值覆盖。
     const [clickSound, setClickSound] = useState(false);
-    // 表情包配图开关（全局）：切换只改本地状态，随「保存」一起提交。
-    const [whisperImage, setWhisperImage] = useState(false);
-    const [chatImage, setChatImage] = useState(false);
+    // 气泡表情包总开关（全局）：控制所有气泡消息是否配图；切换只改本地状态，随「保存」一起提交。
+    const [bubbleImage, setBubbleImage] = useState(true);
     // 抛掷锁定开关（全局）：切换只改本地状态，随「保存」一起提交。
     const [confineScreen, setConfineScreen] = useState(false);
     // 系统托盘开关（全局）：随「保存」一起提交；宿主半侧据此决定建不建托盘、没桌面宠物时还值不值得常驻 Helper。
@@ -143,8 +142,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         replace(entries);
         if (patch.notificationsEnabled !== undefined) setNotifyEnabled(patch.notificationsEnabled);
         if (patch.clickSoundEnabled !== undefined) setClickSound(patch.clickSoundEnabled);
-        if (patch.whisperImageEnabled !== undefined) setWhisperImage(patch.whisperImageEnabled);
-        if (patch.chatImageEnabled !== undefined) setChatImage(patch.chatImageEnabled);
+        if (patch.bubbleImageEnabled !== undefined) setBubbleImage(patch.bubbleImageEnabled);
         if (patch.confineToScreen !== undefined) setConfineScreen(patch.confineToScreen);
         if (patch.trayEnabled !== undefined) setTrayEnabled(patch.trayEnabled);
         if (patch.physics !== undefined) setPhysics(patch.physics);
@@ -182,8 +180,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const globalFlags: GlobalFlags = {
       notificationsEnabled: notifyEnabled,
       clickSoundEnabled: clickSound,
-      whisperImageEnabled: whisperImage,
-      chatImageEnabled: chatImage,
+      bubbleImageEnabled: bubbleImage,
       confineToScreen: confineScreen,
       trayEnabled,
     };
@@ -192,8 +189,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const globalSetters: Record<GlobalFlagKey, (value: boolean) => void> = {
       notificationsEnabled: (value) => void toggleNotify(value),
       clickSoundEnabled: setClickSound,
-      whisperImageEnabled: setWhisperImage,
-      chatImageEnabled: setChatImage,
+      bubbleImageEnabled: setBubbleImage,
       confineToScreen: setConfineScreen,
       trayEnabled: setTrayEnabled,
     };
@@ -221,8 +217,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         pets: mainPets,
         notificationsEnabled: notifyEnabled,
         clickSoundEnabled: clickSound,
-        whisperImageEnabled: whisperImage,
-        chatImageEnabled: chatImage,
+        bubbleImageEnabled: bubbleImage,
         confineToScreen: confineScreen,
         trayEnabled,
         physics,
