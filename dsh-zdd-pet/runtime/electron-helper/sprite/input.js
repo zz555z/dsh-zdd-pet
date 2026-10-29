@@ -348,7 +348,17 @@ Object.assign(PetSprite.prototype, {
     const py = wy - this.margin.t;
     const inBody = px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
     // 快捷键与拖拽都只在"光标在身体上"时生效，与提示/穿透同源，避免另一套判定
+    const wasHoverBody = this.hoverBody;
     this.hoverBody = inBody;
+    // 心情悬浮气泡：进入身体时气泡显示当前心情，离开时收起（mood.enabled 才管，别误清正常碎碎念）
+    const moodOn = (() => {
+      const p = this.moodParams ? this.moodParams() : null;
+      return !!(p && p.enabled);
+    })();
+    if (moodOn) {
+      if (inBody && !wasHoverBody) this.showMoodOnHover();
+      else if (!inBody && wasHoverBody) this.clearWhisper();
+    }
     // 光标存视口坐标（窗口原点 + 窗口内坐标）：窗口随宠物移动时贴光标不会漂。必须在 setTip 之前
     // 更新——setTip 变显隐时会立刻渲染一次，晚一步就会用上一次的光标摆位。
     if (inBody) this.tipCursor = { x: this.pos.x - this.margin.l + wx, y: this.pos.y - this.margin.t + wy };

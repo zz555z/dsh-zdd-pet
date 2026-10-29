@@ -77,11 +77,12 @@ Object.assign(PetSprite.prototype, {
     this.saveMood();
   },
 
-  /** 气泡显示当前心情（右键「心情」菜单用）。 */
-  showMoodBubble() {
+  /** 气泡显示当前心情（悬浮时用；duration 给足，离开时由 onMouseMove 收起）。 */
+  showMoodOnHover() {
     const p = this.moodParams();
-    const tier = this.moodTier();
+    if (!p.enabled) return;
     const v = S.clampMood(this.mood ?? p.initial);
-    this.showWhisper('心情 ' + v + '/100（' + S.moodLabel(tier) + '）', undefined, undefined, undefined, false);
+    const tier = this.moodTier();
+    this.showWhisper('心情 ' + v + '/100（' + S.moodLabel(tier) + '）', undefined, undefined, 600000, false);
   },
 });

@@ -26,7 +26,6 @@ Object.assign(PetSprite.prototype, {
     ];
     // 「查看余额」无条件显示：关了 balanceEnabled 的宠物也能点，手动请求不受开关限制，点了一定给答复。
     tools.push({ label: '查看余额', action: 'show-balance' });
-    tools.push({ label: '心情', action: 'mood' });
     tools.push(
       { label: '碎碎念', action: 'whisper' },
       { label: '对话', action: 'chat', hint: S.CHAT_HOTKEY_HINT },
@@ -86,10 +85,6 @@ Object.assign(PetSprite.prototype, {
     }
     if (leaf.action === 'show-balance') {
       this.showBalanceFromMenu(); // 立即拉余额并展示（无需等 1s 触发轮询，展示路径与周期触发一致）
-      return;
-    }
-    if (leaf.action === 'mood') {
-      this.showMoodBubble(); // 气泡显示当前心情数值与档位
       return;
     }
     if (leaf.action === 'whisper') {
