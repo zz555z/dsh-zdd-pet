@@ -62,15 +62,11 @@ Object.assign(PetSprite.prototype, {
     const p = this.moodParams();
     if (!p.enabled) return;
     const g = Number.isFinite(gain) ? gain : p.touchGain;
-    const next = (this.mood ?? p.initial) + g;
-    // 点满到 101：直接触发「绕圈跑」彩蛋（不再夹回 100）
-    if (next > 100) {
-      this.triggerExcite();
-      return;
-    }
-    this.mood = S.clampMood(next);
+    this.mood = S.clampMood((this.mood ?? p.initial) + g);
     this.moodSavedAt = Date.now();
     this.saveMood();
+    // 点满（到 100）就触发一次「乱跑」彩蛋（_exciteRunning 防重复触发）
+    if (this.mood >= 100 && !this._exciteRunning) this.triggerExcite();
   },
 
   /** 定时衰减（由 startLoops 定期调用）：按与上次保存的时间差补算。 */
@@ -88,6 +84,10 @@ Object.assign(PetSprite.prototype, {
   triggerExcite() {
     if (this._exciteRunning) return;
     this._exciteRunning = true;
+    // 兜底：万一动画链中途异常没走到复位，22s 后强制解锁，避免永久点不动
+    const safety = window.setTimeout(() => {
+      this._exciteRunning = false;
+    }, 22000);
     this.mood = 101;
     this.moodSavedAt = Date.now();
     this.saveMood();
@@ -109,6 +109,7 @@ Object.assign(PetSprite.prototype, {
           const p = this.moodParams ? this.moodParams() : null;
           const sad = (p && p.sadAnim) || '工作状态-垂头叹气冒汗';
           if (this._hasAnim(sad)) this.playOnce(sad);
+          window.clearTimeout(safety);
           this._exciteRunning = false;
         }, 400);
         return;
