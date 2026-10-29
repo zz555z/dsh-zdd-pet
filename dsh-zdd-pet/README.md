@@ -19,18 +19,15 @@
 
 ## 安装
 
-> ⚠️ 本仓库 `lib/` 构建产物不入库、仓库根无 `package.json`（包在本子目录），所以要先构建再装，不能直接 add。
+本 fork 已把构建好的 `lib/` 提交进仓库，**可直接从 GitHub 安装、无需构建**：
 
 ```bash
-git clone https://github.com/zz555z/dsh-zdd-pet.git
-cd dsh-zdd-pet/dsh-zdd-pet
-pnpm install && pnpm run build
-dsh plugin --profile desktop add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet   # web 模式改 web
-# 桌面应用：在「插件」页填上面的本地目录路径
+dsh plugin --profile desktop add "github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet"   # web 模式改 web
+# 桌面应用：在「插件」页填 github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet
 ```
 
-或（若 DSH 安装时会自动构建）：`dsh plugin --profile desktop add "github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet"`
-装完重启 DSH。
+装完重启 DSH。若提示缺运行时依赖，进 `node_modules/dsh-zdd-pet` 跑 `npm install` 再重启。
+源码安装：clone → `cd dsh-zdd-pet && npm install && npm run build` → `dsh plugin add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet`。
 
 完整说明与安装：**<https://github.com/zz555z/dsh-zdd-pet>**
 

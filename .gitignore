@@ -36,8 +36,9 @@ temp/
 #   lib/                      tsdown bundle（lib/index.js、lib/client.js）+ tsc 声明（lib/types/*.d.ts，npm run types）
 #   runtime/electron-helper/shared-core.js  桌面共享纯逻辑（scripts/build-desktop-core.mjs 产出，window.PetShared）
 # （lib/types 曾是手写声明才保留跟踪；自 gen-types.mjs 起为生成产物，与 lib/*.js 同等对待）
-dsh-zdd-pet/lib/
-dsh-zdd-pet/runtime/electron-helper/shared-core.js
+# 本 fork 为了让「github: 直装即用」把构建产物入库（原作者不入库）：
+# dsh-zdd-pet/lib/
+# dsh-zdd-pet/runtime/electron-helper/shared-core.js
 
 # ── dsh-pet 桌宠应用打包产物（electron-builder 输出，`node scripts/dist.mjs` 可重生）──
 dsh-zdd-pet/dist-app/

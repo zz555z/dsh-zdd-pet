@@ -24,32 +24,19 @@
 
 ## 🚀 安装本分支（fork）
 
-> ⚠️ **重要**：本仓库的 `lib/`（构建产物）**不入库**，且仓库根没有 `package.json`（插件包在 `dsh-zdd-pet/` 子目录）。所以**不能简单 `add` 就用，必须先构建**。
-
-### 方式一：从源码安装（推荐，最稳）
+本 fork **已把构建好的 `lib/` 提交进仓库**，所以可以**直接从 GitHub 安装，无需自己构建**：
 
 ```bash
-# 需 Node.js ≥ 22.12；有 pnpm 更好（没有 npm 也行）
-git clone https://github.com/zz555z/dsh-zdd-pet.git
-cd dsh-zdd-pet/dsh-zdd-pet
-pnpm install          # 或 npm install
-pnpm run build        # 生成 lib/（不入库，必须构建；也产出桌面 shared-core）
-
-# 装进 DSH 的 profile（--profile 填实际在用的：桌面版一般 desktop，dsh web 用 web）
-dsh plugin --profile desktop add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet
-```
-
-- **桌面应用（Electron 版）**：在应用内「插件」页/插件管理里，填上面那个**本地目录绝对路径**（`file:` 后那段）。
-- 装完 **重启 DSH** 生效。
-
-### 方式二：从 GitHub 直接安装（若你的 DSH 安装时会自动构建）
-
-```bash
+# --profile 填实际在用的：桌面版一般 desktop、dsh web 用 web
 dsh plugin --profile desktop add "github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet"
 ```
 
-> `#path:/dsh-zdd-pet` 不能省——包在那个子目录里。若安装后**没反应 / 报缺 lib**，说明 DSH 没自动构建：进 `node_modules/dsh-zdd-pet` 手动 `npm install && npm run build`，再重启 DSH。
+- **桌面应用（Electron 版）**：在应用内「插件」页/插件管理里填 `github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet`。
+- `#path:/dsh-zdd-pet` 不能省（插件包在仓库这个子目录里）。
+- 装完 **重启 DSH** 生效。
+- 若安装后提示缺运行时依赖，进 `node_modules/dsh-zdd-pet` 跑一次 `npm install`（或 `pnpm install`）再重启。
 
+> 想自己改代码从源码装：clone 后 `cd dsh-zdd-pet && npm install && npm run build`，再 `dsh plugin --profile desktop add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet`。
 
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-pet?label=npm&color=blue"></a>
