@@ -17,6 +17,22 @@
 - **任务完成庆祝**：一轮任务成功完成时播专属庆祝动画（`celebrate`）。
 - **位置与气泡优化**：四角按宠物身体贴边（`marginX/marginY` 即身体到屏幕边缘像素）；顶部角气泡改为侧弹，不被屏幕裁切。
 
+
+## 安装
+
+> ⚠️ 本仓库 `lib/` 构建产物不入库、仓库根无 `package.json`（包在本子目录），所以要先构建再装，不能直接 add。
+
+```bash
+git clone https://github.com/zz555z/dsh-zdd-pet.git
+cd dsh-zdd-pet/dsh-zdd-pet
+pnpm install && pnpm run build
+dsh plugin --profile desktop add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet   # web 模式改 web
+# 桌面应用：在「插件」页填上面的本地目录路径
+```
+
+或（若 DSH 安装时会自动构建）：`dsh plugin --profile desktop add "github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet"`
+装完重启 DSH。
+
 完整说明与安装：**<https://github.com/zz555z/dsh-zdd-pet>**
 
 许可：代码 MIT；素材禁止商用；二创在公开渠道须署名（同上链接）。

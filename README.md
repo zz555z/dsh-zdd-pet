@@ -22,6 +22,35 @@
 >
 > `assets/config.jsonc` 的默认值已按本人使用习惯调整：宠物 `size 300`、`display desktop`（仅桌面）、右下角 `marginX 24 / marginY 20`、字体 `yahei 21`、番茄钟开启 5 分钟、启动吉祥话开启（语言池 100 句）、余额开关与系统托盘默认关闭。安装 / 恢复默认后即为此状态，可在设置页或 `~/.dsh/dsh-zdd-pet/main-config.jsonc` 中随时改。
 
+## 🚀 安装本分支（fork）
+
+> ⚠️ **重要**：本仓库的 `lib/`（构建产物）**不入库**，且仓库根没有 `package.json`（插件包在 `dsh-zdd-pet/` 子目录）。所以**不能简单 `add` 就用，必须先构建**。
+
+### 方式一：从源码安装（推荐，最稳）
+
+```bash
+# 需 Node.js ≥ 22.12；有 pnpm 更好（没有 npm 也行）
+git clone https://github.com/zz555z/dsh-zdd-pet.git
+cd dsh-zdd-pet/dsh-zdd-pet
+pnpm install          # 或 npm install
+pnpm run build        # 生成 lib/（不入库，必须构建；也产出桌面 shared-core）
+
+# 装进 DSH 的 profile（--profile 填实际在用的：桌面版一般 desktop，dsh web 用 web）
+dsh plugin --profile desktop add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet
+```
+
+- **桌面应用（Electron 版）**：在应用内「插件」页/插件管理里，填上面那个**本地目录绝对路径**（`file:` 后那段）。
+- 装完 **重启 DSH** 生效。
+
+### 方式二：从 GitHub 直接安装（若你的 DSH 安装时会自动构建）
+
+```bash
+dsh plugin --profile desktop add "github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet"
+```
+
+> `#path:/dsh-zdd-pet` 不能省——包在那个子目录里。若安装后**没反应 / 报缺 lib**，说明 DSH 没自动构建：进 `node_modules/dsh-zdd-pet` 手动 `npm install && npm run build`，再重启 DSH。
+
+
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-pet?label=npm&color=blue"></a>
   <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm monthly downloads" src="https://img.shields.io/npm/dm/dsh-pet?label=%E6%9C%88%E4%B8%8B%E8%BD%BD&color=brightgreen"></a>
