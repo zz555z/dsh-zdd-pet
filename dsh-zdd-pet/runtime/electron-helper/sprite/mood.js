@@ -92,6 +92,10 @@ Object.assign(PetSprite.prototype, {
     this.moodSavedAt = Date.now();
     this.saveMood(); // 写盘会夹到 100，不影响内存里的 101
     this.showWhisper('心情 101！开心到绕圈跑～', undefined, undefined, 8000, false);
+    // 绕圈时挂一个移动类动画（跑步/走路）：moveToCenter 只平移、不改视频源，这里单独把跑步动画切上去循环播
+    const acts = (this.animations.moves && this.animations.moves.actions) || [];
+    const runName = (acts.find((a) => /跑|走/.test(a.name)) || acts[0] || {}).name;
+    if (runName && this._hasAnim(runName)) this.switchTo(runName, false);
     const W = VIEW.w;
     const H = VIEW.h;
     const origRx = this.currentCenterX() / W;
