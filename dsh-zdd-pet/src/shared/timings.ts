@@ -30,8 +30,5 @@ export const SAY_BUBBLE_PER_CHAR_MS = 250;
  */
 export function sayBubbleDurationMs(text: string): number {
   const points = Array.from(String(text ?? '')).length;
-  return Math.min(
-    SAY_BUBBLE_MAX_MS,
-    Math.max(SAY_BUBBLE_MIN_MS, SAY_BUBBLE_BASE_MS + points * SAY_BUBBLE_PER_CHAR_MS),
-  );
+  return Math.min(SAY_BUBBLE_MAX_MS, Math.max(SAY_BUBBLE_MIN_MS, SAY_BUBBLE_BASE_MS + points * SAY_BUBBLE_PER_CHAR_MS));
 }
