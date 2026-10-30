@@ -70,6 +70,7 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
       font: fields.font,
       pomodoro: fields.pomodoro,
       greeting: fields.greeting,
+      mood: fields.mood,
     });
     if (invalid !== null) {
       setMsg({ kind: 'err', text: t(invalid) });

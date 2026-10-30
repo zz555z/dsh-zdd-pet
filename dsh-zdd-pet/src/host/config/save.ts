@@ -13,6 +13,7 @@ import type { ConfigPaths } from './constants.ts';
 import { fontValid, modelSelectionValid, physicsValid, topFieldValid } from './validate.ts';
 import { pomodoroValid } from '../../shared/pomodoro.ts';
 import { greetingValid } from '../../shared/greeting.ts';
+import { DEFAULT_MOOD, moodValid } from '../../shared/mood.ts';
 
 /**
  * 保存用户层（PUT /config）：接受 pets + 全局开关 + physics / font / 两个模型 / 对话参数。
@@ -120,6 +121,10 @@ export function saveUserConfig(
   // 没传则走下面的透传保留。设置页可编辑（enabled / mode / poolSize）。
   const gr = o.greeting;
   if (gr !== undefined && !greetingValid(gr)) return null;
+  // mood（心情 / 亲密度：启用开关 + 五个 0~100 数值）：与 pomodoro 同一套语义——传了就校验后
+  // 进白名单，没传则透传保留。设置页只编辑这六个子键，texts / happyAnim / sadAnim 由 existing 透传。
+  const mo = o.mood;
+  if (mo !== undefined && !moodValid(mo)) return null;
   // whisperModel / chatModel（碎碎念 / 对话各自的服务商 + 模型；设置页两个下拉框写的就是它们）：
   // 与 physics 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
   // 落盘时归一化成 { provider, model } 两个 trim 过的字符串（请求体多带的键不写进用户层）。
@@ -164,11 +169,38 @@ export function saveUserConfig(
       ...prev,
       enabled: pv.enabled,
       intervalMin: Number(pv.intervalMin),
+      ...(pv.breakMin !== undefined ? { breakMin: Number(pv.breakMin) } : {}),
+      ...(pv.longBreakMin !== undefined ? { longBreakMin: Number(pv.longBreakMin) } : {}),
+      ...(pv.roundsBeforeLongBreak !== undefined ? { roundsBeforeLongBreak: Number(pv.roundsBeforeLongBreak) } : {}),
+      ...(pv.autoStartBreak !== undefined ? { autoStartBreak: pv.autoStartBreak === true } : {}),
+      ...(pv.autoStartFocus !== undefined ? { autoStartFocus: pv.autoStartFocus === true } : {}),
     };
   }
   if (gr !== undefined) {
     const gv = gr as Record<string, unknown>;
     outConfig.greeting = { enabled: gv.enabled, mode: gv.mode, poolSize: Number(gv.poolSize) };
+  }
+  if (mo !== undefined) {
+    // mood 落盘：只写设置页编辑的六个子键，texts / happyAnim / sadAnim 等从 existing 的 mood 段
+    // 透传合并——否则每次保存都会把用户手改的台词池与动画名抹掉。
+    const mv = mo as Record<string, unknown>;
+    // 磁盘已有 mood 就透传其中的 texts / happyAnim / sadAnim；没有则用内置默认补齐，
+    // 否则第一次保存会写出一份缺动画名与台词池的 mood，导致心情功能「静悄悄」。
+    const prev = {
+      ...DEFAULT_MOOD,
+      ...((existing && typeof existing === 'object'
+        ? (existing.mood as Record<string, unknown> | undefined)
+        : undefined) ?? {}),
+    };
+    outConfig.mood = {
+      ...prev,
+      enabled: mv.enabled,
+      initial: Number(mv.initial),
+      touchGain: Number(mv.touchGain),
+      decayPerHour: Number(mv.decayPerHour),
+      low: Number(mv.low),
+      high: Number(mv.high),
+    };
   }
   if (wm !== undefined) outConfig.whisperModel = cleanModel(wm as Record<string, unknown>);
   if (cm !== undefined) outConfig.chatModel = cleanModel(cm as Record<string, unknown>);
@@ -191,6 +223,7 @@ export function saveUserConfig(
   if (fo !== undefined) bodyOwned.add('font');
   if (po !== undefined) bodyOwned.add('pomodoro');
   if (gr !== undefined) bodyOwned.add('greeting');
+  if (mo !== undefined) bodyOwned.add('mood');
   if (wm !== undefined) bodyOwned.add('whisperModel');
   if (cm !== undefined) bodyOwned.add('chatModel');
   if (cmr !== undefined) bodyOwned.add('chatMemoryRounds');

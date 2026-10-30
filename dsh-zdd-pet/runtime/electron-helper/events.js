@@ -165,6 +165,7 @@ PetSprite.prototype.clearWhisper = function clearWhisper() {
   if (this.whisperTimer !== null) window.clearTimeout(this.whisperTimer);
   this.whisperTimer = null;
   this.whisperOn = false;
+  this.whisperHold = false;
   this.whisperView = null;
   this.whisperImage = '';
   this.whisperUrl = '';
@@ -269,8 +270,10 @@ PetSprite.prototype.checkRest = function checkRest() {
   console.log('[dsh-zdd-pet] ' + new Date().toTimeString().slice(0, 8) + ' 打瞌睡 pet=' + this.pet.id);
 };
 
-PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duration, anim) {
+PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duration, anim, hold) {
   this.rememberActivity();
+  // 等待用户确认的常驻气泡期间，普通气泡（点击台词/碎碎念/对话回复）一律不覆盖它。
+  if (this.whisperHold && !hold) return;
   let name = null;
   if (anim !== false) {
     const pool = this.animations.events?.whisper;
@@ -299,12 +302,16 @@ PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duratio
   }
   if (duration === 0) return;
   this.whisperOn = true;
+  this.whisperHold = !!hold;
   this.whisperView = S.whisperBubbleView({ ok: true, text, ts: 0 });
   this.whisperImage = typeof image === 'string' ? image : '';
   this.whisperUrl = typeof url === 'string' ? url : '';
   this.renderBubble();
-  // 气泡定时消失（与动画解耦，与余额同一语义；重复触发先清旧定时器）
+  // 常驻气泡（等待用户确认）不设定时器：用户不确认就一直显示，直到宿主写 clear。
   if (this.whisperTimer !== null) window.clearTimeout(this.whisperTimer);
+  this.whisperTimer = null;
+  if (this.whisperHold) return;
+  // 普通气泡定时消失（与动画解耦，与余额同一语义；重复触发先清旧定时器）
   this.whisperTimer = window.setTimeout(() => {
     this.whisperOn = false;
     this.renderBubble();
@@ -417,7 +424,7 @@ function applySayLeaf(petId, leaf) {
   for (const s of sprites) {
     if (s.pet.id !== petId) continue;
     if (said.kind === 'clear') s.clearWhisper();
-    else s.showWhisper(said.text, said.image, said.url, duration, said.anim);
+    else s.showWhisper(said.text, said.image, said.url, duration, said.anim, said.hold);
   }
 }
 

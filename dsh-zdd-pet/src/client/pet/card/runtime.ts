@@ -19,6 +19,7 @@ import { createAnimationFlow } from './animation-flow.ts';
 import { createBubbleSlots } from './bubble-slots.ts';
 import { createCardAnimation } from './animation.ts';
 import { createCardDrag } from './drag.ts';
+import { createCardMood, MOOD_EXCITE_ANIM, MOOD_EXCITE_SAFETY_MS } from './mood.ts';
 import { createCardRest } from './rest.ts';
 import { createCardEntry, type CardEntry } from './entry.ts';
 import { createCardMotion } from './motion.ts';
@@ -30,6 +31,29 @@ import type { CardLive } from './live.ts';
 import type { CardViewProps } from './view.ts';
 import type { PetCardProps } from './props.ts';
 import type { PetRuntime } from '../types.ts';
+
+/** 动画名是否存在于任意动画池（防止播一个不存在的名字导致 404 卡住）。 */
+function animExists(anims: unknown, target: string): boolean {
+  const seen = new Set<unknown>();
+  const stack: unknown[] = [anims];
+  while (stack.length) {
+    const o = stack.pop();
+    if (!o || seen.has(o)) continue;
+    if (typeof o === 'string') {
+      if (o === target) return true;
+      continue;
+    }
+    if (Array.isArray(o)) {
+      for (const x of o) stack.push(x);
+      continue;
+    }
+    if (typeof o === 'object') {
+      seen.add(o);
+      for (const v of Object.values(o as Record<string, unknown>)) stack.push(v);
+    }
+  }
+  return false;
+}
 
 /**
  * 造卡片装配根的工厂：组件级单例（气泡、状态、指令、动画流）都在这里建一次。
@@ -49,6 +73,7 @@ export function createCardRuntime(rt: PetRuntime) {
     { balanceBubble: BalanceBubble, whisperBubble: WhisperBubble },
   );
   const useCardState = createCardState({ useState, useRef });
+  const useCardMood = createCardMood({ useState, useEffect, useRef });
   const useLockFreeze = createLockFreeze({ useEffect, useRef });
   const useCueEffects = createCueEffects({ useEffect, useRef });
   const useAnimationFlow = createAnimationFlow({ useRef });
@@ -82,6 +107,10 @@ export function createCardRuntime(rt: PetRuntime) {
     cfgRef.current = cfg;
     const workStatusRef = useRef(workStatus);
     workStatusRef.current = workStatus;
+
+    // 心情 / 亲密度：localStorage 持久化、点击上涨、定时衰减；档位影响点击台词与作息动画。
+    const mood = useCardMood({ cfgRef });
+    const exciteTimerRef = useRef<number | null>(null);
 
     // DOM 节点：视图挂载后才有值，驱动全部经取值函数读。
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -154,15 +183,50 @@ export function createCardRuntime(rt: PetRuntime) {
       setOnce: actions.setOnce,
     });
 
-    // 宠物作息：空闲打瞌睡、点击/说话/工作状态活动时醒来。
-    const rest = useCardRest({ cfgRef, actions });
+    // 宠物作息：空闲打瞌睡、点击/说话/工作状态活动时醒来；心情档位影响打盹阈值与撒娇/叹气动画。
+    const rest = useCardRest({
+      cfgRef,
+      actions,
+      mood: () => ({ enabled: mood.enabled(), tier: mood.tier(), params: mood.params() }),
+      hasAnim: (name) => animExists(cfgRef.current.animations, name),
+    });
     const markActivity = (): void => rest.poke();
+
+    /** 心情点满时的彩蛋：情绪气泡 + 冲刺跑；到时（或兜底超时）随机掉回 61~99。 */
+    const triggerMoodExcite = (): void => {
+      if (animExists(cfgRef.current.animations, MOOD_EXCITE_ANIM)) {
+        bubbles.showWhisper('心情满格！原地冲刺跑～', {}, 6000);
+        actions.setOnce(true);
+        actions.setAnim(MOOD_EXCITE_ANIM);
+        actions.bumpSeq();
+      } else {
+        bubbles.showWhisper('心情满格啦～', {}, 4000);
+      }
+      if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
+      exciteTimerRef.current = window.setTimeout(() => {
+        exciteTimerRef.current = null;
+        mood.finishExcite();
+        bubbles.showWhisper(mood.label(), {}, 4000);
+      }, MOOD_EXCITE_SAFETY_MS);
+    };
+
+    // 卸载时清掉彩蛋计时器（避免宠物被删后回调写气泡）。
+    useEffect(
+      () => () => {
+        if (exciteTimerRef.current !== null) {
+          window.clearTimeout(exciteTimerRef.current);
+          exciteTimerRef.current = null;
+        }
+      },
+      [],
+    );
 
     const drag = useCardDrag({
       bumpSeq: actions.bumpSeq,
       card,
       cfgRef,
       live: liveRef,
+      mood,
       motion,
       pendingSquash: pendingSquashRef,
       root: () => rootRef.current,
@@ -176,7 +240,11 @@ export function createCardRuntime(rt: PetRuntime) {
         bubbles.showWhisper(text, {});
         markActivity();
       },
-      onActivity: markActivity,
+      onActivity: () => {
+        markActivity();
+        const touched = mood.touch();
+        if (touched.hitMax) triggerMoodExcite();
+      },
     });
 
     // 右键菜单、对话与悬浮提示：动作派发经 ref 转发，避免与 menu-actions 构造期成环。
@@ -281,6 +349,8 @@ export function createCardRuntime(rt: PetRuntime) {
       marginX: margin.x,
       marginY: margin.y,
       name: cfg.name,
+      // 悬浮提示：心情启用时附带当前数值与档位（与桌面端 showMoodOnHover 同一信息）。
+      tipText: mood.enabled() ? cfg.name + ' · ' + mood.label() : cfg.name,
       onClick: drag.onClick,
       onContextMenu: entry.handleContextMenu,
       onPointerDown: drag.onPointerDown,

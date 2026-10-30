@@ -11,6 +11,9 @@ import type { MenuBranch, MenuLeaf, MenuMoreItem, MenuNode } from './types.ts';
  *  两端各写一份必然漂移，而这一项语义对称：桌面端用它把宠物送走，浏览器端用它送到桌面。
  *  「都不」是单向门（恢复入口是设置页），其余三个值都能从某一端改回来。 */
 export declare const displayMenuBranch: () => MenuBranch;
+/** 「番茄钟」子菜单：两端注入同一份；具体状态与倒计时由宿主计时引擎维护，
+ *  菜单只发动作，结果通过气泡回来（「查看剩余」会把当前倒计时说一句）。 */
+export declare const pomodoroMenuBranch: () => MenuBranch;
 /** 第三方菜单项统一收在这个一级菜单下（宿主自己的菜单项不进这里）。 */
 export declare const MORE_MENU_LABEL = "\u66F4\u591A";
 /** 从 /state 的 sections.menu.data 里读出本端要显示的第三方菜单项。

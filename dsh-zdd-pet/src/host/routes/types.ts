@@ -14,6 +14,7 @@ import type { LockStore } from '../lock.ts';
 import type { FileLogger } from '../log-file.ts';
 import type { MenuRegistry } from '../menu.ts';
 import type { PlaybackStore } from '../playback.ts';
+import type { PomodoroEngine } from '../pomodoro-engine.ts';
 import type { PoseStore } from '../pose.ts';
 import type { PollStateStore } from '../state.ts';
 import type { WorkStatusStore } from '../work-status.ts';
@@ -88,6 +89,8 @@ export interface PetRouteDeps {
   ) => PetLookup;
   /** 播放记录表。 */
   readonly playback: PlaybackStore;
+  /** 番茄钟计时引擎。 */
+  readonly pomodoro: PomodoroEngine;
   /** 用户数据根。 */
   readonly userRoot: string;
   /** 占用锁。 */

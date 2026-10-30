@@ -9,6 +9,7 @@ import type {
   FontConfig,
   GreetingParams,
   ModelSelection,
+  MoodParams,
   Pet,
   PhysicsParams,
   PomodoroParams,
@@ -47,6 +48,7 @@ export interface SaveFields {
   font: FontConfig;
   pomodoro: PomodoroParams;
   greeting: GreetingParams;
+  mood: MoodParams;
 }
 
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
@@ -78,6 +80,7 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     font: fields.font,
     pomodoro: fields.pomodoro,
     greeting: fields.greeting,
+    mood: fields.mood,
   };
 }
 

@@ -9,7 +9,15 @@ import { DEFAULT_FONT } from '../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../shared/pomodoro.ts';
 import { DEFAULT_GREETING } from '../shared/greeting.ts';
-import type { FontConfig, GreetingParams, ModelSelection, PhysicsParams, PomodoroParams } from '../shared/types.ts';
+import { DEFAULT_MOOD } from '../shared/mood.ts';
+import type {
+  FontConfig,
+  GreetingParams,
+  ModelSelection,
+  MoodParams,
+  PhysicsParams,
+  PomodoroParams,
+} from '../shared/types.ts';
 import type { FunctionComponent } from 'react';
 import { requestNotificationPermission } from './notify.ts';
 import { injectSettingsCss } from './settings/css.ts';
@@ -31,6 +39,7 @@ import { createWriteFlow } from './settings/config/index.ts';
 import { makePhysicsCard } from './settings/physics-card.ts';
 import { makePomodoroCard } from './settings/pomodoro-card.ts';
 import { makeGreetingCard } from './settings/greeting-card.ts';
+import { makeMoodCard } from './settings/mood-card.ts';
 import type { SettingsRuntime } from './settings/runtime.ts';
 import { useConfigLoad } from './settings/config/index.ts';
 import { usePetList } from './settings/use-pet-list.ts';
@@ -69,6 +78,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
   const PhysicsCard = makePhysicsCard(rt);
   const PomodoroCard = makePomodoroCard(rt);
   const GreetingCard = makeGreetingCard(rt);
+  const MoodCard = makeMoodCard(rt);
   const Actions = makeActions(rt);
   const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
   const SettingsDialog = makeDialog(rt);
@@ -122,6 +132,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const [pomodoro, setPomodoro] = useState<PomodoroParams>({ ...DEFAULT_POMODORO });
     // 启动吉祥话（全局默认）：与 physics 同一套语义；初值仅占位，成品加载后覆盖。
     const [greeting, setGreeting] = useState<GreetingParams>({ ...DEFAULT_GREETING });
+    // 心情 / 亲密度（全局默认）：与 physics 同一套语义；初值仅占位，成品加载后覆盖。
+    const [mood, setMood] = useState<MoodParams>({ ...DEFAULT_MOOD, texts: { ...DEFAULT_MOOD.texts } });
     // 字体（全局默认）：与 physics 同一套语义；初值仅占位，成品加载成功后才允许编辑与保存。
     const [font, setFont] = useState<FontConfig>({ ...DEFAULT_FONT });
     // AI 模型（条目级）：碎碎念 / 对话各自的服务商与模型，两者都留空 = 跟随当前对话；随「保存」整包写入。
@@ -148,6 +160,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         if (patch.physics !== undefined) setPhysics(patch.physics);
         if (patch.pomodoro !== undefined) setPomodoro(patch.pomodoro);
         if (patch.greeting !== undefined) setGreeting(patch.greeting);
+        if (patch.mood !== undefined) setMood(patch.mood);
         if (patch.font !== undefined) setFont(patch.font);
         if (patch.whisperModel !== undefined) setWhisperModel(patch.whisperModel);
         if (patch.chatModel !== undefined) setChatModel(patch.chatModel);
@@ -202,6 +215,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
       setPomodoro((current) => ({ ...current, ...patch }));
     const patchGreeting = (patch: Partial<GreetingParams>): void =>
       setGreeting((current) => ({ ...current, ...patch }));
+    const patchMood = (patch: Partial<MoodParams>): void => setMood((current) => ({ ...current, ...patch }));
 
     /** 两个模型字段各有一份状态，卡片只回传键名。 */
     const setModel = (key: ModelFieldKey, value: ModelSelection): void => {
@@ -223,6 +237,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         physics,
         pomodoro,
         greeting,
+        mood,
         whisperModel,
         chatModel,
         chatMemoryRounds: chatMemory,
@@ -308,6 +323,7 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         h(PhysicsCard, { busy, physics, onChange: patchPhysics }),
         h(PomodoroCard, { busy, pomodoro, onChange: patchPomodoro }),
         h(GreetingCard, { busy, greeting, onChange: patchGreeting }),
+        h(MoodCard, { busy, mood, onChange: patchMood }),
         h(Actions, {
           busy,
           msg,

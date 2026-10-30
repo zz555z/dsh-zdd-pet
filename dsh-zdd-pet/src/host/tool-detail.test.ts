@@ -2,7 +2,7 @@
  * host 工具详情映射的单测 —— 钉住五件事：
  *   ① 文案是数据表里的候选句（随机挑一句），且必须带具体对象名；
  *   ② 命令按「命令 / 命令+子命令」查表；没有语义的命令（npm / python / node）走兜底；
- *   ③ 复合命令（`;` `|` `&&` 换行）一律返回 null，让前端回落配置文案；
+ *   ③ 复合命令（`;` `|` `&&` 换行）不猜完整语义，但亮出第一个命令名，避免挂着旧任务；
  *   ④ 安全边界：命令参数（含凭据）不上屏、超大 arguments 不解析、非法 JSON 不抛、
  *      原型链上的名字不命中表；
  *   ⑤ 不该出现的工具（todo_write / ask_user_question / goal 系）→ null。
@@ -87,8 +87,13 @@ describe('工具文案 —— 每工具 3 句候选，且带具体对象', () =>
     ]);
   });
 
-  test('workflow：整句不带对象也能出（不需要目标）', () => {
-    oneOf(toolDetailFromEvent(call('workflow')), ['把活排个序，开工咯', '几件事一起安排上', '按顺序一件件来']);
+  test('workflow：带上工作流名称，不再只说空话', () => {
+    oneOf(toolDetailFromEvent(call('workflow', { name: '发布检查' })), [
+      '把「发布检查」的活排一排',
+      '「发布检查」这些事一起安排上',
+      '按顺序处理「发布检查」',
+    ]);
+    assert.equal(toolDetailFromEvent(call('workflow')), null);
   });
 
   test('拿不到目标 → null（不覆盖已有文案，也不吐半句话）', () => {
@@ -148,19 +153,25 @@ describe('pwsh —— 命令 / 子命令查表', () => {
   });
 });
 
-describe('复合命令 —— 一律不猜，回落配置文案', () => {
-  test('分号 / 管道 / && / 换行 都返回 null', () => {
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'cd D:\\x; npx prettier --write a.ts' })), null);
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'git status | head -5' })), null);
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'cd D:\\x && npm test' })), null);
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'npm test\nnpm run lint' })), null);
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: 'echo a || echo b' })), null);
+describe('复合命令 —— 不猜全部，但亮出第一个命令名', () => {
+  const first = (command: string): string => {
+    const out = toolDetailFromEvent(call('pwsh', { command }));
+    assert.ok(out && out.startsWith('几件事一起做，先从 '), String(out));
+    return out;
+  };
+
+  test('分号 / 管道 / && / 换行 都带上第一个命令，不挂旧任务', () => {
+    assert.equal(first('cd D:\\x; npx prettier --write a.ts'), '几件事一起做，先从 cd 开始');
+    assert.equal(first('git status | head -5'), '几件事一起做，先从 git 开始');
+    assert.equal(first('cd D:\\x && npm test'), '几件事一起做，先从 cd 开始');
+    assert.equal(first('npm test\nnpm run lint'), '几件事一起做，先从 npm 开始');
+    assert.equal(first('echo a || echo b'), '几件事一起做，先从 echo 开始');
   });
 
-  test('现场那条以字符串字面量开头的复合命令 → null', () => {
+  test('现场那条以字符串字面量开头的复合命令：仍能指出真正的命令名', () => {
     const real =
       '"== 18016 监听 =="; (Get-NetTCPConnection -LocalPort 18016 -State Listen -ErrorAction SilentlyContinue | Measure-Object).Count';
-    assert.equal(toolDetailFromEvent(call('pwsh', { command: real })), null);
+    assert.equal(first(real), '几件事一起做，先从 Get-NetTCPConnection 开始');
   });
 });
 
@@ -184,7 +195,7 @@ describe('安全与健壮性', () => {
 
   test('原型链上的名字不命中表：constructor / toString / __proto__ 按未知处理', () => {
     for (const name of ['constructor', 'toString', '__proto__', 'valueOf']) {
-      assert.equal(toolDetailFromEvent(call(name)), '让我研究下这是啥～', name);
+      assert.equal(toolDetailFromEvent(call(name)), '在忙 ' + name + ' 这件事', name);
     }
     oneOf(toolDetailFromEvent(call('pwsh', { command: 'constructor' })), [
       '跑一下 constructor 看看',
@@ -267,8 +278,8 @@ describe('目标过长 —— 换一句不带名字的氛围兜底', () => {
 });
 
 describe('兜底与跳过', () => {
-  test('未知工具 → 一句氛围话，不报工具名', () => {
-    assert.equal(toolDetailFromEvent(call('frobnicate')), '让我研究下这是啥～');
+  test('未知工具 → 报出工具名，至少知道在跑什么', () => {
+    assert.equal(toolDetailFromEvent(call('frobnicate')), '在忙 frobnicate 这件事');
   });
 
   test('语义已由别处表达的工具 → null（不许盖掉更具体的文案）', () => {

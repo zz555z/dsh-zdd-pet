@@ -36,8 +36,10 @@ export interface CardViewProps {
     bubble: ReactNode;
     /** 悬浮提示是否点亮。 */
     tipOn: boolean;
-    /** 宠物名：悬浮提示内容，同时作为命中区的无障碍名称。 */
+    /** 宠物名：同时作为命中区的无障碍名称。 */
     name: string;
+    /** 悬浮提示正文；缺省用 name（心情启用时附带数值与档位）。 */
+    tipText?: string;
     /** 点击命中区。 */
     onClick(e: ReactNS.MouseEvent<HTMLDivElement>): void;
     /** 按下：开启指针捕获与拖拽。 */

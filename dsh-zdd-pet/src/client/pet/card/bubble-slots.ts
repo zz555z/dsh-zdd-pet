@@ -30,6 +30,8 @@ export interface BubbleSlotInput {
   whisperOn: boolean;
   /** 说话气泡文本。 */
   whisperText: string | null;
+  /** 说话气泡是否常驻（等待用户确认）：true 时优先级最高且不自动收起。 */
+  whisperHold: boolean;
   /** 余额气泡是否点亮。 */
   balanceOn: boolean;
   /** 余额数据是否已拉到；null 表示尚未拉到。 */
@@ -50,6 +52,9 @@ export interface BubbleSlotInput {
  * @returns 命中的槽位；都不成立时为 `none`。
  */
 export function decideBubbleSlot(input: BubbleSlotInput): BubbleSlot {
+  // 等待用户确认的常驻气泡拥有最高优先级：它必须一直在，直到用户确认后被宿主 clear，
+  // 不能被任务进度、完成/失败、碎碎念或余额任何一方顶掉。
+  if (input.whisperOn && input.whisperHold && input.whisperText) return 'whisper';
   if (input.workTerminal && input.workOn && input.workText && input.workStatusEnabled) return 'work-terminal';
   if (input.workOn && input.workHasTask && input.workStatusEnabled) return 'work';
   if (input.whisperOn && input.whisperText) return 'whisper';
@@ -135,8 +140,9 @@ export interface BubbleSlots {
   showBalance(): void;
   /** 点余额气泡翻页，并重置停留计时。 */
   cycleBalance(): void;
-  /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。 */
-  showWhisper(text: string, parts: { image?: string; url?: string }, duration?: number): void;
+  /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。
+   *  hold = true 表示常驻（等待用户确认），不吃 duration，且期间普通气泡一律不覆盖它。 */
+  showWhisper(text: string, parts: { image?: string; url?: string }, duration?: number, hold?: boolean): void;
   /** 收起说话气泡；不碰动画与另两种气泡。 */
   clearWhisper(): void;
   /** 更新工作气泡文本，显隐不动。 */
@@ -173,7 +179,10 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     const [whisperText, setWhisperText] = useState<string | null>(null);
     const [whisperImage, setWhisperImage] = useState<string | undefined>(undefined);
     const [whisperUrl, setWhisperUrl] = useState<string | undefined>(undefined);
+    const [whisperHold, setWhisperHold] = useState(false);
     const whisperTimerRef = useRef<number | null>(null);
+    // 常驻状态用 ref 判「要不要拒绝普通气泡」：同一拍里连续两次 showWhisper 时 state 还没刷新。
+    const whisperHoldRef = useRef(false);
     // 工作状态气泡：显隐与文本。
     const [workOn, setWorkOn] = useState(false);
     const [workText, setWorkText] = useState<string | null>(null);
@@ -208,19 +217,28 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       armBalanceTimeout();
     };
 
-    const showWhisper = (text: string, parts: { image?: string; url?: string }, duration?: number) => {
+    const showWhisper = (text: string, parts: { image?: string; url?: string }, duration?: number, hold = false) => {
       if (duration === 0) return; // 只联动动画、不改气泡时走这里。
+      // 等待用户确认的常驻气泡期间，普通气泡（点击台词 / 碎碎念 / 对话回复）一律不覆盖它。
+      if (whisperHoldRef.current && !hold) return;
       setWhisperText(text);
       setWhisperImage(parts.image);
       setWhisperUrl(parts.url);
+      setWhisperHold(hold);
+      whisperHoldRef.current = hold;
       setWhisperOn(true);
       if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
-      whisperTimerRef.current = window.setTimeout(() => setWhisperOn(false), duration ?? BUBBLE_DURATION_MS);
+      // hold = 常驻：不吃 duration，直到宿主写 clear；普通气泡按原时长收起。
+      whisperTimerRef.current = hold
+        ? null
+        : window.setTimeout(() => setWhisperOn(false), duration ?? BUBBLE_DURATION_MS);
     };
 
     const clearWhisper = () => {
       if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
       whisperTimerRef.current = null;
+      whisperHoldRef.current = false;
+      setWhisperHold(false);
       setWhisperOn(false);
       setWhisperText(null);
       setWhisperImage(undefined);
@@ -230,10 +248,7 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       setWorkOn(true);
       if (workTimerRef.current !== null) window.clearTimeout(workTimerRef.current);
       // 终态 10s；非终态 15s 后自动收起（新一轮/任务详情变化再点亮），与桌面端同一口径。
-      workTimerRef.current = window.setTimeout(
-        () => setWorkOn(false),
-        terminal ? BUBBLE_DURATION_MS : WORK_BUBBLE_MS,
-      );
+      workTimerRef.current = window.setTimeout(() => setWorkOn(false), terminal ? BUBBLE_DURATION_MS : WORK_BUBBLE_MS);
     };
 
     const hideWork = () => {
@@ -256,6 +271,7 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
         workStatusEnabled: input.workStatusEnabled,
         whisperOn,
         whisperText,
+        whisperHold,
         balanceOn,
         balanceAvailable: input.balance !== null,
         balanceEnabled: input.balanceEnabled,

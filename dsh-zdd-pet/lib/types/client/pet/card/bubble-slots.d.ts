@@ -27,6 +27,8 @@ export interface BubbleSlotInput {
     whisperOn: boolean;
     /** 说话气泡文本。 */
     whisperText: string | null;
+    /** 说话气泡是否常驻（等待用户确认）：true 时优先级最高且不自动收起。 */
+    whisperHold: boolean;
     /** 余额气泡是否点亮。 */
     balanceOn: boolean;
     /** 余额数据是否已拉到；null 表示尚未拉到。 */
@@ -113,11 +115,12 @@ export interface BubbleSlots {
     showBalance(): void;
     /** 点余额气泡翻页，并重置停留计时。 */
     cycleBalance(): void;
-    /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。 */
+    /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。
+     *  hold = true 表示常驻（等待用户确认），不吃 duration，且期间普通气泡一律不覆盖它。 */
     showWhisper(text: string, parts: {
         image?: string;
         url?: string;
-    }, duration?: number): void;
+    }, duration?: number, hold?: boolean): void;
     /** 收起说话气泡；不碰动画与另两种气泡。 */
     clearWhisper(): void;
     /** 更新工作气泡文本，显隐不动。 */

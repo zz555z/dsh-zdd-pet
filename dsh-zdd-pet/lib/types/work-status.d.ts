@@ -140,6 +140,16 @@ export declare class WorkStatusStore {
      * 「新 task 配旧 progress」的混合态，并因此多发一拍 ts。
      */
     setTask(sessionId: string, task: string | null, progress?: TaskProgress | null): boolean;
+    /**
+     * 写「当前动作」文案，默认**保留已有清单进度**：工具调用只改变正在做什么，不代表清单进度清零。
+     *
+     * @param sessionId - 会话标识。
+     * @param task - 新的动作文案。
+     * @param progress - 显式传 undefined = 保留原进度；传 null = 清空进度；传值 = 一并更新。
+     */
+    setAction(sessionId: string, task: string | null, progress?: TaskProgress | null): boolean;
+    /** 只更新清单进度、保住当前动作文案：工具执行途中收到 todo/write 时用，避免进度条滞后。 */
+    setProgress(sessionId: string, progress: TaskProgress | null): boolean;
     /** 清掉某会话（回合结束 / 终态过期）：它的 task/progress 一并消失，不会残留到后续活动里。 */
     clear(sessionId: string): boolean;
     /** 展示快照（对象引用稳定，供 /work-status 直接序列化）。 */

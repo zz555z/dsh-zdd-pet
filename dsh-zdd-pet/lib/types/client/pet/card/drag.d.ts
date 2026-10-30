@@ -6,6 +6,7 @@
  */
 import { type Drag } from '../motion/drag.ts';
 import type { CardLive } from './live.ts';
+import type { CardMood } from './mood.ts';
 import type { CardMotion } from './motion.ts';
 import type { CardStateApi } from './state.ts';
 import type { RuntimePet } from '../types.ts';
@@ -25,6 +26,8 @@ export interface CardDragInput {
     live: ReactNS.MutableRefObject<CardLive>;
     /** 运动面：飞行、走位、包围盒都经它。 */
     motion: CardMotion;
+    /** 心情：点击台词按档位取池（空则回退 clickTexts）。 */
+    mood?: CardMood;
     /** 宠物根节点。 */
     root: () => HTMLDivElement | null;
     /** 舞台节点：提示与命中的定位基准。 */

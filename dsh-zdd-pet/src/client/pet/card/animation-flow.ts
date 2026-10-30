@@ -147,7 +147,14 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
     };
 
     /** 说一句：抽碎碎念动画并弹气泡，两者独立。 */
-    const speak = (text: string, image?: string, url?: string, duration?: number, anim?: boolean): void => {
+    const speak = (
+      text: string,
+      image?: string,
+      url?: string,
+      duration?: number,
+      anim?: boolean,
+      hold?: boolean,
+    ): void => {
       const card = hub.card;
       let name: string | null = null;
       if (anim !== false) {
@@ -166,7 +173,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
         card.actions.setOnce(true);
         card.actions.setAnim(name);
       }
-      hub.bubbles.showWhisper(text, { image, url }, duration);
+      hub.bubbles.showWhisper(text, { image, url }, duration, hold);
     };
 
     return { applyEndedCue, pickNext, resumeWorkStatusAnim, speak };

@@ -213,7 +213,7 @@ export function createCueEffects(rt: CueEffectsRuntime) {
         return;
       }
       const duration = say.duration === undefined ? sayBubbleDurationMs(say.text) : say.duration;
-      hub.speak(say.text, say.image, say.url, duration, say.anim);
+      hub.speak(say.text, say.image, say.url, duration, say.anim, say.hold);
     };
 
     /** 点播动画：url 插播一段，名称走菜单同一套动作。 */

@@ -70,7 +70,7 @@ describe('pickPomodoroText / pomodoroMs', () => {
   });
 
   test('间隔 → 毫秒，至少 1 分钟', () => {
-    assert.equal(pomodoroMs({ enabled: true, intervalMin: 50, texts: [] }), 50 * 60 * 1000);
-    assert.equal(pomodoroMs({ enabled: true, intervalMin: 1, texts: [] }), 60 * 1000);
+    assert.equal(pomodoroMs(parsePomodoro({ enabled: true, intervalMin: 50 })!), 50 * 60 * 1000);
+    assert.equal(pomodoroMs(parsePomodoro({ enabled: true, intervalMin: 1 })!), 60 * 1000);
   });
 });

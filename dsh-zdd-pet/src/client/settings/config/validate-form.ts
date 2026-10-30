@@ -5,12 +5,14 @@
  * @module dsh-zdd-pet/src/client/settings/config/validate-form
  */
 import { FONT_PRESETS, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../../shared/fonts.ts';
-import { POMODORO_MAX_INTERVAL_MIN, POMODORO_MIN_INTERVAL_MIN } from '../../../shared/pomodoro.ts';
+import { pomodoroValid } from '../../../shared/pomodoro.ts';
 import { GREETING_POOL_MAX, GREETING_POOL_MIN } from '../../../shared/greeting.ts';
+import { moodValid } from '../../../shared/mood.ts';
 import type {
   FontConfig,
   GreetingParams,
   ModelSelection,
+  MoodParams,
   Pet,
   PhysicsParams,
   PomodoroParams,
@@ -25,7 +27,8 @@ export type InvalidKey =
   | 'invalidChatImageLimit'
   | 'invalidFont'
   | 'invalidPomodoro'
-  | 'invalidGreeting';
+  | 'invalidGreeting'
+  | 'invalidMood';
 
 /** 保存前要校验的全部表单值。 */
 export interface FormValues {
@@ -38,6 +41,7 @@ export interface FormValues {
   font: FontConfig;
   pomodoro: PomodoroParams;
   greeting: GreetingParams;
+  mood: MoodParams;
 }
 
 /** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
@@ -85,14 +89,8 @@ export function validateForm(values: FormValues): InvalidKey | null {
   // 0 = 不限制，合法。
   if (!Number.isFinite(values.chatImageLimit) || values.chatImageLimit < 0) return 'invalidChatImageLimit';
   if (!fontValid(values.font)) return 'invalidFont';
-  // 番茄钟：间隔须在 1~1440 分钟内（与宿主 pomodoroValid 同名规则）。
-  if (
-    !Number.isFinite(values.pomodoro.intervalMin) ||
-    values.pomodoro.intervalMin < POMODORO_MIN_INTERVAL_MIN ||
-    values.pomodoro.intervalMin > POMODORO_MAX_INTERVAL_MIN
-  ) {
-    return 'invalidPomodoro';
-  }
+  // 番茄钟：与宿主同一份 pomodoroValid（专注/休息/长休息/轮数/自动开关）。
+  if (!pomodoroValid(values.pomodoro)) return 'invalidPomodoro';
   // 吉祥话：模式合法、池大小在范围内（与宿主 greetingValid 同名规则）。
   if (!['pool', 'live'].includes(values.greeting.mode)) return 'invalidGreeting';
   if (
@@ -102,5 +100,7 @@ export function validateForm(values: FormValues): InvalidKey | null {
   ) {
     return 'invalidGreeting';
   }
+  // 心情：五个数值都在 0~100（与宿主 moodValid 同一份规则）。
+  if (!moodValid(values.mood)) return 'invalidMood';
   return null;
 }

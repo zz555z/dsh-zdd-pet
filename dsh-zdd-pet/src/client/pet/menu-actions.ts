@@ -133,6 +133,14 @@ export function createMenuActions(deps: MenuActionDeps): MenuActions {
       deps.resetPosition();
       return;
     }
+    if (typeof leaf.action === 'string' && leaf.action.startsWith('pomodoro-')) {
+      const action = leaf.action.slice('pomodoro-'.length);
+      fireAction(
+        ROUTE_PATH + '/pomodoro?pet=' + encodeURIComponent(petId) + '&action=' + encodeURIComponent(action),
+        '番茄钟动作 ' + action,
+      );
+      return;
+    }
     if (!leaf.anim) return;
     const cuePlaybackId = playbackId ?? null;
     // 文字类朝右站姿是镜像的，点播前强制朝左；keepFacing 时跳过，显式朝向优先。

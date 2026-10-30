@@ -4,7 +4,16 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clampMood, decayMood, moodLabel, moodTier, readMoodParams } from './mood.ts';
+import {
+  clampMood,
+  decayMood,
+  DEFAULT_MOOD,
+  moodLabel,
+  moodTextPool,
+  moodTier,
+  moodValid,
+  readMoodParams,
+} from './mood.ts';
 
 describe('clampMood —— 夹到 0~100 整数', () => {
   test('越界/非法/小数', () => {
@@ -73,5 +82,32 @@ describe('readMoodParams —— 配置解析', () => {
     assert.equal(p.sadAnim, '叹气');
     assert.deepEqual(p.texts.low, ['a']); // 空串/非字符串被滤掉
     assert.deepEqual(p.texts.high, ['b']);
+  });
+});
+
+describe('moodTextPool —— 档位台词池与 clickTexts 回退', () => {
+  test('档位池非空 → 用档位池', () => {
+    const p = { ...DEFAULT_MOOD, texts: { low: ['闷'], normal: [], high: ['开心'] } };
+    assert.deepEqual(moodTextPool(p, 'high', ['兜底']), ['开心']);
+  });
+  test('档位池为空 → 回退 clickTexts', () => {
+    const p = { ...DEFAULT_MOOD, texts: { low: [], normal: [], high: [] } };
+    assert.deepEqual(moodTextPool(p, 'normal', ['兜底']), ['兜底']);
+  });
+  test('心情关闭 → 永远回退 clickTexts', () => {
+    const p = { ...DEFAULT_MOOD, enabled: false };
+    assert.deepEqual(moodTextPool(p, 'high', ['兜底']), ['兜底']);
+  });
+});
+
+describe('moodValid —— mood 段校验', () => {
+  test('合法默认值通过', () => {
+    assert.equal(moodValid(DEFAULT_MOOD), true);
+  });
+  test('缺 enabled / 数值越界 / 非对象 → 非法', () => {
+    assert.equal(moodValid({ ...DEFAULT_MOOD, enabled: undefined }), false);
+    assert.equal(moodValid({ ...DEFAULT_MOOD, initial: 101 }), false);
+    assert.equal(moodValid({ ...DEFAULT_MOOD, decayPerHour: -1 }), false);
+    assert.equal(moodValid(null), false);
   });
 });

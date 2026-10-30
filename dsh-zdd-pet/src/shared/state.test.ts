@@ -292,7 +292,15 @@ describe('readSay —— 说话叶子（弹气泡 / 清空 两种形态）', () 
       url: undefined,
       duration: undefined,
       anim: undefined,
+      hold: undefined,
     });
+  });
+
+  test('常驻气泡：hold=true 被解析出来（等待用户确认）', () => {
+    const hit = say({ text: '有个操作需要你确认', image: '哦鲸鲸', duration: 86400000, hold: true, anim: false });
+    assert.equal(hit?.hold, true);
+    assert.equal(hit?.anim, false);
+    assert.equal(hit?.duration, 86400000);
   });
 
   test('配图的 url 形态（issue #122 第 1 条）：地址取到、image 缺席', () => {

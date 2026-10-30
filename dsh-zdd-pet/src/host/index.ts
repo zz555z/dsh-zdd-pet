@@ -16,6 +16,8 @@ import { createBalancePoll } from './plugin/balance-poll.ts';
 import { createChatMemory } from './plugin/chat-memory.ts';
 import { createExtras } from './plugin/extras.ts';
 import { maybeGreeting } from './greeting.ts';
+import { maybeFestival } from './festival.ts';
+import { createPomodoroEngine } from './pomodoro-engine.ts';
 import { createSessionNotify } from './plugin/session-notify.ts';
 import { createPetLookup } from './plugin/pet-lookup.ts';
 import { createDownloadReport } from './plugin/download-report.ts';
@@ -73,6 +75,16 @@ export function apply(ctx: any): void {
   const chatMemory = createChatMemory({ ctx, configPaths, log, memeDirsFor, state, userRoot });
   const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
 
+  const pomodoro = createPomodoroEngine({
+    configPaths,
+    state,
+    log,
+    memeDirsFor,
+    deliverCue: extras.deliverCue,
+    pickPetMeme: extras.pickPetMeme,
+  });
+  ctx.effect(() => () => pomodoro.dispose(), 'dsh-zdd-pet: pomodoro engine');
+
   const balancePoll = createBalancePoll({
     ctx,
     configPaths,
@@ -99,6 +111,7 @@ export function apply(ctx: any): void {
 
   const deps: PetRouteDeps = {
     ...setup,
+    pomodoro,
     ...petLookup,
     ...workStatusBridge,
     ...chatMemory,
@@ -113,6 +126,8 @@ export function apply(ctx: any): void {
   registerSessionWatch({
     ctx,
     cancelTerminalCleanup,
+    clearConfirm: extras.clearConfirm,
+    deliverConfirm: extras.deliverConfirm,
     deliverEasterEgg: extras.deliverEasterEgg,
     lastTodoText,
     log,
@@ -159,8 +174,19 @@ export function apply(ctx: any): void {
   });
 
   // 启动吉祥话：每次 DSH 启动让宠物说一句吉利话（pool 从池抽 / live 现生成，失败用内置兜底）。
-  // 非阻塞：不 await，生成要几秒，别拖慢启动。
-  void maybeGreeting({ ctx, configPaths, state, log, memeDirsFor, userRoot }).catch(() => {});
+  // 非阻塞：不 await，生成要几秒，别拖慢启动。节日演出排在问候之后，避免被晚到的问候气泡顶掉。
+  void (async () => {
+    try {
+      await maybeGreeting({ ctx, configPaths, state, log, memeDirsFor, userRoot });
+    } catch {
+      /* 问候失败不影响插件 */
+    }
+    try {
+      maybeFestival({ configPaths, state, log, memeDirsFor, userRoot });
+    } catch {
+      /* 节日演出是锦上添花，失败静默 */
+    }
+  })();
 
   // 路由就绪后拉起桌面 Helper（Electron 缺失时仅告警，不影响 DSH 与浏览器 overlay）
   startHelper();

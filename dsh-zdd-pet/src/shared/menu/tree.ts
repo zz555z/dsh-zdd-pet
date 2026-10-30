@@ -21,6 +21,21 @@ export const displayMenuBranch = (): MenuBranch => ({
   ],
 });
 
+/** 「番茄钟」子菜单：两端注入同一份；具体状态与倒计时由宿主计时引擎维护，
+ *  菜单只发动作，结果通过气泡回来（「查看剩余」会把当前倒计时说一句）。 */
+export const pomodoroMenuBranch = (): MenuBranch => ({
+  label: '番茄钟',
+  children: [
+    { label: '开始专注', action: 'pomodoro-start' },
+    { label: '暂停', action: 'pomodoro-pause' },
+    { label: '继续', action: 'pomodoro-resume' },
+    { label: '查看剩余', action: 'pomodoro-status' },
+    { label: '跳过当前阶段', action: 'pomodoro-skip' },
+    { label: '结束番茄钟', action: 'pomodoro-stop' },
+    { label: '重置（清空轮数）', action: 'pomodoro-reset' },
+  ],
+});
+
 /** 第三方菜单项统一收在这个一级菜单下（宿主自己的菜单项不进这里）。 */
 export const MORE_MENU_LABEL = '更多';
 

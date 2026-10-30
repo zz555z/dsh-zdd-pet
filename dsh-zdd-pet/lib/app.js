@@ -273,7 +273,8 @@ const GLOBAL_DEFAULT_KEYS = [
 	"clickTexts",
 	"rest",
 	"celebrate",
-	"mood"
+	"mood",
+	"festival"
 ];
 /** 已告警过的 文件:字段（进程内去重：同一问题只告警一次，避免每请求刷屏；重启重置） */
 const warnedKeys = new Set();
@@ -337,12 +338,38 @@ function effectiveUserFile(paths) {
 const POMODORO_MIN_INTERVAL_MIN = 1;
 const POMODORO_MAX_INTERVAL_MIN = 1440;
 const POMODORO_DEFAULT_INTERVAL_MIN = 50;
+const POMODORO_DEFAULT_BREAK_MIN = 5;
+const POMODORO_DEFAULT_LONG_BREAK_MIN = 15;
+const POMODORO_DEFAULT_ROUNDS = 4;
+function formatPomodoroClock(totalSec) {
+	const sec = Math.max(0, Math.floor(Number.isFinite(totalSec) ? totalSec : 0));
+	const h = Math.floor(sec / 3600);
+	const m = Math.floor(sec % 3600 / 60);
+	const s = sec % 60;
+	const mm = String(m).padStart(2, "0");
+	const ss = String(s).padStart(2, "0");
+	return h > 0 ? h + ":" + mm + ":" + ss : mm + ":" + ss;
+}
+/** 可选分钟时长校验：缺省合法；出现则必须在 1~1440。 */
+function optionalMinutes(value) {
+	if (value === void 0) return true;
+	const n = Number(value);
+	return Number.isFinite(n) && n >= POMODORO_MIN_INTERVAL_MIN && n <= POMODORO_MAX_INTERVAL_MIN;
+}
 function pomodoroValid(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const p = value;
 	if (typeof p.enabled !== "boolean") return false;
 	const n = Number(p.intervalMin);
-	return Number.isFinite(n) && n >= POMODORO_MIN_INTERVAL_MIN && n <= POMODORO_MAX_INTERVAL_MIN;
+	if (!Number.isFinite(n) || n < POMODORO_MIN_INTERVAL_MIN || n > POMODORO_MAX_INTERVAL_MIN) return false;
+	if (!optionalMinutes(p.breakMin) || !optionalMinutes(p.longBreakMin)) return false;
+	if (p.roundsBeforeLongBreak !== void 0) {
+		const r = Number(p.roundsBeforeLongBreak);
+		if (!Number.isInteger(r) || r < 1 || r > 24) return false;
+	}
+	if (p.autoStartBreak !== void 0 && typeof p.autoStartBreak !== "boolean") return false;
+	if (p.autoStartFocus !== void 0 && typeof p.autoStartFocus !== "boolean") return false;
+	return true;
 }
 
 //#endregion
@@ -362,6 +389,90 @@ function greetingValid(value) {
 	if (g.mode !== "pool" && g.mode !== "live") return false;
 	const n = Number(g.poolSize);
 	return Number.isInteger(n) && n >= GREETING_POOL_MIN && n <= GREETING_POOL_MAX;
+}
+
+//#endregion
+//#region src/shared/mood.ts
+const MOOD_MIN = 0;
+const MOOD_MAX = 100;
+const DEFAULT_MOOD = {
+	enabled: true,
+	initial: 60,
+	touchGain: 4,
+	decayPerHour: 4,
+	low: 30,
+	high: 70,
+	happyAnim: "小幅度原地360度旋转展示",
+	sadAnim: "工作状态-垂头叹气冒汗",
+	texts: {
+		low: [
+			"哼，都不理我…",
+			"有点无聊诶…",
+			"陪陪我嘛…"
+		],
+		normal: [],
+		high: [
+			"好开心！",
+			"摸摸头最棒啦～",
+			"今天超棒的！"
+		]
+	}
+};
+function moodValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const m = value;
+	if (typeof m.enabled !== "boolean") return false;
+	for (const key of [
+		"initial",
+		"touchGain",
+		"decayPerHour",
+		"low",
+		"high"
+	]) {
+		if (m[key] === void 0) continue;
+		const n = Number(m[key]);
+		if (!Number.isFinite(n) || n < MOOD_MIN || n > MOOD_MAX) return false;
+	}
+	return true;
+}
+
+//#endregion
+//#region src/shared/festival.ts
+const DEFAULT_FESTIVAL = {
+	enabled: true,
+	cooldownHours: 20,
+	texts: {},
+	animations: {}
+};
+/** 字符串→字符串表：只收非空字符串键值（其余过滤掉，不整体判非法）。 */
+function stringMap(raw) {
+	const out = {};
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+	for (const [k, v] of Object.entries(raw)) if (typeof v === "string" && v.trim() !== "") out[k] = v;
+	return out;
+}
+function readFestivalParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_FESTIVAL };
+	const o = raw;
+	const n = Number(o.cooldownHours);
+	return {
+		enabled: o.enabled !== false,
+		cooldownHours: Number.isFinite(n) && n >= 1 && n <= 24 * 30 ? n : DEFAULT_FESTIVAL.cooldownHours,
+		texts: stringMap(o.texts),
+		animations: stringMap(o.animations)
+	};
+}
+function festivalValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.cooldownHours !== void 0) {
+		const n = Number(o.cooldownHours);
+		if (!Number.isFinite(n) || n < 1 || n > 24 * 30) return false;
+	}
+	if (o.texts !== void 0 && (typeof o.texts !== "object" || o.texts === null || Array.isArray(o.texts))) return false;
+	if (o.animations !== void 0 && (typeof o.animations !== "object" || o.animations === null || Array.isArray(o.animations))) return false;
+	return true;
 }
 
 //#endregion
@@ -465,6 +576,8 @@ function topFieldValid(key, value) {
 		case "font": return fontValid(value);
 		case "pomodoro": return pomodoroValid(value);
 		case "greeting": return greetingValid(value);
+		case "mood": return moodValid(value);
+		case "festival": return festivalValid(value);
 		case "whisperModel":
 		case "chatModel": return modelSelectionValid(value);
 		case "workStatusTexts": return workStatusTextsValid(value);
@@ -748,6 +861,8 @@ function saveUserConfig(raw, existing) {
 	if (po !== void 0 && !pomodoroValid(po)) return null;
 	const gr = o.greeting;
 	if (gr !== void 0 && !greetingValid(gr)) return null;
+	const mo = o.mood;
+	if (mo !== void 0 && !moodValid(mo)) return null;
 	const wm = o.whisperModel;
 	if (wm !== void 0 && !modelSelectionValid(wm)) return null;
 	const cm = o.chatModel;
@@ -776,7 +891,12 @@ function saveUserConfig(raw, existing) {
 		outConfig.pomodoro = {
 			...prev,
 			enabled: pv.enabled,
-			intervalMin: Number(pv.intervalMin)
+			intervalMin: Number(pv.intervalMin),
+			...pv.breakMin !== void 0 ? { breakMin: Number(pv.breakMin) } : {},
+			...pv.longBreakMin !== void 0 ? { longBreakMin: Number(pv.longBreakMin) } : {},
+			...pv.roundsBeforeLongBreak !== void 0 ? { roundsBeforeLongBreak: Number(pv.roundsBeforeLongBreak) } : {},
+			...pv.autoStartBreak !== void 0 ? { autoStartBreak: pv.autoStartBreak === true } : {},
+			...pv.autoStartFocus !== void 0 ? { autoStartFocus: pv.autoStartFocus === true } : {}
 		};
 	}
 	if (gr !== void 0) {
@@ -785,6 +905,22 @@ function saveUserConfig(raw, existing) {
 			enabled: gv.enabled,
 			mode: gv.mode,
 			poolSize: Number(gv.poolSize)
+		};
+	}
+	if (mo !== void 0) {
+		const mv = mo;
+		const prev = {
+			...DEFAULT_MOOD,
+			...(existing && typeof existing === "object" ? existing.mood : void 0) ?? {}
+		};
+		outConfig.mood = {
+			...prev,
+			enabled: mv.enabled,
+			initial: Number(mv.initial),
+			touchGain: Number(mv.touchGain),
+			decayPerHour: Number(mv.decayPerHour),
+			low: Number(mv.low),
+			high: Number(mv.high)
 		};
 	}
 	if (wm !== void 0) outConfig.whisperModel = cleanModel(wm);
@@ -803,6 +939,7 @@ function saveUserConfig(raw, existing) {
 	if (fo !== void 0) bodyOwned.add("font");
 	if (po !== void 0) bodyOwned.add("pomodoro");
 	if (gr !== void 0) bodyOwned.add("greeting");
+	if (mo !== void 0) bodyOwned.add("mood");
 	if (wm !== void 0) bodyOwned.add("whisperModel");
 	if (cm !== void 0) bodyOwned.add("chatModel");
 	if (cmr !== void 0) bodyOwned.add("chatMemoryRounds");
@@ -2425,8 +2562,8 @@ function todoViewFromTodo(event) {
 	};
 	let current;
 	for (const t of todos) if (t?.status === "in_progress") current = t;
-	if (!current) current = todos.find((t) => t?.status === "pending");
-	const task = taskStepText(current?.content);
+	const next = current ? void 0 : todos.find((t) => t?.status === "pending");
+	const task = current ? taskStepText(current.content) : next ? taskStepText("接下来：" + String(next.content ?? "")) : null;
 	if (!task) return {
 		task: null,
 		progress: null
@@ -2507,6 +2644,37 @@ var WorkStatusStore = class {
 		this.sessions.set(sessionId, {
 			...prev,
 			task,
+			progress
+		});
+		this.refresh();
+		return true;
+	}
+	/**
+	* 写「当前动作」文案，默认**保留已有清单进度**：工具调用只改变正在做什么，不代表清单进度清零。
+	*
+	* @param sessionId - 会话标识。
+	* @param task - 新的动作文案。
+	* @param progress - 显式传 undefined = 保留原进度；传 null = 清空进度；传值 = 一并更新。
+	*/
+	setAction(sessionId, task, progress) {
+		const prev = this.sessions.get(sessionId);
+		if (!prev) return false;
+		const nextProgress = progress === void 0 ? prev.progress : progress;
+		if (prev.task === task && sameProgress(prev.progress, nextProgress)) return false;
+		this.sessions.set(sessionId, {
+			...prev,
+			task,
+			progress: nextProgress
+		});
+		this.refresh();
+		return true;
+	}
+	/** 只更新清单进度、保住当前动作文案：工具执行途中收到 todo/write 时用，避免进度条滞后。 */
+	setProgress(sessionId, progress) {
+		const prev = this.sessions.get(sessionId);
+		if (!prev || sameProgress(prev.progress, progress)) return false;
+		this.sessions.set(sessionId, {
+			...prev,
 			progress
 		});
 		this.refresh();
@@ -4256,6 +4424,34 @@ async function handlePlaybackRoutes(deps, input) {
 }
 
 //#endregion
+//#region src/host/routes/pomodoro.ts
+/** 允许的动作集合。 */
+const ACTIONS = new Set([
+	"start",
+	"pause",
+	"resume",
+	"stop",
+	"reset",
+	"skip",
+	"status"
+]);
+async function handlePomodoroRoutes(deps, input) {
+	const { rest, method, url } = input;
+	if (rest !== "pomodoro") return void 0;
+	if (method !== "POST") return methodNotAllowed();
+	const raw = String(url.searchParams.get("action") ?? "");
+	if (!ACTIONS.has(raw)) return failResult("bad-request", "action 必须是 start / pause / resume / stop / reset / skip / status");
+	try {
+		const who = deps.requirePet(url.searchParams, () => readAllConfig(deps.configPaths));
+		if (!who.ok) return who.res;
+		const result = deps.pomodoro.control(raw, who.petId);
+		return result.ok ? okResult({ ok: true }) : failResult("bad-request", result.message ?? "番茄钟动作失败");
+	} catch (e) {
+		return failResult("generate-error", e instanceof Error ? e.message : String(e));
+	}
+}
+
+//#endregion
 //#region src/host/routes/state.ts
 async function handleStateRoutes(deps, input) {
 	const { EXTERNAL_WORK_SESSION, ctx, nextExternalWorkSeq, publishWorkStatus, state: state$1, workStatus } = deps;
@@ -4374,6 +4570,7 @@ const HANDLERS$1 = [
 	handleInteractionRoutes,
 	handleMotionRoutes,
 	handlePlaybackRoutes,
+	handlePomodoroRoutes,
 	handleChatRoutes,
 	handleAttachmentRoutes,
 	handleAssetsRoutes
@@ -4562,17 +4759,37 @@ const POMODORO_DEFAULT_TEXTS = [
 	"一坐就是这么久，伸个懒腰吧",
 	"眼睛也歇会儿吧～"
 ];
+const POMODORO_DEFAULT_BREAK_TEXTS = [
+	"休息好啦，接着专注吧～",
+	"充电完毕，继续加油！",
+	"回来啦，下一轮开始咯～"
+];
 function parsePomodoro(raw) {
 	if (!raw || typeof raw !== "object") return void 0;
 	const r = raw;
 	if (r.enabled !== true) return void 0;
-	const n = Number(r.intervalMin);
-	const intervalMin = Number.isFinite(n) && n >= POMODORO_MIN_INTERVAL_MIN && n <= POMODORO_MAX_INTERVAL_MIN ? n : POMODORO_DEFAULT_INTERVAL_MIN;
-	const texts = Array.isArray(r.texts) ? r.texts.filter((t) => typeof t === "string" && t.trim() !== "") : [];
+	const minutes = (value, def) => {
+		const n = Number(value);
+		return Number.isFinite(n) && n >= POMODORO_MIN_INTERVAL_MIN && n <= POMODORO_MAX_INTERVAL_MIN ? n : def;
+	};
+	const intervalMin = minutes(r.intervalMin, POMODORO_DEFAULT_INTERVAL_MIN);
+	const breakMin = minutes(r.breakMin, POMODORO_DEFAULT_BREAK_MIN);
+	const longBreakMin = minutes(r.longBreakMin, POMODORO_DEFAULT_LONG_BREAK_MIN);
+	const rawRounds = Number(r.roundsBeforeLongBreak);
+	const roundsBeforeLongBreak = Number.isInteger(rawRounds) && rawRounds >= 1 && rawRounds <= 24 ? rawRounds : POMODORO_DEFAULT_ROUNDS;
+	const textArr = (value) => Array.isArray(value) ? value.filter((t) => typeof t === "string" && t.trim() !== "") : [];
+	const texts = textArr(r.texts);
+	const breakTexts = textArr(r.breakTexts);
 	return {
 		enabled: true,
 		intervalMin,
-		texts: texts.length > 0 ? texts : POMODORO_DEFAULT_TEXTS
+		breakMin,
+		longBreakMin,
+		roundsBeforeLongBreak,
+		autoStartBreak: r.autoStartBreak !== false,
+		autoStartFocus: r.autoStartFocus === true,
+		texts: texts.length > 0 ? texts : POMODORO_DEFAULT_TEXTS,
+		breakTexts: breakTexts.length > 0 ? breakTexts : POMODORO_DEFAULT_BREAK_TEXTS
 	};
 }
 function pickPomodoroText(cfg, rand = Math.random) {
@@ -4864,7 +5081,7 @@ function parseArgs(raw) {
 		return null;
 	}
 }
-function clip$1(text) {
+function clip$2(text) {
 	const points = Array.from(text);
 	return points.length > TASK_TEXT_MAX ? `${points.slice(0, TASK_TEXT_MAX).join("")}…` : text;
 }
@@ -4955,6 +5172,18 @@ const TOOL_COPY = {
 		lines: EDIT_COPY,
 		short: "这里得改改"
 	},
+	multi_edit: {
+		lines: EDIT_COPY,
+		short: "这里得改改"
+	},
+	apply_patch: {
+		lines: EDIT_COPY,
+		short: "这里得改改"
+	},
+	notebook_edit: {
+		lines: EDIT_COPY,
+		short: "这里得改改"
+	},
 	str_replace_editor: {
 		lines: EDIT_COPY,
 		short: "这里得改改"
@@ -4966,6 +5195,14 @@ const TOOL_COPY = {
 	grep: {
 		lines: GREP_COPY,
 		short: "到处翻翻看"
+	},
+	list_dir: {
+		lines: [
+			"看看 {target} 这层都有啥",
+			"{target} 里放了些什么呢",
+			"翻翻 {target} 这一层"
+		],
+		short: "看看目录里有啥"
 	},
 	present: {
 		lines: PRESENT_COPY,
@@ -4985,9 +5222,9 @@ const TOOL_COPY = {
 	},
 	workflow: {
 		lines: [
-			"把活排个序，开工咯",
-			"几件事一起安排上",
-			"按顺序一件件来"
+			"把「{target}」的活排一排",
+			"「{target}」这些事一起安排上",
+			"按顺序处理「{target}」"
 		],
 		short: "把活排一排"
 	},
@@ -5008,7 +5245,9 @@ const TOOL_COPY = {
 		short: "去网上看看"
 	}
 };
-const UNKNOWN_TOOL_LINE = "让我研究下这是啥～";
+function unknownToolLine(name) {
+	return "在忙 " + name + " 这件事";
+}
 const COMMAND_FALLBACK = [
 	"跑一下 {cmd} 看看",
 	"让 {cmd} 跑一下",
@@ -5187,12 +5426,32 @@ const TOOL_RULES = {
 		pick: fileTarget,
 		path: true
 	},
+	multi_edit: {
+		pick: fileTarget,
+		path: true
+	},
+	apply_patch: {
+		pick: fileTarget,
+		path: true
+	},
+	notebook_edit: {
+		pick: fileTarget,
+		path: true
+	},
 	str_replace_editor: {
 		pick: fileTarget,
 		path: true
 	},
 	glob: { pick: (args) => firstStr(args, ["pattern", "path"]) },
 	grep: { pick: (args) => firstStr(args, ["pattern", "path"]) },
+	list_dir: {
+		pick: (args) => firstStr(args, [
+			"path",
+			"dir",
+			"directory"
+		]),
+		path: true
+	},
 	web_fetch: { pick: urlHost },
 	web_search: { pick: queryTarget },
 	subagent: { pick: (args) => firstStr(args, ["description"]) },
@@ -5219,15 +5478,18 @@ function own$1(table, key) {
 /**
 * `pwsh` 的文案：按命令名（必要时加子命令）查表，查不到走兜底。
 *
-* 复合命令 → null，让前端回落配置文案（无法判断真正在做什么）；`git log` 这类命中「命令 + 子命令」
+* 复合命令不猜完整语义，但亮出第一个命令名，避免气泡挂着上一条旧任务；`git log` 这类命中「命令 + 子命令」
 * 用子命令文案，只命中命令（`git`、`cd`）用通用文案，都没命中（`npm`、`python`、`node`…）走兜底——
 * 兜底带命令名，至少知道在跑什么。
 */
 function pwshDetail(args) {
 	const command = args === null ? null : str(args.command);
 	if (command === null) return null;
-	if (COMPOUND_COMMAND.test(command)) return null;
 	const tokens = tokenizeCommand(command);
+	if (COMPOUND_COMMAND.test(command)) {
+		const first = tokens.find((token) => COMMAND_LIKE.test(token));
+		return clip$2(first ? "几件事一起做，先从 " + first + " 开始" : "跑一段组合命令，稍等哈");
+	}
 	const nameAt = tokens.findIndex((token) => COMMAND_LIKE.test(token));
 	if (nameAt < 0) return null;
 	const rawCmd = tokens[nameAt];
@@ -5235,26 +5497,26 @@ function pwshDetail(args) {
 	const subAt = tokens.findIndex((token, index) => index > nameAt && SUBCOMMAND_LIKE.test(token));
 	const sub = subAt < 0 ? null : tokens[subAt].toLowerCase();
 	const lines = (sub === null ? void 0 : own$1(COMMAND_COPY, `${lookup} ${sub}`)) ?? own$1(COMMAND_COPY, lookup);
-	if (lines !== void 0) return clip$1(pickLine(lines));
-	if (Array.from(rawCmd).length > TARGET_DISPLAY_MAX) return clip$1(COMMAND_NAME_TOO_LONG);
-	return clip$1(fill(pickLine(COMMAND_FALLBACK), { cmd: rawCmd }));
+	if (lines !== void 0) return clip$2(pickLine(lines));
+	if (Array.from(rawCmd).length > TARGET_DISPLAY_MAX) return clip$2(COMMAND_NAME_TOO_LONG);
+	return clip$2(fill(pickLine(COMMAND_FALLBACK), { cmd: rawCmd }));
 }
 function toolDetailFromEvent(event) {
 	const name = str(event?.data?.name);
 	if (name === null) return null;
 	if (SILENT_TOOLS.has(name)) return null;
 	const args = parseArgs(event?.data?.arguments);
-	if (name === "pwsh") return pwshDetail(args);
+	if (name === "pwsh" || name === "bash") return pwshDetail(args);
 	const entry = own$1(TOOL_COPY, name);
-	if (entry === void 0) return clip$1(UNKNOWN_TOOL_LINE);
+	if (entry === void 0) return clip$2(unknownToolLine(name));
 	const rule = own$1(TOOL_RULES, name);
 	const line = pickLine(entry.lines);
-	if (!line.includes("{target}")) return clip$1(line);
+	if (!line.includes("{target}")) return clip$2(line);
 	const target = args === null || rule === void 0 ? null : rule.pick(args);
 	if (target === null) return null;
 	const shown = compactTarget(target, rule?.path === true);
-	if (Array.from(shown).length > TARGET_DISPLAY_MAX) return clip$1(entry.short);
-	return clip$1(fill(line, { target: shown }));
+	if (Array.from(shown).length > TARGET_DISPLAY_MAX) return clip$2(entry.short);
+	return clip$2(fill(line, { target: shown }));
 }
 
 //#endregion
@@ -5351,6 +5613,35 @@ function agentErrorFrame(error$1) {
 }
 
 //#endregion
+//#region src/host/confirm.ts
+const CONFIRM_HOLD_MS = 24 * 60 * 60 * 1e3;
+const CONFIRM_TEXT_MAX = 30;
+const CONFIRM_PREFERRED_IMAGES = {
+	approval: [
+		"压力一只大肥鱼",
+		"哦鲸鲸",
+		"可爱",
+		"厉害了我的鲸"
+	],
+	question: [
+		"哦鲸鲸",
+		"大师这个区是什么意思",
+		"可爱",
+		"压力一只大肥鱼"
+	]
+};
+/** 按码点截断并补省略号。 */
+function clip$1(text, max) {
+	const points = Array.from(text.trim());
+	return points.length > max ? points.slice(0, max).join("") + "…" : points.join("");
+}
+function confirmText(kind, detail) {
+	const d = String(detail ?? "").trim();
+	if (kind === "approval") return d ? clip$1("有个操作需要你确认：" + d, CONFIRM_TEXT_MAX) : "有个操作需要你确认一下～";
+	return d ? clip$1("有个问题想问你：" + d, CONFIRM_TEXT_MAX) : "有个问题想问你，等你选一下～";
+}
+
+//#endregion
 //#region src/host/plugin/session-watch.ts
 /**
 * 取本次工具事件的调用标识。
@@ -5381,7 +5672,7 @@ function trackToolPhase(ledger, sessionId, phase, lastTodo) {
 		pending$1.set(phase.callId ?? Symbol(), phase.detail);
 		return {
 			task: phase.detail,
-			progress: null,
+			progress: void 0,
 			keepWorking: true
 		};
 	}
@@ -5393,7 +5684,7 @@ function trackToolPhase(ledger, sessionId, phase, lastTodo) {
 	const active = remaining.pop();
 	if (active !== void 0) return {
 		task: active,
-		progress: null,
+		progress: void 0,
 		keepWorking: true
 	};
 	return {
@@ -5423,16 +5714,40 @@ function trackToolEvent(ledger, sessionId, input) {
 	return void 0;
 }
 function registerSessionWatch(deps) {
-	const { ctx, cancelTerminalCleanup, deliverEasterEgg, lastTodoText, log: log$1, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
+	const { ctx, cancelTerminalCleanup, clearConfirm, deliverConfirm, deliverEasterEgg, lastTodoText, log: log$1, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
 	ctx.effect(() => {
+		/** 当前正在等待用户确认的会话集合：确认气泡是常驻的，收到结果后要按会话清掉。 */
+		const pendingConfirms = new Set();
 		const dispose = ctx.on("session/event", (session$1, event) => {
 			const type = event?.type;
 			if (!type) return;
 			const sessionId = String(session$1?.header?.id ?? session$1?.id ?? "unknown");
+			const data = event?.data ?? {};
+			const showConfirm = (kind, detail$1) => {
+				if (deliverConfirm(kind, confirmText(kind, detail$1)) > 0) pendingConfirms.add(sessionId);
+			};
+			const resolveConfirm = () => {
+				if (pendingConfirms.delete(sessionId) && pendingConfirms.size === 0) clearConfirm();
+			};
+			if (type === "approval/asked") {
+				const reason = typeof data.reason === "string" ? data.reason : "";
+				const toolName$1 = typeof data.toolName === "string" ? data.toolName : "";
+				showConfirm("approval", reason || toolName$1);
+			} else if (type === "tool/call" && String(data.name ?? "") === "ask_user_question") {
+				const questions = parseToolQuestions(data.arguments);
+				showConfirm("question", questions?.[0]?.question);
+			} else if (type === "approval/decided") {
+				resolveConfirm();
+				const seq$1 = Number(event.seq ?? 0);
+				if (workStatus.has(sessionId) && workStatus.setState(sessionId, "working", seq$1)) publishWorkStatus();
+			} else if (type === "tool/result" || type === "turn/start" || type === "turn/end") resolveConfirm();
 			if (type === "todo/write") {
 				const view = todoViewFromTodo(event);
 				lastTodoText.set(sessionId, view);
-				if ((toolsInFlight.get(sessionId)?.size ?? 0) > 0) return;
+				if ((toolsInFlight.get(sessionId)?.size ?? 0) > 0) {
+					if (workStatus.has(sessionId) && workStatus.setProgress(sessionId, view.progress)) publishWorkStatus();
+					return;
+				}
 				if (workStatus.has(sessionId)) {
 					workStatus.setTask(sessionId, view.task, view.progress);
 					publishWorkStatus();
@@ -5497,7 +5812,8 @@ function registerSessionWatch(deps) {
 			});
 			if (outcome?.keepWorking) next = "working";
 			const changed = workStatus.setState(sessionId, next, seq);
-			if (outcome?.task !== void 0) workStatus.setTask(sessionId, outcome.task, outcome.progress ?? null);
+			if (outcome?.task !== void 0) if (outcome.task === null) workStatus.setTask(sessionId, null, null);
+			else workStatus.setAction(sessionId, outcome.task, outcome.progress);
 			publishWorkStatus();
 			if (!changed) return;
 			if (next === "success" || next === "error") {
@@ -5508,6 +5824,7 @@ function registerSessionWatch(deps) {
 		});
 		return () => {
 			dispose();
+			pendingConfirms.clear();
 			for (const t of terminalTimers.values()) clearTimeout(t);
 			terminalTimers.clear();
 		};
@@ -7347,10 +7664,12 @@ function createExtras(deps) {
 		const text = String(cue.text ?? "").trim();
 		if (!text) return false;
 		const image = cue.image ? String(cue.image).trim() : "";
-		state$1.writePet(petId, "say", image ? {
+		state$1.writePet(petId, "say", {
 			text,
-			image
-		} : { text });
+			...image ? { image } : {},
+			...cue.duration !== void 0 ? { duration: cue.duration } : {},
+			...cue.hold ? { hold: true } : {}
+		});
 		return true;
 	};
 	/**
@@ -7405,12 +7724,79 @@ function createExtras(deps) {
 		if (!found) return false;
 		return !!matchMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)), name);
 	};
+	/**
+	* 等待用户确认：给**所有启用工作状态联动**的宠物各投一条常驻气泡（配对应表情包）。
+	*
+	* 常驻（hold）由客户端保证：不自动收起、优先级最高，直到宿主调用 {@link clearConfirm}。
+	* 表情包优先从该宠物自己的池里挑与场景匹配的（approval / question 各有偏好名单），
+	* 池里没有就随机一张；气泡配图总开关关闭时只投文字。
+	*
+	* @param kind - 场景：审批 / 提问。
+	* @param text - 气泡文案（由调用方用 confirmText 生成）。
+	* @param rand - 随机源，便于单测注入。
+	* @returns 投出的宠物数。
+	*/
+	const deliverConfirm = (kind, text, rand = Math.random) => {
+		let cfg;
+		try {
+			cfg = readAllConfig(configPaths);
+		} catch {
+			return 0;
+		}
+		let delivered = 0;
+		for (const [entry, conf] of Object.entries(cfg)) {
+			const pets = Array.isArray(conf?.pets) ? conf.pets : [];
+			const canImage = conf?.bubbleImageEnabled !== false;
+			const pool = canImage ? readMemePool(conf?.memes, memeDirsFor(entry)) : [];
+			const preferred = CONFIRM_PREFERRED_IMAGES[kind];
+			const preferredPool = pool.filter((m) => preferred.includes(m.name));
+			const image = canImage ? (preferredPool.length > 0 ? preferredPool[Math.floor(rand() * preferredPool.length)] : pickMeme(pool, rand))?.name : void 0;
+			for (const pet of pets) {
+				const petId = String(pet.id ?? "");
+				if (!petId || pet.workStatusEnabled !== true) continue;
+				if (deliverCue(petId, {
+					text,
+					...image ? { image } : {},
+					hold: true,
+					duration: CONFIRM_HOLD_MS
+				})) delivered += 1;
+			}
+		}
+		return delivered;
+	};
+	/**
+	* 确认已完成：收起所有启用工作状态联动宠物身上的确认气泡（幂等）。
+	* 只发 clear，不判断当前是不是确认气泡——客户端在没有气泡时 clear 是幂等的。
+	*
+	* @returns 发送 clear 的宠物数。
+	*/
+	const clearConfirm = () => {
+		let cfg;
+		try {
+			cfg = readAllConfig(configPaths);
+		} catch {
+			return 0;
+		}
+		let cleared = 0;
+		for (const conf of Object.values(cfg)) {
+			const pets = Array.isArray(conf?.pets) ? conf.pets : [];
+			for (const pet of pets) {
+				const petId = String(pet.id ?? "");
+				if (!petId || pet.workStatusEnabled !== true) continue;
+				state$1.writePet(petId, "say", { clear: true });
+				cleared += 1;
+			}
+		}
+		return cleared;
+	};
 	return {
 		deliverCue,
 		pickPetMeme,
 		petConf,
 		deliverEasterEgg,
-		memeValid
+		memeValid,
+		deliverConfirm,
+		clearConfirm
 	};
 }
 
@@ -7521,6 +7907,429 @@ async function maybeGreeting(deps) {
 		log$1.info(`[dsh-zdd-pet] 启动吉祥话 pet=${petId}（${greeting.mode}）：「${text}」`);
 	}
 	return true;
+}
+
+//#endregion
+//#region src/host/festival.ts
+const FESTIVAL_ANIMATIONS = {
+	春节: "收红包",
+	除夕: "放烟花",
+	元宵节: "吃汤圆",
+	元旦: "写福字",
+	中秋节: "中秋赏月吃月饼",
+	国庆节: "放烟花",
+	端午节: "吃粽子",
+	清明节: "被落叶淹没",
+	劳动节: "超大伸懒腰",
+	儿童节: "吹气球",
+	七夕: "穿针乞巧",
+	中元节: "萌化小幽灵",
+	龙抬头: "吃年糕",
+	重阳节: "吃重阳糕",
+	腊八节: "吃腊八粥",
+	小年: "吃饺子",
+	情人节: "凭空生花",
+	跨年夜: "放烟花",
+	愚人节: "变鸽子",
+	青年节: "原地冲刺跑",
+	妇女节: "凭空生花",
+	教师节: "女仆屈膝礼仪",
+	建党节: "放烟花",
+	建军节: "舞狮头",
+	万圣夜: "讨糖南瓜灯",
+	平安夜: "装点圣诞树",
+	圣诞节: "装点圣诞树",
+	寒假: "堆雪人",
+	暑假: "吃西瓜"
+};
+const FESTIVAL_TEXTS = {
+	春节: "新春快乐，红包拿来～",
+	除夕: "除夕夜守岁啦，新年快乐！",
+	元宵节: "元宵节快乐，吃汤圆咯～",
+	元旦: "新年第一天，万事顺遂！",
+	中秋节: "中秋快乐，月亮好圆呀～",
+	国庆节: "国庆快乐，好好休息～",
+	端午节: "端午安康，吃粽子啦～",
+	清明节: "清明时节，记得踏青哦～",
+	劳动节: "劳动节快乐，今天也要好好休息～",
+	儿童节: "儿童节快乐，永远是小朋友～",
+	七夕: "七夕快乐，愿你被温柔以待～",
+	中元节: "中元节，早点回家哦～",
+	龙抬头: "龙抬头，鸿运当头！",
+	重阳节: "重阳节，登高赏菊啦～",
+	腊八节: "腊八节，喝碗腊八粥～",
+	小年: "小年到，年味渐浓啦～",
+	情人节: "情人节快乐，甜甜蜜蜜～",
+	跨年夜: "跨年夜快乐，新年见！",
+	愚人节: "愚人节快乐，别被骗啦～",
+	青年节: "青年节快乐，元气满满！",
+	妇女节: "节日快乐，今天你最美～",
+	教师节: "教师节快乐，桃李满天下～",
+	建党节: "节日快乐，铭记初心～",
+	建军节: "建军节快乐，致敬最可爱的人～",
+	万圣夜: "万圣夜快乐，不给糖就捣蛋！",
+	平安夜: "平安夜快乐，记得吃苹果～",
+	圣诞节: "圣诞快乐，礼物收到了吗～",
+	寒假: "放寒假啦，开心玩吧～",
+	暑假: "放暑假啦，吃西瓜咯～"
+};
+function dateKeyOf(date$1) {
+	return date$1.getFullYear() + "-" + (date$1.getMonth() + 1) + "-" + date$1.getDate();
+}
+function festivalOf(date$1) {
+	if (Number.isNaN(date$1.getTime())) return void 0;
+	const hits = entriesAt(date$1);
+	if (hits.length === 0) return void 0;
+	return hits.reduce((best, cur) => cur.priority < best.priority ? cur : best, hits[0]);
+}
+function animExists(anims, target) {
+	const seen = new Set();
+	const stack = [anims];
+	while (stack.length) {
+		const o = stack.pop();
+		if (!o || seen.has(o)) continue;
+		if (typeof o === "string") {
+			if (o === target) return true;
+			continue;
+		}
+		if (Array.isArray(o)) {
+			for (const x of o) stack.push(x);
+			continue;
+		}
+		if (typeof o === "object") {
+			seen.add(o);
+			for (const v of Object.values(o)) stack.push(v);
+		}
+	}
+	return false;
+}
+function resolveFestival(date$1, params) {
+	if (!params.enabled) return void 0;
+	const hit = festivalOf(date$1);
+	if (!hit) return void 0;
+	const name = hit.entry.name;
+	const text = params.texts[name] ?? FESTIVAL_TEXTS[name] ?? "今天是" + (hit.entry.spoken ?? name) + "，祝主人一切顺遂～";
+	const anim = params.animations[name] ?? FESTIVAL_ANIMATIONS[name];
+	return {
+		name,
+		text,
+		...anim ? { anim } : {}
+	};
+}
+/** 去重状态文件：记录最近一次演出的日期与节日名。 */
+const STATE_FILE = "festival-state.json";
+function readLast(userRoot) {
+	const file = join(userRoot, STATE_FILE);
+	if (!existsSync(file)) return void 0;
+	try {
+		const raw = JSON.parse(readFileSync(file, "utf8"));
+		return typeof raw.date === "string" && typeof raw.name === "string" ? {
+			date: raw.date,
+			name: raw.name
+		} : void 0;
+	} catch {
+		return void 0;
+	}
+}
+function writeLast(userRoot, value) {
+	try {
+		writeFileSync(join(userRoot, STATE_FILE), JSON.stringify(value, null, 2), "utf8");
+	} catch {}
+}
+function maybeFestival(deps, now = new Date()) {
+	const { configPaths, state: state$1, log: log$1, memeDirsFor, userRoot } = deps;
+	let cfg;
+	try {
+		cfg = readAllConfig(configPaths);
+	} catch {
+		return 0;
+	}
+	const date$1 = dateKeyOf(now);
+	const hit = festivalOf(now);
+	if (!hit) return 0;
+	const last = readLast(userRoot);
+	if (last && last.date === date$1 && last.name === hit.entry.name) return 0;
+	let delivered = 0;
+	for (const pet of flattenPetList(cfg)) {
+		const petId = String(pet.id ?? "");
+		if (!petId) continue;
+		const found = findPetInstance(cfg, petId);
+		if (!found) continue;
+		const params = readFestivalParams(found.conf.festival);
+		const cue = resolveFestival(now, params);
+		if (!cue) continue;
+		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
+		state$1.writePet(petId, "say", {
+			text: cue.text,
+			...meme ? { image: meme.name } : {},
+			anim: false
+		});
+		if (cue.anim && animExists(found.conf.animations, cue.anim)) state$1.writePet(petId, "anim", { name: cue.anim });
+		log$1.info(`[dsh-zdd-pet] 节日演出 pet=${petId}（${cue.name}）：「${cue.text}」` + (cue.anim ? ` 动画=${cue.anim}` : ""));
+		delivered += 1;
+	}
+	if (delivered > 0) writeLast(userRoot, {
+		date: date$1,
+		name: hit.entry.name
+	});
+	return delivered;
+}
+
+//#endregion
+//#region src/host/pomodoro-engine.ts
+function createPomodoroEngine(deps) {
+	const { configPaths, log: log$1, pickPetMeme, deliverCue, state: state$1 } = deps;
+	let phase = "idle";
+	let endsAt = 0;
+	/** 暂停时的剩余秒数。 */
+	let remainingSec = 0;
+	let paused = false;
+	let completedFocus = 0;
+	let timer = null;
+	let countdownTimer = null;
+	/** 每个宠物的番茄钟气泡配图缓存：倒计时刷新时不换图。 */
+	const bubbleImages = new Map();
+	let disposed = false;
+	const clearTimer = () => {
+		if (timer !== null) {
+			clearTimeout(timer);
+			timer = null;
+		}
+	};
+	const readCfg = () => {
+		try {
+			const cfg = readAllConfig(configPaths);
+			return {
+				cfg,
+				pomo: parsePomodoro(cfg.main?.pomodoro)
+			};
+		} catch {
+			return {
+				cfg: {},
+				pomo: void 0
+			};
+		}
+	};
+	/** 把一句话投给所有启用了番茄钟的宠物（各自配图；hold = 常驻倒计时气泡）。 */
+	const broadcast = (text, hold = false) => {
+		const { cfg, pomo } = readCfg();
+		if (!pomo) return;
+		for (const conf of Object.values(cfg)) {
+			if (!parsePomodoro(conf?.pomodoro)) continue;
+			const pets = Array.isArray(conf?.pets) ? conf.pets : [];
+			for (const pet of pets) {
+				const petId = String(pet.id ?? "");
+				if (!petId) continue;
+				if (!bubbleImages.has(petId)) bubbleImages.set(petId, conf.bubbleImageEnabled !== false ? pickPetMeme(petId) : void 0);
+				const image = bubbleImages.get(petId);
+				deliverCue(petId, {
+					text,
+					...image ? { image } : {},
+					...hold ? { hold: true } : {}
+				});
+			}
+		}
+	};
+	/** 收起所有番茄钟宠物身上的常驻倒计时气泡。 */
+	const clearBubbles = () => {
+		const { cfg } = readCfg();
+		for (const conf of Object.values(cfg)) {
+			if (!parsePomodoro(conf?.pomodoro)) continue;
+			const pets = Array.isArray(conf?.pets) ? conf.pets : [];
+			for (const pet of pets) {
+				const petId = String(pet.id ?? "");
+				if (petId) state$1.writePet(petId, "say", { clear: true });
+			}
+		}
+	};
+	/** 只投给发起动作的宠物（关闭 / 出错提示用）。 */
+	const sayTo = (petId, text) => {
+		if (!petId) return;
+		const image = pickPetMeme(petId);
+		deliverCue(petId, image ? {
+			text,
+			image
+		} : { text });
+	};
+	const remainNow = () => paused ? remainingSec : phase === "idle" ? 0 : Math.max(0, Math.ceil((endsAt - Date.now()) / 1e3));
+	/** 当前状态的一句话（菜单「查看剩余」/ 重复开始等场景）。 */
+	const statusText = () => {
+		if (phase === "idle") return "番茄钟空闲中，右键可以开始专注～";
+		const left = formatPomodoroClock(remainNow());
+		const label = phase === "focus" ? "专注中" : phase === "break" ? "休息中" : "长休息中";
+		return `${label}${paused ? "（已暂停）" : ""} · 剩余 ${left} · 已完成 ${completedFocus} 轮`;
+	};
+	/** 常驻倒计时气泡的文案。 */
+	const countdownText = () => {
+		const label = phase === "focus" ? "专注中" : phase === "long-break" ? "长休息中" : "休息中";
+		return label + (paused ? "（已暂停）" : "") + " · 剩余 " + formatPomodoroClock(remainNow());
+	};
+	const stopCountdown = () => {
+		if (countdownTimer !== null) {
+			clearInterval(countdownTimer);
+			countdownTimer = null;
+		}
+	};
+	/** 启动常驻倒计时气泡：立即显示一次，之后每 5 秒刷新剩余时间。 */
+	const startCountdown = () => {
+		stopCountdown();
+		if (disposed) return;
+		broadcast(countdownText(), true);
+		countdownTimer = setInterval(() => {
+			if (disposed || phase === "idle" || paused) return;
+			broadcast(countdownText(), true);
+		}, 5e3);
+	};
+	const arm = () => {
+		if (disposed) return;
+		clearTimer();
+		timer = setTimeout(() => onPhaseEnd(), Math.max(0, endsAt - Date.now()));
+	};
+	const startFocus = (pomo) => {
+		phase = "focus";
+		paused = false;
+		remainingSec = Math.round(pomo.intervalMin * 60);
+		endsAt = Date.now() + remainingSec * 1e3;
+		arm();
+		bubbleImages.clear();
+		startCountdown();
+		log$1.info(`[dsh-zdd-pet] 番茄钟开始：专注 ${pomo.intervalMin} 分钟`);
+	};
+	const startBreak = (pomo, long) => {
+		phase = long ? "long-break" : "break";
+		const minutes = long ? pomo.longBreakMin : pomo.breakMin;
+		remainingSec = Math.round(minutes * 60);
+		paused = !pomo.autoStartBreak;
+		endsAt = paused ? 0 : Date.now() + remainingSec * 1e3;
+		if (!paused) {
+			arm();
+			startCountdown();
+		} else broadcast("休息 " + minutes + " 分钟，右键点「继续」开始休息～", true);
+		log$1.info(`[dsh-zdd-pet] 番茄钟进入${long ? "长" : "短"}休息 ${minutes} 分钟，auto=${!paused}`);
+	};
+	const onPhaseEnd = () => {
+		timer = null;
+		if (disposed) return;
+		const { pomo } = readCfg();
+		if (!pomo) {
+			phase = "idle";
+			return;
+		}
+		if (phase === "focus") {
+			completedFocus += 1;
+			const long = pomo.roundsBeforeLongBreak > 0 && completedFocus % pomo.roundsBeforeLongBreak === 0;
+			startBreak(pomo, long);
+			return;
+		}
+		phase = "idle";
+		remainingSec = 0;
+		stopCountdown();
+		clearBubbles();
+		log$1.info("[dsh-zdd-pet] 番茄钟休息结束，倒计时气泡已收起");
+		if (pomo.autoStartFocus) startFocus(pomo);
+	};
+	const control = (action, petId) => {
+		if (disposed) return {
+			ok: false,
+			reason: "disposed",
+			message: "插件已卸载"
+		};
+		const { pomo } = readCfg();
+		if (!pomo) {
+			sayTo(petId, "番茄钟还没启用，去设置页开启一下吧～");
+			return {
+				ok: false,
+				reason: "disabled",
+				message: "番茄钟未启用"
+			};
+		}
+		switch (action) {
+			case "start":
+				if (phase !== "idle") {
+					sayTo(petId, "番茄钟已经在走了：" + statusText());
+					return { ok: true };
+				}
+				completedFocus = 0;
+				startFocus(pomo);
+				return { ok: true };
+			case "pause":
+				if (phase === "idle" || paused) {
+					sayTo(petId, phase === "idle" ? "现在还没开始番茄钟哦～" : "已经暂停啦～");
+					return { ok: phase !== "idle" };
+				}
+				remainingSec = remainNow();
+				paused = true;
+				clearTimer();
+				stopCountdown();
+				broadcast("已暂停 · 剩余 " + formatPomodoroClock(remainingSec) + "（右键可继续）", true);
+				return { ok: true };
+			case "resume":
+				if (phase === "idle" || !paused) {
+					sayTo(petId, phase === "idle" ? "还没有开始的番茄钟哦～" : "番茄钟正在走，不用继续～");
+					return { ok: phase !== "idle" };
+				}
+				paused = false;
+				endsAt = Date.now() + remainingSec * 1e3;
+				arm();
+				startCountdown();
+				return { ok: true };
+			case "stop":
+				clearTimer();
+				stopCountdown();
+				phase = "idle";
+				remainingSec = 0;
+				paused = false;
+				clearBubbles();
+				log$1.info("[dsh-zdd-pet] 番茄钟已结束");
+				return { ok: true };
+			case "reset":
+				clearTimer();
+				stopCountdown();
+				phase = "idle";
+				remainingSec = 0;
+				paused = false;
+				completedFocus = 0;
+				clearBubbles();
+				log$1.info("[dsh-zdd-pet] 番茄钟已重置");
+				return { ok: true };
+			case "skip":
+				if (phase === "idle") {
+					sayTo(petId, "现在没有可跳过的阶段哦～");
+					return {
+						ok: false,
+						reason: "idle"
+					};
+				}
+				clearTimer();
+				stopCountdown();
+				if (phase === "focus") startBreak(pomo, false);
+				else {
+					phase = "idle";
+					remainingSec = 0;
+					paused = false;
+					clearBubbles();
+					log$1.info("[dsh-zdd-pet] 休息已跳过");
+				}
+				return { ok: true };
+			case "status":
+				if (phase === "idle") sayTo(petId, statusText());
+				else broadcast(statusText(), true);
+				return { ok: true };
+			default: return {
+				ok: false,
+				reason: "bad-action",
+				message: "未知的番茄钟动作：" + String(action)
+			};
+		}
+	};
+	return {
+		control,
+		dispose() {
+			disposed = true;
+			clearTimer();
+			stopCountdown();
+		}
+	};
 }
 
 //#endregion
@@ -8084,6 +8893,15 @@ function apply(ctx) {
 		userRoot
 	});
 	const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
+	const pomodoro = createPomodoroEngine({
+		configPaths,
+		state: state$1,
+		log: log$1,
+		memeDirsFor,
+		deliverCue: extras.deliverCue,
+		pickPetMeme: extras.pickPetMeme
+	});
+	ctx.effect(() => () => pomodoro.dispose(), "dsh-zdd-pet: pomodoro engine");
 	const balancePoll = createBalancePoll({
 		ctx,
 		configPaths,
@@ -8106,6 +8924,7 @@ function apply(ctx) {
 	const { startHelper, stopHelper, markDisposed } = desktopHelper;
 	const deps = {
 		...setup,
+		pomodoro,
 		...petLookup,
 		...workStatusBridge,
 		...chatMemory,
@@ -8119,6 +8938,8 @@ function apply(ctx) {
 	registerSessionWatch({
 		ctx,
 		cancelTerminalCleanup,
+		clearConfirm: extras.clearConfirm,
+		deliverConfirm: extras.deliverConfirm,
 		deliverEasterEgg: extras.deliverEasterEgg,
 		lastTodoText,
 		log: log$1,
@@ -8174,14 +8995,27 @@ function apply(ctx) {
 		stopHelper,
 		stopWorkStatusFlush
 	});
-	maybeGreeting({
-		ctx,
-		configPaths,
-		state: state$1,
-		log: log$1,
-		memeDirsFor,
-		userRoot
-	}).catch(() => {});
+	(async () => {
+		try {
+			await maybeGreeting({
+				ctx,
+				configPaths,
+				state: state$1,
+				log: log$1,
+				memeDirsFor,
+				userRoot
+			});
+		} catch {}
+		try {
+			maybeFestival({
+				configPaths,
+				state: state$1,
+				log: log$1,
+				memeDirsFor,
+				userRoot
+			});
+		} catch {}
+	})();
 	startHelper();
 }
 

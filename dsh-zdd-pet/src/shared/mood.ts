@@ -12,6 +12,23 @@ import type { MoodParams } from './types.ts';
 export const MOOD_MIN = 0;
 export const MOOD_MAX = 100;
 
+/** 内置默认心情参数（与 assets/config.jsonc 的 mood 段保持一致，改一处须同步另一处）。 */
+export const DEFAULT_MOOD: MoodParams = {
+  enabled: true,
+  initial: 60,
+  touchGain: 4,
+  decayPerHour: 4,
+  low: 30,
+  high: 70,
+  happyAnim: '小幅度原地360度旋转展示',
+  sadAnim: '工作状态-垂头叹气冒汗',
+  texts: {
+    low: ['哼，都不理我…', '有点无聊诶…', '陪陪我嘛…'],
+    normal: [],
+    high: ['好开心！', '摸摸头最棒啦～', '今天超棒的！'],
+  },
+};
+
 /** 把心情夹到 0~100 的整数。 */
 export function clampMood(v: number): number {
   if (!Number.isFinite(v)) return MOOD_MIN;
@@ -48,6 +65,41 @@ export function decayMood(value: number, elapsedMs: number, decayPerHour: number
 /** 心情档位的中文标签（气泡提示用）。 */
 export function moodLabel(tier: MoodTier): string {
   return tier === 'low' ? '有点闷' : tier === 'high' ? '超开心' : '还不错';
+}
+
+/**
+ * 点击台词池：优先该档位的 mood.texts[档位]，为空则回退传入的 clickTexts。
+ *
+ * 与桌面端 `sayClickText` 同一口径；关闭心情系统时同样回退 clickTexts。
+ *
+ * @param params - 心情参数（含开关与台词池）。
+ * @param tier - 当前档位。
+ * @param fallback - clickTexts 兜底池。
+ * @returns 可直接随机抽的字符串数组（至少是空数组）。
+ */
+export function moodTextPool(params: MoodParams, tier: MoodTier, fallback: readonly string[] = []): readonly string[] {
+  if (!params.enabled) return fallback;
+  const pool = params.texts?.[tier];
+  if (Array.isArray(pool) && pool.length > 0) return pool;
+  return fallback;
+}
+
+/**
+ * mood 段校验：enabled 必须是布尔；initial/touchGain/decayPerHour/low/high 若出现，必须是 0~100
+ * 的有限数字（缺省合法——手改配置可只写一部分，读取侧逐项回填默认值）。
+ *
+ * texts / happyAnim / sadAnim 不参与校验——它们由 readMoodParams 逐项过滤，设置页保存时也从 existing 透传保留。
+ */
+export function moodValid(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const m = value as Record<string, unknown>;
+  if (typeof m.enabled !== 'boolean') return false;
+  for (const key of ['initial', 'touchGain', 'decayPerHour', 'low', 'high']) {
+    if (m[key] === undefined) continue;
+    const n = Number(m[key]);
+    if (!Number.isFinite(n) || n < MOOD_MIN || n > MOOD_MAX) return false;
+  }
+  return true;
 }
 
 /** 解析 config 的 mood 段；非法/缺失 → 用默认值。 */

@@ -8,6 +8,7 @@ import { createDrag, type Drag, type DragCard } from '../motion/drag.ts';
 import { boxToRatio, clampReachableBox } from '../motion/geometry.ts';
 import { playClickSound } from '../click-sound.ts';
 import type { CardLive } from './live.ts';
+import type { CardMood } from './mood.ts';
 import type { CardMotion } from './motion.ts';
 import type { CardStateApi } from './state.ts';
 import type { RuntimePet } from '../types.ts';
@@ -29,6 +30,8 @@ export interface CardDragInput {
   live: ReactNS.MutableRefObject<CardLive>;
   /** 运动面：飞行、走位、包围盒都经它。 */
   motion: CardMotion;
+  /** 心情：点击台词按档位取池（空则回退 clickTexts）。 */
+  mood?: CardMood;
   /** 宠物根节点。 */
   root: () => HTMLDivElement | null;
   /** 舞台节点：提示与命中的定位基准。 */
@@ -78,7 +81,11 @@ export function createCardDrag(rt: CardDragRuntime) {
         physics: cfgRef.current.physics,
         dragAnims: cfgRef.current.animations.drag,
         clickAnims: cfgRef.current.animations.clicks,
-        clickTexts: Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [],
+        // 点击台词：心情启用时优先该档位台词池，空则回退 clickTexts（与桌面端同一口径）。
+        clickTexts: (() => {
+          const base = Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [];
+          return input.mood ? [...input.mood.texts(base)] : base;
+        })(),
         sayText: (text) => input.onSayText?.(text),
         onActivity: () => input.onActivity?.(),
         idleAnims: cfgRef.current.animations.idle,

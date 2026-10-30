@@ -293,7 +293,9 @@ Object.assign(PetSprite.prototype, {
     const rects = [];
     // 控件矩形 = 主进程允许接收点击的区域，矩形外继续穿透。可点的余额气泡悬在余量区，不登记就点不到。
     const controls = [
-      ...document.querySelectorAll('.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-chat, .pet-bubble.is-clickable'),
+      ...document.querySelectorAll(
+        '.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-chat, .pet-bubble.is-clickable',
+      ),
     ];
     for (const el of this.inputRegionElements) {
       if (!controls.includes(el)) {
@@ -369,7 +371,8 @@ Object.assign(PetSprite.prototype, {
     })();
     if (moodOn) {
       if (inBody && !wasHoverBody) this.showMoodOnHover();
-      else if (!inBody && wasHoverBody) this.clearWhisper();
+      // 常驻气泡（番茄钟倒计时/等待确认）不随鼠标离开消失——它们是状态，不是悬浮提示。
+      else if (!inBody && wasHoverBody && !this.whisperHold) this.clearWhisper();
     }
     // 光标存视口坐标（窗口原点 + 窗口内坐标）：窗口随宠物移动时贴光标不会漂。必须在 setTip 之前
     // 更新——setTip 变显隐时会立刻渲染一次，晚一步就会用上一次的光标摆位。

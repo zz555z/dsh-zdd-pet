@@ -14,6 +14,7 @@ import { DEFAULT_FONT, FONT_SIZE_MAX } from '../../../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
 import { DEFAULT_GREETING } from '../../../shared/greeting.ts';
+import { DEFAULT_MOOD } from '../../../shared/mood.ts';
 import type { Pet } from '../../../shared/types.ts';
 
 const pet = (extra: Record<string, unknown> = {}): Pet =>
@@ -36,6 +37,7 @@ const valid = (overrides: Partial<FormValues> = {}): FormValues => ({
   font: { ...DEFAULT_FONT },
   pomodoro: { ...DEFAULT_POMODORO },
   greeting: { ...DEFAULT_GREETING },
+  mood: { ...DEFAULT_MOOD, texts: { ...DEFAULT_MOOD.texts } },
   ...overrides,
 });
 
@@ -79,6 +81,12 @@ describe('validateForm —— 保存前校验', () => {
   test('字体：种类必须在白名单里，字号在闭区间内', () => {
     assert.equal(validateForm(valid({ font: { ...DEFAULT_FONT, size: FONT_SIZE_MAX + 1 } })), 'invalidFont');
     assert.equal(validateForm(valid({ font: { ...DEFAULT_FONT, family: 'not-a-font' as never } })), 'invalidFont');
+  });
+
+  test('心情：五个数值都必须在 0~100', () => {
+    assert.equal(validateForm(valid({ mood: { ...DEFAULT_MOOD, initial: 101 } })), 'invalidMood');
+    assert.equal(validateForm(valid({ mood: { ...DEFAULT_MOOD, decayPerHour: -1 } })), 'invalidMood');
+    assert.equal(validateForm(valid({ mood: { ...DEFAULT_MOOD, low: 0, high: 100 } })), null);
   });
 
   test('顺序即优先级：宠物不合格时不再报后面的物理参数', () => {

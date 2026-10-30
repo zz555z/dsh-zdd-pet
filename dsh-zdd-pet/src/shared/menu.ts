@@ -11,6 +11,7 @@ export {
   buildMenuTree,
   buildMoreBranch,
   displayMenuBranch,
+  pomodoroMenuBranch,
   isNoMirrorAnimation,
   readMenuItems,
 } from './menu/tree.ts';

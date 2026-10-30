@@ -1,4 +1,4 @@
-import type { FontConfig, GreetingParams, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import type { FontConfig, GreetingParams, ModelSelection, MoodParams, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
 import type { ModelCatalogGroup } from '../picker/index.ts';
 import type { MergedConfig } from './read.ts';
 /** 配置文件路径与存储位置清单；宿主按平台推导，反推不出 `profile` 时为空串。 */
@@ -35,6 +35,7 @@ export interface SaveFields {
     font: FontConfig;
     pomodoro: PomodoroParams;
     greeting: GreetingParams;
+    mood: MoodParams;
 }
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
 export type SaveOutcome = {

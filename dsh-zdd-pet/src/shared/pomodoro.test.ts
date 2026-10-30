@@ -12,6 +12,7 @@ import {
   POMODORO_DEFAULT_INTERVAL_MIN,
   POMODORO_MAX_INTERVAL_MIN,
   POMODORO_MIN_INTERVAL_MIN,
+  formatPomodoroClock,
   pomodoroValid,
 } from './pomodoro.ts';
 
@@ -46,5 +47,35 @@ describe('DEFAULT_POMODORO —— 内置默认', () => {
     assert.equal(DEFAULT_POMODORO.enabled, false);
     assert.equal(DEFAULT_POMODORO.intervalMin, POMODORO_DEFAULT_INTERVAL_MIN);
     assert.equal(pomodoroValid(DEFAULT_POMODORO), true);
+  });
+});
+
+describe('formatPomodoroClock —— 倒计时展示', () => {
+  test('mm:ss 与 h:mm:ss，非法按 0', () => {
+    assert.equal(formatPomodoroClock(0), '00:00');
+    assert.equal(formatPomodoroClock(65), '01:05');
+    assert.equal(formatPomodoroClock(3661), '1:01:01');
+    assert.equal(formatPomodoroClock(-5), '00:00');
+    assert.equal(formatPomodoroClock(Number.NaN), '00:00');
+  });
+});
+
+describe('pomodoroValid —— 新增休息字段', () => {
+  test('breakMin / longBreakMin / 轮数 / 自动开关可选，但出现时要合法', () => {
+    assert.equal(
+      pomodoroValid({
+        enabled: true,
+        intervalMin: 25,
+        breakMin: 5,
+        longBreakMin: 15,
+        roundsBeforeLongBreak: 4,
+        autoStartBreak: true,
+        autoStartFocus: false,
+      }),
+      true,
+    );
+    assert.equal(pomodoroValid({ enabled: true, intervalMin: 25, breakMin: 0 }), false);
+    assert.equal(pomodoroValid({ enabled: true, intervalMin: 25, roundsBeforeLongBreak: 0 }), false);
+    assert.equal(pomodoroValid({ enabled: true, intervalMin: 25, autoStartBreak: 'yes' }), false);
   });
 });

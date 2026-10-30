@@ -8,10 +8,12 @@ import { DEFAULT_FONT } from '../../../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
 import { DEFAULT_GREETING } from '../../../shared/greeting.ts';
+import { DEFAULT_MOOD } from '../../../shared/mood.ts';
 import type {
   FontConfig,
   GreetingParams,
   ModelSelection,
+  MoodParams,
   Pet,
   PhysicsParams,
   PomodoroParams,
@@ -39,6 +41,8 @@ export interface MainConfigPatch {
   pomodoro?: PomodoroParams;
   /** 启动吉祥话（开关 / 模式 / 池大小）：同上，用内置默认补满。 */
   greeting?: GreetingParams;
+  /** 心情 / 亲密度（开关 + 五个数值）：同上，用内置默认补满。 */
+  mood?: MoodParams;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
   chatMemoryRounds?: number;
@@ -89,6 +93,9 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   }
   if (main.greeting && typeof main.greeting === 'object') {
     patch.greeting = { ...DEFAULT_GREETING, ...(main.greeting as GreetingParams) };
+  }
+  if (main.mood && typeof main.mood === 'object') {
+    patch.mood = { ...DEFAULT_MOOD, ...(main.mood as MoodParams) };
   }
   const whisperModel = readModel(main.whisperModel);
   if (whisperModel) patch.whisperModel = whisperModel;

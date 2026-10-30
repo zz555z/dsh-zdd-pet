@@ -7,6 +7,8 @@
  * 不接管随机动画链：睡眠用循环播、醒来播一遍后由 ended 判定接回链，与既有编排不冲突。
  * @module dsh-zdd-pet/src/client/pet/card/rest
  */
+import type { MoodParams } from '../../../shared/types.ts';
+import type { MoodTier } from '../../../shared/mood.ts';
 import type * as ReactNS from 'react';
 
 /** 注入的 react 能力。 */
@@ -27,6 +29,10 @@ export interface CardRestInput {
     setOnce: (on: boolean) => void;
     bumpSeq: () => void;
   };
+  /** 心情档位：低落更易打盹（阈值减半），开心空闲时撒娇、低落时叹气（与桌面端一致）。 */
+  mood?: () => { enabled: boolean; tier: MoodTier; params: MoodParams };
+  /** 动画名是否存在于本宠物动画池（不存在就不播，避免 404 卡住）。 */
+  hasAnim?: (name: string) => boolean;
 }
 
 /** 作息驱动对外的读写面。 */
@@ -56,7 +62,29 @@ export function createCardRest(rt: CardRestRuntime) {
         if (!r || r.enabled === false || sleepingRef.current) return;
         const sec = Number(r.sleepAfterSec);
         if (!Number.isFinite(sec) || sec <= 0) return;
-        if (Date.now() - lastRef.current < sec * 1000) return;
+        const idleMs = Date.now() - lastRef.current;
+        // 心情：开心空闲撒娇、低落更早叹气（不直接睡），阈值与桌面端 checkRest 同一口径。
+        const m = input.mood?.();
+        const tier = m && m.enabled ? m.tier : 'normal';
+        const p = m?.params;
+        if (tier === 'high' && p && p.happyAnim && input.hasAnim?.(p.happyAnim)) {
+          if (idleMs < sec * 1000) return;
+          lastRef.current = Date.now(); // 撒娇后重置，隔一段再来
+          input.actions.setAnim(p.happyAnim);
+          input.actions.setOnce(true);
+          input.actions.bumpSeq();
+          return;
+        }
+        if (tier === 'low' && p && p.sadAnim && input.hasAnim?.(p.sadAnim)) {
+          if (idleMs < sec * 0.5 * 1000) return;
+          lastRef.current = Date.now();
+          input.actions.setAnim(p.sadAnim);
+          input.actions.setOnce(true);
+          input.actions.bumpSeq();
+          return;
+        }
+        const effSec = tier === 'low' ? sec * 0.5 : sec;
+        if (idleMs < effSec * 1000) return;
         const anim = typeof r.sleepAnim === 'string' && r.sleepAnim ? r.sleepAnim : '';
         if (!anim) return;
         sleepingRef.current = true;

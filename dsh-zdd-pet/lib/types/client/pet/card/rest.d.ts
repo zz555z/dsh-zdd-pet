@@ -7,6 +7,8 @@
  * 不接管随机动画链：睡眠用循环播、醒来播一遍后由 ended 判定接回链，与既有编排不冲突。
  * @module dsh-zdd-pet/src/client/pet/card/rest
  */
+import type { MoodParams } from '../../../shared/types.ts';
+import type { MoodTier } from '../../../shared/mood.ts';
 import type * as ReactNS from 'react';
 /** 注入的 react 能力。 */
 export interface CardRestRuntime {
@@ -30,6 +32,14 @@ export interface CardRestInput {
         setOnce: (on: boolean) => void;
         bumpSeq: () => void;
     };
+    /** 心情档位：低落更易打盹（阈值减半），开心空闲时撒娇、低落时叹气（与桌面端一致）。 */
+    mood?: () => {
+        enabled: boolean;
+        tier: MoodTier;
+        params: MoodParams;
+    };
+    /** 动画名是否存在于本宠物动画池（不存在就不播，避免 404 卡住）。 */
+    hasAnim?: (name: string) => boolean;
 }
 /** 作息驱动对外的读写面。 */
 export interface CardRest {

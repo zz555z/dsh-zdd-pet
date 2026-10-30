@@ -63,15 +63,22 @@ export const TOOL_COPY: Readonly<Record<string, ToolCopy>> = {
   },
   write: { lines: WRITE_COPY, short: '写点东西进去' },
   edit: { lines: EDIT_COPY, short: '这里得改改' },
+  multi_edit: { lines: EDIT_COPY, short: '这里得改改' },
+  apply_patch: { lines: EDIT_COPY, short: '这里得改改' },
+  notebook_edit: { lines: EDIT_COPY, short: '这里得改改' },
   str_replace_editor: { lines: EDIT_COPY, short: '这里得改改' },
   glob: { lines: GLOB_COPY, short: '找找东西在哪' },
   grep: { lines: GREP_COPY, short: '到处翻翻看' },
+  list_dir: {
+    lines: ['看看 {target} 这层都有啥', '{target} 里放了些什么呢', '翻翻 {target} 这一层'],
+    short: '看看目录里有啥',
+  },
   present: { lines: PRESENT_COPY, short: '拿个东西给你看' },
   skill: { lines: SKILL_COPY, short: '学个新本事' },
   subagent: { lines: SUBAGENT_COPY, short: '叫人来搭把手' },
   subagent_fork: { lines: SUBAGENT_COPY, short: '叫人来搭把手' },
   workflow: {
-    lines: ['把活排个序，开工咯', '几件事一起安排上', '按顺序一件件来'],
+    lines: ['把「{target}」的活排一排', '「{target}」这些事一起安排上', '按顺序处理「{target}」'],
     short: '把活排一排',
   },
   web_search: {
@@ -84,8 +91,13 @@ export const TOOL_COPY: Readonly<Record<string, ToolCopy>> = {
   },
 };
 
-/** 未知工具：只说一句氛围话，不报工具名（`str_replace_editor` 这种名字上屏很怪）。 */
-export const UNKNOWN_TOOL_LINE: CopyLine = '让我研究下这是啥～';
+/**
+ * 未知工具：报出工具名，至少知道「在跑什么」；太长的名字由调用方 clip。
+ * 比「让我研究下这是啥」有信息量，也不至于把整段参数搬上屏。
+ */
+export function unknownToolLine(name: string): string {
+  return '在忙 ' + name + ' 这件事';
+}
 
 /** 兜底：没进表的命令（npm / python / node / tsc / eslint / docker…），短命令名会上屏。 */
 export const COMMAND_FALLBACK: readonly CopyLine[] = ['跑一下 {cmd} 看看', '让 {cmd} 跑一下', '让 {cmd} 干点活'];
@@ -174,9 +186,13 @@ export const TOOL_RULES: Readonly<Record<string, ToolRule>> = {
   read_image: { pick: fileTarget, path: true },
   write: { pick: fileTarget, path: true },
   edit: { pick: fileTarget, path: true },
+  multi_edit: { pick: fileTarget, path: true },
+  apply_patch: { pick: fileTarget, path: true },
+  notebook_edit: { pick: fileTarget, path: true },
   str_replace_editor: { pick: fileTarget, path: true },
   glob: { pick: (args) => firstStr(args, ['pattern', 'path']) },
   grep: { pick: (args) => firstStr(args, ['pattern', 'path']) },
+  list_dir: { pick: (args) => firstStr(args, ['path', 'dir', 'directory']), path: true },
   web_fetch: { pick: urlHost },
   web_search: { pick: queryTarget },
   subagent: { pick: (args) => firstStr(args, ['description']) },

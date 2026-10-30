@@ -1,6 +1,6 @@
-import type { FontConfig, GreetingParams, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import type { FontConfig, GreetingParams, ModelSelection, MoodParams, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
 /** 校验失败时返回的文案键。 */
-export type InvalidKey = 'invalid' | 'invalidPhysics' | 'invalidModel' | 'invalidChatMemory' | 'invalidChatImageLimit' | 'invalidFont' | 'invalidPomodoro' | 'invalidGreeting';
+export type InvalidKey = 'invalid' | 'invalidPhysics' | 'invalidModel' | 'invalidChatMemory' | 'invalidChatImageLimit' | 'invalidFont' | 'invalidPomodoro' | 'invalidGreeting' | 'invalidMood';
 /** 保存前要校验的全部表单值。 */
 export interface FormValues {
     pets: readonly Pet[];
@@ -12,6 +12,7 @@ export interface FormValues {
     font: FontConfig;
     pomodoro: PomodoroParams;
     greeting: GreetingParams;
+    mood: MoodParams;
 }
 /** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
 export declare const modelPairValid: (model: ModelSelection) => boolean;

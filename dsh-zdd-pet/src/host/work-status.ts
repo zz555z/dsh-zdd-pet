@@ -147,8 +147,13 @@ export function todoViewFromTodo(event: { data?: { todos?: Array<{ status?: stri
   for (const t of todos) {
     if (t?.status === 'in_progress') current = t;
   }
-  if (!current) current = todos.find((t) => t?.status === 'pending');
-  const task = taskStepText(current?.content);
+  // 没有进行中的项：显示「接下来」而不是把下一步 pending 冒充成当前正在做的事。
+  const next = current ? undefined : todos.find((t) => t?.status === 'pending');
+  const task = current
+    ? taskStepText(current.content)
+    : next
+      ? taskStepText('接下来：' + String(next.content ?? ''))
+      : null;
   // 清单跑完（没有进行中/待办）= 任务已结束：不展示进度，气泡回落到档位文案
   if (!task) return { task: null, progress: null };
   return {
@@ -276,6 +281,32 @@ export class WorkStatusStore {
     const prev = this.sessions.get(sessionId);
     if (!prev || (prev.task === task && sameProgress(prev.progress, progress))) return false;
     this.sessions.set(sessionId, { ...prev, task, progress });
+    this.refresh();
+    return true;
+  }
+
+  /**
+   * 写「当前动作」文案，默认**保留已有清单进度**：工具调用只改变正在做什么，不代表清单进度清零。
+   *
+   * @param sessionId - 会话标识。
+   * @param task - 新的动作文案。
+   * @param progress - 显式传 undefined = 保留原进度；传 null = 清空进度；传值 = 一并更新。
+   */
+  setAction(sessionId: string, task: string | null, progress?: TaskProgress | null): boolean {
+    const prev = this.sessions.get(sessionId);
+    if (!prev) return false;
+    const nextProgress = progress === undefined ? prev.progress : progress;
+    if (prev.task === task && sameProgress(prev.progress, nextProgress)) return false;
+    this.sessions.set(sessionId, { ...prev, task, progress: nextProgress });
+    this.refresh();
+    return true;
+  }
+
+  /** 只更新清单进度、保住当前动作文案：工具执行途中收到 todo/write 时用，避免进度条滞后。 */
+  setProgress(sessionId: string, progress: TaskProgress | null): boolean {
+    const prev = this.sessions.get(sessionId);
+    if (!prev || sameProgress(prev.progress, progress)) return false;
+    this.sessions.set(sessionId, { ...prev, progress });
     this.refresh();
     return true;
   }

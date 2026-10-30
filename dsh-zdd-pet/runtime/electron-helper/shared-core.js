@@ -1037,6 +1037,39 @@ const displayMenuBranch = () => ({
 		}
 	]
 });
+const pomodoroMenuBranch = () => ({
+	label: "番茄钟",
+	children: [
+		{
+			label: "开始专注",
+			action: "pomodoro-start"
+		},
+		{
+			label: "暂停",
+			action: "pomodoro-pause"
+		},
+		{
+			label: "继续",
+			action: "pomodoro-resume"
+		},
+		{
+			label: "查看剩余",
+			action: "pomodoro-status"
+		},
+		{
+			label: "跳过当前阶段",
+			action: "pomodoro-skip"
+		},
+		{
+			label: "结束番茄钟",
+			action: "pomodoro-stop"
+		},
+		{
+			label: "重置（清空轮数）",
+			action: "pomodoro-reset"
+		}
+	]
+});
 const MORE_MENU_LABEL = "更多";
 function readMenuItems(data, surface) {
 	if (!data || typeof data !== "object") return [];
@@ -2524,6 +2557,29 @@ function progressText(ws) {
 //#region src/shared/mood.ts
 const MOOD_MIN = 0;
 const MOOD_MAX = 100;
+const DEFAULT_MOOD = {
+	enabled: true,
+	initial: 60,
+	touchGain: 4,
+	decayPerHour: 4,
+	low: 30,
+	high: 70,
+	happyAnim: "小幅度原地360度旋转展示",
+	sadAnim: "工作状态-垂头叹气冒汗",
+	texts: {
+		low: [
+			"哼，都不理我…",
+			"有点无聊诶…",
+			"陪陪我嘛…"
+		],
+		normal: [],
+		high: [
+			"好开心！",
+			"摸摸头最棒啦～",
+			"今天超棒的！"
+		]
+	}
+};
 function clampMood(v) {
 	if (!Number.isFinite(v)) return MOOD_MIN;
 	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, Math.round(v)));
@@ -2541,6 +2597,29 @@ function decayMood(value, elapsedMs, decayPerHour) {
 }
 function moodLabel(tier) {
 	return tier === "low" ? "有点闷" : tier === "high" ? "超开心" : "还不错";
+}
+function moodTextPool(params, tier, fallback = []) {
+	if (!params.enabled) return fallback;
+	const pool = params.texts?.[tier];
+	if (Array.isArray(pool) && pool.length > 0) return pool;
+	return fallback;
+}
+function moodValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const m = value;
+	if (typeof m.enabled !== "boolean") return false;
+	for (const key of [
+		"initial",
+		"touchGain",
+		"decayPerHour",
+		"low",
+		"high"
+	]) {
+		if (m[key] === void 0) continue;
+		const n = Number(m[key]);
+		if (!Number.isFinite(n) || n < MOOD_MIN || n > MOOD_MAX) return false;
+	}
+	return true;
 }
 function readMoodParams(raw) {
 	const d = {
@@ -2710,7 +2789,8 @@ function readSay(leaf$1) {
 		image: typeof d.image === "string" ? d.image : void 0,
 		url: typeof d.url === "string" ? d.url : void 0,
 		duration: typeof d.duration === "number" && Number.isFinite(d.duration) && d.duration >= 0 ? d.duration : void 0,
-		anim: typeof d.anim === "boolean" ? d.anim : void 0
+		anim: typeof d.anim === "boolean" ? d.anim : void 0,
+		hold: typeof d.hold === "boolean" ? d.hold : void 0
 	};
 }
 function readWorkStatus(leaf$1) {
@@ -2853,6 +2933,7 @@ exports.CUSTOM_STYLE_KEYS = CUSTOM_STYLE_KEYS
 exports.CUSTOM_TAGS = CUSTOM_TAGS
 exports.DEAD_ZONE_SPEED = DEAD_ZONE_SPEED
 exports.DEFAULT_FONT = DEFAULT_FONT
+exports.DEFAULT_MOOD = DEFAULT_MOOD
 exports.DEFAULT_PHYSICS = DEFAULT_PHYSICS
 exports.DEFAULT_ROLLING_LABEL = DEFAULT_ROLLING_LABEL
 exports.DEFAULT_THROW_POWER = DEFAULT_THROW_POWER
@@ -2965,7 +3046,9 @@ exports.isWebVisible = isWebVisible
 exports.landingSquash = landingSquash
 exports.memeImageUrl = memeImageUrl
 exports.moodLabel = moodLabel
+exports.moodTextPool = moodTextPool
 exports.moodTier = moodTier
+exports.moodValid = moodValid
 exports.mountChatDialog = mountChatDialog
 exports.mountContextMenu = mountContextMenu
 exports.mountScorePopup = mountScorePopup
@@ -2977,6 +3060,7 @@ exports.pickSlot = pickSlot
 exports.pickWeightedCategory = pickWeightedCategory
 exports.planMove = planMove
 exports.pointInRect = pointInRect
+exports.pomodoroMenuBranch = pomodoroMenuBranch
 exports.poolIncludes = poolIncludes
 exports.postAction = postAction
 exports.progressBar = progressBar

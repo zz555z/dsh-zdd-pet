@@ -19,6 +19,7 @@ function input(overrides: Partial<BubbleSlotInput> = {}): BubbleSlotInput {
     workStatusEnabled: true,
     whisperOn: false,
     whisperText: null,
+    whisperHold: false,
     balanceOn: false,
     balanceAvailable: true,
     balanceEnabled: true,
@@ -39,6 +40,39 @@ const failedState: BalanceState = { provider: 'test', ok: false, reason: 'fetch-
 describe('decideBubbleSlot —— 同一时刻只挂一个气泡', () => {
   test('都没有点亮：返回 none', () => {
     assert.equal(decideBubbleSlot(input()), 'none');
+  });
+
+  test('等待用户确认的常驻气泡优先级最高：终态任务/进度/余额都不能顶掉', () => {
+    assert.equal(
+      decideBubbleSlot(
+        input({
+          whisperOn: true,
+          whisperText: '有个操作需要你确认',
+          whisperHold: true,
+          workTerminal: true,
+          workOn: true,
+          workText: '完成',
+          workHasTask: true,
+          balanceOn: true,
+          balanceAvailable: true,
+        }),
+      ),
+      'whisper',
+    );
+    // 非 hold 的说话气泡仍是原优先级（终态任务更高）。
+    assert.equal(
+      decideBubbleSlot(
+        input({
+          whisperOn: true,
+          whisperText: '普通',
+          whisperHold: false,
+          workTerminal: true,
+          workOn: true,
+          workText: '完成',
+        }),
+      ),
+      'work-terminal',
+    );
   });
 
   test('终态任务压过说话与余额：只活 10s，不让位', () => {

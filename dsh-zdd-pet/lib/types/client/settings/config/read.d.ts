@@ -1,4 +1,4 @@
-import type { FontConfig, GreetingParams, ModelSelection, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import type { FontConfig, GreetingParams, ModelSelection, MoodParams, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
 /** 表单要吃的补丁；字段缺省表示「这次响应里没有可信值」。 */
@@ -20,6 +20,8 @@ export interface MainConfigPatch {
     pomodoro?: PomodoroParams;
     /** 启动吉祥话（开关 / 模式 / 池大小）：同上，用内置默认补满。 */
     greeting?: GreetingParams;
+    /** 心情 / 亲密度（开关 + 五个数值）：同上，用内置默认补满。 */
+    mood?: MoodParams;
     whisperModel?: ModelSelection;
     chatModel?: ModelSelection;
     chatMemoryRounds?: number;

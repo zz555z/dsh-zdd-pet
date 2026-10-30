@@ -42,6 +42,39 @@ const displayMenuBranch = () => ({
 		}
 	]
 });
+const pomodoroMenuBranch = () => ({
+	label: "番茄钟",
+	children: [
+		{
+			label: "开始专注",
+			action: "pomodoro-start"
+		},
+		{
+			label: "暂停",
+			action: "pomodoro-pause"
+		},
+		{
+			label: "继续",
+			action: "pomodoro-resume"
+		},
+		{
+			label: "查看剩余",
+			action: "pomodoro-status"
+		},
+		{
+			label: "跳过当前阶段",
+			action: "pomodoro-skip"
+		},
+		{
+			label: "结束番茄钟",
+			action: "pomodoro-stop"
+		},
+		{
+			label: "重置（清空轮数）",
+			action: "pomodoro-reset"
+		}
+	]
+});
 const MORE_MENU_LABEL = "更多";
 function readMenuItems(data, surface) {
 	if (!data || typeof data !== "object") return [];
@@ -840,7 +873,7 @@ function makeCardView(rt) {
 					ref: props.tipRef,
 					className: TOOLTIP_CLASS + (props.tipOn ? " is-on" : ""),
 					"aria-hidden": "true",
-					children: props.name
+					children: props.tipText ?? props.name
 				})
 			]
 		});
@@ -1646,7 +1679,8 @@ function readSay(leaf$1) {
 		image: typeof d.image === "string" ? d.image : void 0,
 		url: typeof d.url === "string" ? d.url : void 0,
 		duration: typeof d.duration === "number" && Number.isFinite(d.duration) && d.duration >= 0 ? d.duration : void 0,
-		anim: typeof d.anim === "boolean" ? d.anim : void 0
+		anim: typeof d.anim === "boolean" ? d.anim : void 0,
+		hold: typeof d.hold === "boolean" ? d.hold : void 0
 	};
 }
 function readWorkStatus(leaf$1) {
@@ -2019,9 +2053,17 @@ function makeWhisperBubble(rt) {
 const POMODORO_MIN_INTERVAL_MIN = 1;
 const POMODORO_MAX_INTERVAL_MIN = 1440;
 const POMODORO_DEFAULT_INTERVAL_MIN = 50;
+const POMODORO_DEFAULT_BREAK_MIN = 5;
+const POMODORO_DEFAULT_LONG_BREAK_MIN = 15;
+const POMODORO_DEFAULT_ROUNDS = 4;
 const DEFAULT_POMODORO = {
 	enabled: false,
-	intervalMin: POMODORO_DEFAULT_INTERVAL_MIN
+	intervalMin: POMODORO_DEFAULT_INTERVAL_MIN,
+	breakMin: POMODORO_DEFAULT_BREAK_MIN,
+	longBreakMin: POMODORO_DEFAULT_LONG_BREAK_MIN,
+	roundsBeforeLongBreak: POMODORO_DEFAULT_ROUNDS,
+	autoStartBreak: true,
+	autoStartFocus: false
 };
 const POMODORO_PRESET_INTERVALS_MIN = [
 	15,
@@ -2031,6 +2073,35 @@ const POMODORO_PRESET_INTERVALS_MIN = [
 	60,
 	90
 ];
+const POMODORO_PRESET_BREAKS_MIN = [
+	3,
+	5,
+	10,
+	15,
+	20,
+	30
+];
+/** 可选分钟时长校验：缺省合法；出现则必须在 1~1440。 */
+function optionalMinutes(value) {
+	if (value === void 0) return true;
+	const n = Number(value);
+	return Number.isFinite(n) && n >= POMODORO_MIN_INTERVAL_MIN && n <= POMODORO_MAX_INTERVAL_MIN;
+}
+function pomodoroValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const p = value;
+	if (typeof p.enabled !== "boolean") return false;
+	const n = Number(p.intervalMin);
+	if (!Number.isFinite(n) || n < POMODORO_MIN_INTERVAL_MIN || n > POMODORO_MAX_INTERVAL_MIN) return false;
+	if (!optionalMinutes(p.breakMin) || !optionalMinutes(p.longBreakMin)) return false;
+	if (p.roundsBeforeLongBreak !== void 0) {
+		const r = Number(p.roundsBeforeLongBreak);
+		if (!Number.isInteger(r) || r < 1 || r > 24) return false;
+	}
+	if (p.autoStartBreak !== void 0 && typeof p.autoStartBreak !== "boolean") return false;
+	if (p.autoStartFocus !== void 0 && typeof p.autoStartFocus !== "boolean") return false;
+	return true;
+}
 
 //#endregion
 //#region src/shared/greeting.ts
@@ -2042,6 +2113,112 @@ const DEFAULT_GREETING = {
 	mode: "pool",
 	poolSize: GREETING_DEFAULT_POOL_SIZE
 };
+
+//#endregion
+//#region src/shared/mood.ts
+const MOOD_MIN = 0;
+const MOOD_MAX = 100;
+const DEFAULT_MOOD = {
+	enabled: true,
+	initial: 60,
+	touchGain: 4,
+	decayPerHour: 4,
+	low: 30,
+	high: 70,
+	happyAnim: "小幅度原地360度旋转展示",
+	sadAnim: "工作状态-垂头叹气冒汗",
+	texts: {
+		low: [
+			"哼，都不理我…",
+			"有点无聊诶…",
+			"陪陪我嘛…"
+		],
+		normal: [],
+		high: [
+			"好开心！",
+			"摸摸头最棒啦～",
+			"今天超棒的！"
+		]
+	}
+};
+function clampMood(v) {
+	if (!Number.isFinite(v)) return MOOD_MIN;
+	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, Math.round(v)));
+}
+function moodTier(value, low, high) {
+	const v = clampMood(value);
+	if (v < low) return "low";
+	if (v > high) return "high";
+	return "normal";
+}
+function decayMood(value, elapsedMs, decayPerHour) {
+	if (!Number.isFinite(elapsedMs) || elapsedMs <= 0 || !Number.isFinite(decayPerHour) || decayPerHour <= 0) return clampMood(value);
+	const hours = elapsedMs / 36e5;
+	return clampMood(value - hours * decayPerHour);
+}
+function moodLabel(tier) {
+	return tier === "low" ? "有点闷" : tier === "high" ? "超开心" : "还不错";
+}
+function moodTextPool(params, tier, fallback = []) {
+	if (!params.enabled) return fallback;
+	const pool = params.texts?.[tier];
+	if (Array.isArray(pool) && pool.length > 0) return pool;
+	return fallback;
+}
+function moodValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const m = value;
+	if (typeof m.enabled !== "boolean") return false;
+	for (const key of [
+		"initial",
+		"touchGain",
+		"decayPerHour",
+		"low",
+		"high"
+	]) {
+		if (m[key] === void 0) continue;
+		const n = Number(m[key]);
+		if (!Number.isFinite(n) || n < MOOD_MIN || n > MOOD_MAX) return false;
+	}
+	return true;
+}
+function readMoodParams(raw) {
+	const d = {
+		enabled: true,
+		initial: 60,
+		touchGain: 4,
+		decayPerHour: 4,
+		low: 30,
+		high: 70,
+		texts: {
+			low: [],
+			normal: [],
+			high: []
+		}
+	};
+	const o = raw && typeof raw === "object" ? raw : {};
+	const num = (k, min, max) => {
+		const v = Number(o[k]);
+		return Number.isFinite(v) && v >= min && v <= max ? v : d[k];
+	};
+	const texts = o.texts && typeof o.texts === "object" ? o.texts : {};
+	const arr = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim() !== "") : [];
+	return {
+		enabled: o.enabled !== false,
+		initial: num("initial", 0, 100),
+		touchGain: num("touchGain", 0, 100),
+		decayPerHour: num("decayPerHour", 0, 100),
+		low: num("low", 0, 100),
+		high: num("high", 0, 100),
+		happyAnim: typeof o.happyAnim === "string" ? o.happyAnim : void 0,
+		sadAnim: typeof o.sadAnim === "string" ? o.sadAnim : void 0,
+		texts: {
+			low: arr(texts.low),
+			normal: arr(texts.normal),
+			high: arr(texts.high)
+		}
+	};
+}
 
 //#endregion
 //#region src/shared/notify.ts
@@ -2500,6 +2677,10 @@ function readMainConfig(merged) {
 		...DEFAULT_GREETING,
 		...main.greeting
 	};
+	if (main.mood && typeof main.mood === "object") patch.mood = {
+		...DEFAULT_MOOD,
+		...main.mood
+	};
 	const whisperModel = readModel(main.whisperModel);
 	if (whisperModel) patch.whisperModel = whisperModel;
 	const chatModel = readModel(main.chatModel);
@@ -2547,7 +2728,8 @@ function buildSaveBody(fields) {
 		chatImageLimit: fields.chatImageLimit,
 		font: fields.font,
 		pomodoro: fields.pomodoro,
-		greeting: fields.greeting
+		greeting: fields.greeting,
+		mood: fields.mood
 	};
 }
 async function loadConfig(signal) {
@@ -2730,9 +2912,10 @@ function validateForm(values) {
 	if (!Number.isFinite(values.chatMemory) || values.chatMemory < 0) return "invalidChatMemory";
 	if (!Number.isFinite(values.chatImageLimit) || values.chatImageLimit < 0) return "invalidChatImageLimit";
 	if (!fontValid(values.font)) return "invalidFont";
-	if (!Number.isFinite(values.pomodoro.intervalMin) || values.pomodoro.intervalMin < POMODORO_MIN_INTERVAL_MIN || values.pomodoro.intervalMin > POMODORO_MAX_INTERVAL_MIN) return "invalidPomodoro";
+	if (!pomodoroValid(values.pomodoro)) return "invalidPomodoro";
 	if (!["pool", "live"].includes(values.greeting.mode)) return "invalidGreeting";
 	if (!Number.isInteger(values.greeting.poolSize) || values.greeting.poolSize < GREETING_POOL_MIN || values.greeting.poolSize > GREETING_POOL_MAX) return "invalidGreeting";
+	if (!moodValid(values.mood)) return "invalidMood";
 	return null;
 }
 
@@ -2752,7 +2935,8 @@ function createWriteFlow(deps) {
 			chatImageLimit: fields.chatImageLimit,
 			font: fields.font,
 			pomodoro: fields.pomodoro,
-			greeting: fields.greeting
+			greeting: fields.greeting,
+			mood: fields.mood
 		});
 		if (invalid !== null) {
 			setMsg({
@@ -3865,22 +4049,31 @@ function makePhysicsCard(rt) {
 //#region src/client/settings/pomodoro-card.ts
 /** 下拉值编码：「关闭」用 'off'，其余是分钟数的字符串。 */
 const OFF = "off";
+/** 把当前值补进预设（手改过 config 的值不能在下拉里丢失）。 */
+function withCurrent(presets, current) {
+	const out = [...presets];
+	if (!out.includes(current)) {
+		out.push(current);
+		out.sort((a, b) => a - b);
+	}
+	return out;
+}
 function makePomodoroCard(rt) {
 	const { h, t } = rt;
-	const { cardHead, field } = makeUiKit({
+	const { cardHead, field, toggleCell } = makeUiKit({
 		h,
 		t
 	});
 	return function PomodoroCard(props) {
 		const { busy, pomodoro } = props;
-		const currentValue = pomodoro.enabled ? String(pomodoro.intervalMin) : OFF;
-		const presets = [...POMODORO_PRESET_INTERVALS_MIN];
-		if (pomodoro.enabled && !presets.includes(pomodoro.intervalMin)) {
-			presets.push(pomodoro.intervalMin);
-			presets.sort((a, b) => a - b);
-		}
-		const options = [OFF, ...presets.map(String)];
-		const onSelect = (e) => {
+		const focusValue = pomodoro.enabled ? String(pomodoro.intervalMin) : OFF;
+		const focusOptions = [OFF, ...withCurrent(POMODORO_PRESET_INTERVALS_MIN, pomodoro.intervalMin).map(String)];
+		const breakMin = pomodoro.breakMin ?? POMODORO_DEFAULT_BREAK_MIN;
+		const longBreakMin = pomodoro.longBreakMin ?? POMODORO_DEFAULT_LONG_BREAK_MIN;
+		const rounds = pomodoro.roundsBeforeLongBreak ?? POMODORO_DEFAULT_ROUNDS;
+		const breakOptions = withCurrent(POMODORO_PRESET_BREAKS_MIN, breakMin);
+		const longOptions = withCurrent(POMODORO_PRESET_BREAKS_MIN, longBreakMin);
+		const onFocus = (e) => {
 			const v = e.target.value;
 			if (v === OFF) props.onChange({ enabled: false });
 			else props.onChange({
@@ -3888,22 +4081,68 @@ function makePomodoroCard(rt) {
 				intervalMin: Number(v)
 			});
 		};
+		const onBreak = (e) => props.onChange({ breakMin: Number(e.target.value) });
+		const onLongBreak = (e) => props.onChange({ longBreakMin: Number(e.target.value) });
+		const onRounds = (e) => {
+			const n = Number(e.target.value);
+			if (Number.isFinite(n)) props.onChange({ roundsBeforeLongBreak: n });
+		};
 		return h("div", {
 			className: "dsh-zdd-pet-cfg__card",
-			children: [cardHead(t("pomodoroTitle"), t("pomodoroHint")), h("div", {
-				className: "dsh-zdd-pet-cfg__grid2",
-				children: [field(t("pomodoroLabel"), h("select", {
-					className: INPUT_CLASS,
-					value: currentValue,
-					disabled: busy,
-					onChange: onSelect,
-					children: options.map((opt) => h("option", {
-						key: opt,
-						value: opt,
-						children: opt === OFF ? t("pomodoroOff") : t("pomodoroEvery").replace("{n}", opt)
-					}))
-				}), t("pomodoroLabelHint"))]
-			})]
+			children: [
+				cardHead(t("pomodoroTitle"), t("pomodoroHint")),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid2",
+					children: [field(t("pomodoroLabel"), h("select", {
+						className: INPUT_CLASS,
+						value: focusValue,
+						disabled: busy,
+						onChange: onFocus,
+						children: focusOptions.map((opt) => h("option", {
+							key: opt,
+							value: opt,
+							children: opt === OFF ? t("pomodoroOff") : t("pomodoroEvery").replace("{n}", opt)
+						}))
+					}), t("pomodoroLabelHint")), field(t("pomodoroBreakLabel"), h("select", {
+						className: INPUT_CLASS,
+						value: String(breakMin),
+						disabled: busy,
+						onChange: onBreak,
+						children: breakOptions.map((opt) => h("option", {
+							key: opt,
+							value: String(opt),
+							children: t("pomodoroEvery").replace("{n}", String(opt))
+						}))
+					}), t("pomodoroBreakHint"))]
+				}),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid2",
+					children: [field(t("pomodoroLongBreakLabel"), h("select", {
+						className: INPUT_CLASS,
+						value: String(longBreakMin),
+						disabled: busy,
+						onChange: onLongBreak,
+						children: longOptions.map((opt) => h("option", {
+							key: opt,
+							value: String(opt),
+							children: t("pomodoroEvery").replace("{n}", String(opt))
+						}))
+					}), t("pomodoroLongBreakHint")), field(t("pomodoroRoundsLabel"), h("input", {
+						type: "number",
+						className: INPUT_CLASS,
+						min: "1",
+						max: "24",
+						step: "1",
+						value: String(rounds),
+						disabled: busy,
+						onChange: onRounds
+					}), t("pomodoroRoundsHint"))]
+				}),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid2",
+					children: [toggleCell("pomodoroAutoBreak", pomodoro.autoStartBreak !== false, busy, (v) => props.onChange({ autoStartBreak: v })), toggleCell("pomodoroAutoFocus", pomodoro.autoStartFocus === true, busy, (v) => props.onChange({ autoStartFocus: v }))]
+				})
+			]
 		});
 	};
 }
@@ -3953,6 +4192,52 @@ function makeGreetingCard(rt) {
 						disabled: busy || !poolMode,
 						onChange: (e) => props.onChange({ poolSize: Number(e.target.value) })
 					}), t("greetingPoolSizeHint"), true)]
+				})
+			]
+		});
+	};
+}
+
+//#endregion
+//#region src/client/settings/mood-card.ts
+function makeMoodCard(rt) {
+	const { h, t } = rt;
+	const { cardHead, field, toggleCell } = makeUiKit({
+		h,
+		t
+	});
+	return function MoodCard(props) {
+		const { busy, mood } = props;
+		/** 0~100 的数字输入。 */
+		const numInput = (key, value) => h("input", {
+			type: "number",
+			className: INPUT_CLASS,
+			step: "1",
+			min: "0",
+			max: "100",
+			value: String(value),
+			disabled: busy,
+			onChange: (e) => {
+				const n = Number(e.target.value);
+				if (Number.isFinite(n)) props.onChange({ [key]: n });
+			}
+		});
+		return h("div", {
+			className: "dsh-zdd-pet-cfg__card",
+			children: [
+				cardHead(t("moodTitle"), t("moodHint")),
+				toggleCell("moodEnabled", mood.enabled, busy, (v) => props.onChange({ enabled: v })),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid3",
+					children: [
+						field(t("moodInitial"), numInput("initial", mood.initial), t("moodInitialHint")),
+						field(t("moodTouchGain"), numInput("touchGain", mood.touchGain), t("moodTouchGainHint")),
+						field(t("moodDecay"), numInput("decayPerHour", mood.decayPerHour), t("moodDecayHint"))
+					]
+				}),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid3",
+					children: [field(t("moodLow"), numInput("low", mood.low), t("moodLowHint")), field(t("moodHigh"), numInput("high", mood.high), t("moodHighHint"))]
 				})
 			]
 		});
@@ -4256,6 +4541,16 @@ const zh = {
 	pomodoroLabelHint: "选「关闭」停用；选某个分钟数即开启，并每隔这么久让桌宠提醒你起来动动。",
 	pomodoroOff: "关闭",
 	pomodoroEvery: "每 {n} 分钟",
+	pomodoroBreakLabel: "休息时长",
+	pomodoroBreakHint: "专注结束后休息多久；到点会提醒你回来继续。",
+	pomodoroLongBreakLabel: "长休息时长",
+	pomodoroLongBreakHint: "每完成若干轮专注后的较长休息。",
+	pomodoroRoundsLabel: "每几轮长休息",
+	pomodoroRoundsHint: "完成多少轮专注后进入长休息（1~24）。",
+	pomodoroAutoBreak: "专注结束自动开始休息",
+	pomodoroAutoBreakHint: "开启后专注一结束就自动开始倒计时休息；关闭则等你右键继续。",
+	pomodoroAutoFocus: "休息结束自动开始专注",
+	pomodoroAutoFocusHint: "开启后休息一结束就自动开始下一轮专注。",
 	invalidPomodoro: "请检查番茄钟：间隔需为 1~1440 的数字。",
 	greetingTitle: "启动吉祥话",
 	greetingHint: "每次 DSH 启动时让宠物说一句吉利话（带表情包）。模型不可用时用内置几句兜底。",
@@ -4267,6 +4562,21 @@ const zh = {
 	greetingPoolSize: "预生成句数",
 	greetingPoolSizeHint: "语言池模式下预生成几句（1~200）；仅在「语言池」模式生效。",
 	invalidGreeting: "请检查吉祥话设置：预生成句数需为 1~200 的整数。",
+	moodTitle: "心情 / 亲密度",
+	moodHint: "摸它会开心、久不理会低落；档位影响点击台词与空闲动作（开心会撒娇、低落更易叹气/打盹）。数值按宠物分别保存在本地。全局默认，所有宠物共用；随「保存」写入用户配置，浏览器即时生效，桌面端由保存重载后生效。",
+	moodEnabled: "启用心情系统",
+	moodEnabledHint: "关闭后不再累计心情，点击台词直接使用 clickTexts，空闲动作也不受心情影响。",
+	moodInitial: "初始心情",
+	moodInitialHint: "首次启用时的心情值（0~100）。",
+	moodTouchGain: "摸一下涨多少",
+	moodTouchGainHint: "每次点击宠物心情上涨的点数（0~100）。",
+	moodDecay: "每小时自然衰减",
+	moodDecayHint: "长时间不互动，每小时掉多少点（0~100）。",
+	moodLow: "低落分界",
+	moodLowHint: "低于这个值算「有点闷」（0~100）。",
+	moodHigh: "开心分界",
+	moodHighHint: "高于这个值算「超开心」（0~100）。",
+	invalidMood: "请检查心情设置：五个数值都需在 0~100 之间。",
 	"font.candy": "软糖体（内置）",
 	"font.yahei": "微软雅黑 / 苹方",
 	"font.youyuan": "幼圆",
@@ -4441,6 +4751,16 @@ const en = {
 	pomodoroLabelHint: "Pick \"Off\" to disable; pick a minutes value to enable and have the pet remind you to stretch that often.",
 	pomodoroOff: "Off",
 	pomodoroEvery: "Every {n} min",
+	pomodoroBreakLabel: "Break length",
+	pomodoroBreakHint: "How long to rest after each focus session.",
+	pomodoroLongBreakLabel: "Long break length",
+	pomodoroLongBreakHint: "Longer rest after a few focus rounds.",
+	pomodoroRoundsLabel: "Rounds per long break",
+	pomodoroRoundsHint: "How many focus rounds before a long break (1–24).",
+	pomodoroAutoBreak: "Auto-start break",
+	pomodoroAutoBreakHint: "Start the break countdown automatically when focus ends; off means you resume it from the menu.",
+	pomodoroAutoFocus: "Auto-start next focus",
+	pomodoroAutoFocusHint: "Start the next focus session automatically when the break ends.",
 	invalidPomodoro: "Check the Pomodoro setting: the interval must be a number between 1 and 1440.",
 	greetingTitle: "Startup greeting",
 	greetingHint: "At each DSH startup the pet says a lucky greeting (with a meme). Falls back to built-in lines when the model is unavailable.",
@@ -4452,6 +4772,21 @@ const en = {
 	greetingPoolSize: "Pool size",
 	greetingPoolSizeHint: "How many lines to pre-generate (1~200); only used in Pool mode.",
 	invalidGreeting: "Check the greeting setting: the pool size must be an integer between 1 and 200.",
+	moodTitle: "Mood / affection",
+	moodHint: "Touching it cheers it up; neglect makes it gloomy. The tier affects click lines and idle behaviour (happy → shows off, low → sighs/naps sooner). The value is stored locally per pet. Global default shared by all pets; written on Save — instant in the browser, applied after reload on desktop.",
+	moodEnabled: "Enable mood system",
+	moodEnabledHint: "When off, mood no longer accumulates: click lines use clickTexts directly and idle behaviour ignores mood.",
+	moodInitial: "Initial mood",
+	moodInitialHint: "Starting value when the pet is first seen (0–100).",
+	moodTouchGain: "Gain per touch",
+	moodTouchGainHint: "How many points each click adds (0–100).",
+	moodDecay: "Decay per hour",
+	moodDecayHint: "How many points are lost per idle hour (0–100).",
+	moodLow: "Low threshold",
+	moodLowHint: "Below this value counts as gloomy (0–100).",
+	moodHigh: "High threshold",
+	moodHighHint: "Above this value counts as cheerful (0–100).",
+	invalidMood: "Check the mood setting: all five values must be between 0 and 100.",
 	"font.candy": "Candy (bundled)",
 	"font.yahei": "Microsoft YaHei / PingFang",
 	"font.youyuan": "YouYuan",
@@ -4534,6 +4869,7 @@ function makePetConfigSection(rt) {
 	const PhysicsCard = makePhysicsCard(rt);
 	const PomodoroCard = makePomodoroCard(rt);
 	const GreetingCard = makeGreetingCard(rt);
+	const MoodCard = makeMoodCard(rt);
 	const Actions = makeActions(rt);
 	const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
 	const SettingsDialog = makeDialog(rt);
@@ -4563,6 +4899,10 @@ function makePetConfigSection(rt) {
 		const [physics, setPhysics] = useState({ ...DEFAULT_PHYSICS });
 		const [pomodoro, setPomodoro] = useState({ ...DEFAULT_POMODORO });
 		const [greeting, setGreeting] = useState({ ...DEFAULT_GREETING });
+		const [mood, setMood] = useState({
+			...DEFAULT_MOOD,
+			texts: { ...DEFAULT_MOOD.texts }
+		});
 		const [font, setFont] = useState({ ...DEFAULT_FONT });
 		const [whisperModel, setWhisperModel] = useState({
 			provider: "",
@@ -4587,6 +4927,7 @@ function makePetConfigSection(rt) {
 			if (patch.physics !== void 0) setPhysics(patch.physics);
 			if (patch.pomodoro !== void 0) setPomodoro(patch.pomodoro);
 			if (patch.greeting !== void 0) setGreeting(patch.greeting);
+			if (patch.mood !== void 0) setMood(patch.mood);
 			if (patch.font !== void 0) setFont(patch.font);
 			if (patch.whisperModel !== void 0) setWhisperModel(patch.whisperModel);
 			if (patch.chatModel !== void 0) setChatModel(patch.chatModel);
@@ -4637,6 +4978,10 @@ function makePetConfigSection(rt) {
 			...current,
 			...patch
 		}));
+		const patchMood = (patch) => setMood((current) => ({
+			...current,
+			...patch
+		}));
 		/** 两个模型字段各有一份状态，卡片只回传键名。 */
 		const setModel = (key, value) => {
 			if (key === "whisperModel") setWhisperModel(value);
@@ -4653,6 +4998,7 @@ function makePetConfigSection(rt) {
 				physics,
 				pomodoro,
 				greeting,
+				mood,
 				whisperModel,
 				chatModel,
 				chatMemoryRounds: chatMemory,
@@ -4757,6 +5103,11 @@ function makePetConfigSection(rt) {
 					busy,
 					greeting,
 					onChange: patchGreeting
+				}),
+				h(MoodCard, {
+					busy,
+					mood,
+					onChange: patchMood
 				}),
 				h(Actions, {
 					busy,
@@ -4894,6 +5245,11 @@ function createMenuActions(deps) {
 			deps.stopThrow();
 			deps.stopMove();
 			deps.resetPosition();
+			return;
+		}
+		if (typeof leaf$1.action === "string" && leaf$1.action.startsWith("pomodoro-")) {
+			const action = leaf$1.action.slice(9);
+			fireAction(ROUTE_PATH + "/pomodoro?pet=" + encodeURIComponent(petId) + "&action=" + encodeURIComponent(action), "番茄钟动作 " + action);
 			return;
 		}
 		if (!leaf$1.anim) return;
@@ -5047,7 +5403,7 @@ function createAnimationFlow(rt) {
 			pickNext();
 		};
 		/** 说一句：抽碎碎念动画并弹气泡，两者独立。 */
-		const speak = (text, image, url, duration, anim) => {
+		const speak = (text, image, url, duration, anim, hold) => {
 			const card = hub.card;
 			let name = null;
 			if (anim !== false) {
@@ -5067,7 +5423,7 @@ function createAnimationFlow(rt) {
 			hub.bubbles.showWhisper(text, {
 				image,
 				url
-			}, duration);
+			}, duration, hold);
 		};
 		return {
 			applyEndedCue,
@@ -5099,6 +5455,7 @@ const STATE_FALLBACK_MS = 1e3;
 //#endregion
 //#region src/client/pet/card/bubble-slots.ts
 function decideBubbleSlot(input) {
+	if (input.whisperOn && input.whisperHold && input.whisperText) return "whisper";
 	if (input.workTerminal && input.workOn && input.workText && input.workStatusEnabled) return "work-terminal";
 	if (input.workOn && input.workHasTask && input.workStatusEnabled) return "work";
 	if (input.whisperOn && input.whisperText) return "whisper";
@@ -5123,7 +5480,9 @@ function createBubbleSlots(rt, components) {
 		const [whisperText, setWhisperText] = useState(null);
 		const [whisperImage, setWhisperImage] = useState(void 0);
 		const [whisperUrl, setWhisperUrl] = useState(void 0);
+		const [whisperHold, setWhisperHold] = useState(false);
 		const whisperTimerRef = useRef(null);
+		const whisperHoldRef = useRef(false);
 		const [workOn, setWorkOn] = useState(false);
 		const [workText, setWorkText] = useState(null);
 		const workTimerRef = useRef(null);
@@ -5147,18 +5506,23 @@ function createBubbleSlots(rt, components) {
 			setBalancePage((page) => (page + 1) % pages);
 			armBalanceTimeout();
 		};
-		const showWhisper = (text, parts, duration) => {
+		const showWhisper = (text, parts, duration, hold = false) => {
 			if (duration === 0) return;
+			if (whisperHoldRef.current && !hold) return;
 			setWhisperText(text);
 			setWhisperImage(parts.image);
 			setWhisperUrl(parts.url);
+			setWhisperHold(hold);
+			whisperHoldRef.current = hold;
 			setWhisperOn(true);
 			if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
-			whisperTimerRef.current = window.setTimeout(() => setWhisperOn(false), duration ?? BUBBLE_DURATION_MS);
+			whisperTimerRef.current = hold ? null : window.setTimeout(() => setWhisperOn(false), duration ?? BUBBLE_DURATION_MS);
 		};
 		const clearWhisper = () => {
 			if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
 			whisperTimerRef.current = null;
+			whisperHoldRef.current = false;
+			setWhisperHold(false);
 			setWhisperOn(false);
 			setWhisperText(null);
 			setWhisperImage(void 0);
@@ -5186,6 +5550,7 @@ function createBubbleSlots(rt, components) {
 				workStatusEnabled: input.workStatusEnabled,
 				whisperOn,
 				whisperText,
+				whisperHold,
 				balanceOn,
 				balanceAvailable: input.balance !== null,
 				balanceEnabled: input.balanceEnabled,
@@ -6256,7 +6621,10 @@ function createCardDrag(rt) {
 				physics: cfgRef.current.physics,
 				dragAnims: cfgRef.current.animations.drag,
 				clickAnims: cfgRef.current.animations.clicks,
-				clickTexts: Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [],
+				clickTexts: (() => {
+					const base = Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [];
+					return input.mood ? [...input.mood.texts(base)] : base;
+				})(),
 				sayText: (text) => input.onSayText?.(text),
 				onActivity: () => input.onActivity?.(),
 				idleAnims: cfgRef.current.animations.idle,
@@ -6315,6 +6683,132 @@ function createCardDrag(rt) {
 }
 
 //#endregion
+//#region src/client/pet/card/mood.ts
+/** localStorage 键前缀：与桌面端 sprite/mood.js 保持一致（同一只宠物同一把键）。 */
+const MOOD_KEY_PREFIX = "dsh-zdd-pet-mood-";
+/** 定时衰减检查间隔（ms）：1 分钟足够，heartbeat 开销可忽略。 */
+const DECAY_TICK_MS = 6e4;
+const MOOD_EXCITE_ANIM = "原地冲刺跑";
+const MOOD_EXCITE_SAFETY_MS = 9e3;
+/** 从 localStorage 读一次；坏数据 / 无存储 → 初始值。 */
+function readStored(petId, params) {
+	const fallback = {
+		value: clampMood(params.initial),
+		savedAt: Date.now()
+	};
+	if (typeof window === "undefined") return fallback;
+	try {
+		const raw = window.localStorage.getItem(MOOD_KEY_PREFIX + petId);
+		if (!raw) return fallback;
+		const o = JSON.parse(raw);
+		const value = Number(o.v);
+		const savedAt = Number(o.t);
+		if (!Number.isFinite(value)) return fallback;
+		return {
+			value: clampMood(value),
+			savedAt: Number.isFinite(savedAt) ? savedAt : Date.now()
+		};
+	} catch {
+		return fallback;
+	}
+}
+/** 写回 localStorage；存不了就只在本会话内生效（与桌面端同一处理）。 */
+function writeStored(petId, value, savedAt) {
+	if (typeof window === "undefined") return;
+	try {
+		window.localStorage.setItem(MOOD_KEY_PREFIX + petId, JSON.stringify({
+			v: clampMood(value),
+			t: savedAt
+		}));
+	} catch {}
+}
+function createCardMood(rt) {
+	const { useState, useEffect, useRef } = rt;
+	return function useCardMood(input) {
+		const petId = input.cfgRef.current.id;
+		const params = () => readMoodParams(input.cfgRef.current.mood);
+		const initialValue = (() => {
+			const p = params();
+			if (!p.enabled) return clampMood(p.initial);
+			const stored = readStored(petId, p);
+			return decayMood(stored.value, Date.now() - stored.savedAt, p.decayPerHour);
+		})();
+		const [value, setValue] = useState(initialValue);
+		const valueRef = useRef(value);
+		valueRef.current = value;
+		const savedAtRef = useRef(Date.now());
+		const excitedRef = useRef(false);
+		const timerRef = useRef(null);
+		const commit = (next) => {
+			const v = clampMood(next);
+			valueRef.current = v;
+			savedAtRef.current = Date.now();
+			setValue(v);
+			writeStored(petId, v, savedAtRef.current);
+		};
+		useEffect(() => {
+			const id = window.setInterval(() => {
+				const p = params();
+				if (!p.enabled) return;
+				const now = Date.now();
+				commit(decayMood(valueRef.current, now - savedAtRef.current, p.decayPerHour));
+			}, DECAY_TICK_MS);
+			return () => {
+				window.clearInterval(id);
+				if (timerRef.current !== null) {
+					window.clearTimeout(timerRef.current);
+					timerRef.current = null;
+				}
+			};
+		}, []);
+		const tier = () => {
+			const p = params();
+			return moodTier(valueRef.current, p.low, p.high);
+		};
+		const touch = (gain) => {
+			const p = params();
+			if (!p.enabled) return {
+				value: valueRef.current,
+				tier: "normal",
+				hitMax: false
+			};
+			const g = Number.isFinite(gain) ? gain : p.touchGain;
+			const next = clampMood(valueRef.current + g);
+			commit(next);
+			const hitMax = next >= 100 && !excitedRef.current;
+			if (hitMax) excitedRef.current = true;
+			return {
+				value: next,
+				tier: moodTier(next, p.low, p.high),
+				hitMax
+			};
+		};
+		const finishExcite = () => {
+			if (!excitedRef.current) return valueRef.current;
+			excitedRef.current = false;
+			commit(61 + Math.floor(Math.random() * 39));
+			return valueRef.current;
+		};
+		return {
+			params,
+			enabled: () => params().enabled,
+			value: () => valueRef.current,
+			tier,
+			label: () => {
+				const v = clampMood(valueRef.current);
+				return "心情 " + v + "/100（" + moodLabel(tier()) + "）";
+			},
+			texts: (fallback) => {
+				const p = params();
+				return moodTextPool(p, moodTier(valueRef.current, p.low, p.high), fallback);
+			},
+			touch,
+			finishExcite
+		};
+	};
+}
+
+//#endregion
 //#region src/client/pet/card/rest.ts
 /** 空闲检查间隔（ms）：15s 一次足够，开销可忽略。 */
 const CHECK_INTERVAL_MS = 15e3;
@@ -6329,7 +6823,28 @@ function createCardRest(rt) {
 				if (!r || r.enabled === false || sleepingRef.current) return;
 				const sec = Number(r.sleepAfterSec);
 				if (!Number.isFinite(sec) || sec <= 0) return;
-				if (Date.now() - lastRef.current < sec * 1e3) return;
+				const idleMs = Date.now() - lastRef.current;
+				const m = input.mood?.();
+				const tier = m && m.enabled ? m.tier : "normal";
+				const p = m?.params;
+				if (tier === "high" && p && p.happyAnim && input.hasAnim?.(p.happyAnim)) {
+					if (idleMs < sec * 1e3) return;
+					lastRef.current = Date.now();
+					input.actions.setAnim(p.happyAnim);
+					input.actions.setOnce(true);
+					input.actions.bumpSeq();
+					return;
+				}
+				if (tier === "low" && p && p.sadAnim && input.hasAnim?.(p.sadAnim)) {
+					if (idleMs < sec * .5 * 1e3) return;
+					lastRef.current = Date.now();
+					input.actions.setAnim(p.sadAnim);
+					input.actions.setOnce(true);
+					input.actions.bumpSeq();
+					return;
+				}
+				const effSec = tier === "low" ? sec * .5 : sec;
+				if (idleMs < effSec * 1e3) return;
 				const anim = typeof r.sleepAnim === "string" && r.sleepAnim ? r.sleepAnim : "";
 				if (!anim) return;
 				sleepingRef.current = true;
@@ -7095,6 +7610,7 @@ function createCardEntry(rt) {
 					label: "回到初始位置",
 					action: "home"
 				},
+				pomodoroMenuBranch(),
 				displayMenuBranch()
 			];
 			const tree = [
@@ -8016,7 +8532,7 @@ function createCueEffects(rt) {
 				return;
 			}
 			const duration = say.duration === void 0 ? sayBubbleDurationMs(say.text) : say.duration;
-			hub.speak(say.text, say.image, say.url, duration, say.anim);
+			hub.speak(say.text, say.image, say.url, duration, say.anim, say.hold);
 		};
 		/** 点播动画：url 插播一段，名称走菜单同一套动作。 */
 		const consumeAnimCue = () => {
@@ -8117,6 +8633,28 @@ function createLockFreeze(rt) {
 
 //#endregion
 //#region src/client/pet/card/runtime.ts
+/** 动画名是否存在于任意动画池（防止播一个不存在的名字导致 404 卡住）。 */
+function animExists(anims, target) {
+	const seen = new Set();
+	const stack = [anims];
+	while (stack.length) {
+		const o = stack.pop();
+		if (!o || seen.has(o)) continue;
+		if (typeof o === "string") {
+			if (o === target) return true;
+			continue;
+		}
+		if (Array.isArray(o)) {
+			for (const x of o) stack.push(x);
+			continue;
+		}
+		if (typeof o === "object") {
+			seen.add(o);
+			for (const v of Object.values(o)) stack.push(v);
+		}
+	}
+	return false;
+}
 function createCardRuntime(rt) {
 	const { h, useEffect, useRef, useState } = rt;
 	/** 余额气泡：数据与显隐由装配根传入。 */
@@ -8139,6 +8677,11 @@ function createCardRuntime(rt) {
 	});
 	const useCardState = createCardState({
 		useState,
+		useRef
+	});
+	const useCardMood = createCardMood({
+		useState,
+		useEffect,
 		useRef
 	});
 	const useLockFreeze = createLockFreeze({
@@ -8188,6 +8731,8 @@ function createCardRuntime(rt) {
 		cfgRef.current = cfg;
 		const workStatusRef = useRef(workStatus);
 		workStatusRef.current = workStatus;
+		const mood = useCardMood({ cfgRef });
+		const exciteTimerRef = useRef(null);
 		const rootRef = useRef(null);
 		const stageRef = useRef(null);
 		const videoARef = useRef(null);
@@ -8256,14 +8801,42 @@ function createCardRuntime(rt) {
 		});
 		const rest = useCardRest({
 			cfgRef,
-			actions
+			actions,
+			mood: () => ({
+				enabled: mood.enabled(),
+				tier: mood.tier(),
+				params: mood.params()
+			}),
+			hasAnim: (name) => animExists(cfgRef.current.animations, name)
 		});
 		const markActivity = () => rest.poke();
+		/** 心情点满时的彩蛋：情绪气泡 + 冲刺跑；到时（或兜底超时）随机掉回 61~99。 */
+		const triggerMoodExcite = () => {
+			if (animExists(cfgRef.current.animations, MOOD_EXCITE_ANIM)) {
+				bubbles.showWhisper("心情满格！原地冲刺跑～", {}, 6e3);
+				actions.setOnce(true);
+				actions.setAnim(MOOD_EXCITE_ANIM);
+				actions.bumpSeq();
+			} else bubbles.showWhisper("心情满格啦～", {}, 4e3);
+			if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
+			exciteTimerRef.current = window.setTimeout(() => {
+				exciteTimerRef.current = null;
+				mood.finishExcite();
+				bubbles.showWhisper(mood.label(), {}, 4e3);
+			}, MOOD_EXCITE_SAFETY_MS);
+		};
+		useEffect(() => () => {
+			if (exciteTimerRef.current !== null) {
+				window.clearTimeout(exciteTimerRef.current);
+				exciteTimerRef.current = null;
+			}
+		}, []);
 		const drag = useCardDrag({
 			bumpSeq: actions.bumpSeq,
 			card,
 			cfgRef,
 			live: liveRef,
+			mood,
 			motion,
 			pendingSquash: pendingSquashRef,
 			root: () => rootRef.current,
@@ -8277,7 +8850,11 @@ function createCardRuntime(rt) {
 				bubbles.showWhisper(text, {});
 				markActivity();
 			},
-			onActivity: markActivity
+			onActivity: () => {
+				markActivity();
+				const touched = mood.touch();
+				if (touched.hitMax) triggerMoodExcite();
+			}
 		});
 		const entry = useCardEntry({
 			card,
@@ -8370,6 +8947,7 @@ function createCardRuntime(rt) {
 			marginX: margin.x,
 			marginY: margin.y,
 			name: cfg.name,
+			tipText: mood.enabled() ? cfg.name + " · " + mood.label() : cfg.name,
 			onClick: drag.onClick,
 			onContextMenu: entry.handleContextMenu,
 			onPointerDown: drag.onPointerDown,

@@ -173,14 +173,28 @@ export interface MoodParams {
   texts: { low: string[]; normal: string[]; high: string[] };
 }
 
-/** config.jsonc 的 pomodoro 段（设置页「番茄钟」区可编辑的部分）：开关 + 提醒间隔分钟。
- *  提醒文案池（texts）与配图不在设置页暴露——保存时透传保留，想自定义请手改 main-config.jsonc。
+/** config.jsonc 的 pomodoro 段（设置页「番茄钟」区可编辑的部分）：开关 + 专注/休息时长。
+ *  文案池（texts / breakTexts）与配图不在设置页暴露——保存时透传保留，想自定义请手改 main-config.jsonc。
  *  默认值见 shared/pomodoro.ts 的 DEFAULT_POMODORO，与内置 config.jsonc 保持一致。 */
 export interface PomodoroParams {
-  /** 是否启用番茄钟（到点让桌宠说一句）；false = 关闭 */
+  /** 是否启用番茄钟（右键菜单可开始/暂停/继续/跳过/重置）；false = 关闭 */
   enabled: boolean;
-  /** 提醒间隔（分钟）：1~1440，非法回落默认 50 */
+  /** 专注时长（分钟）：1~1440，非法回落默认 50；沿用旧字段名，兼容既有配置 */
   intervalMin: number;
+  /** 短休息时长（分钟）：1~1440，缺省 5 */
+  breakMin?: number;
+  /** 长休息时长（分钟）：1~1440，缺省 15 */
+  longBreakMin?: number;
+  /** 每几轮专注后进入长休息：1~24，缺省 4 */
+  roundsBeforeLongBreak?: number;
+  /** 专注结束后是否自动开始休息：缺省 true */
+  autoStartBreak?: boolean;
+  /** 休息结束后是否自动开始下一轮专注：缺省 false */
+  autoStartFocus?: boolean;
+  /** 专注结束提醒文案池（缺省用内置几句） */
+  texts?: string[];
+  /** 休息结束提醒文案池（缺省用内置几句） */
+  breakTexts?: string[];
 }
 
 /** 一处「服务商 + 模型」选择（config.jsonc 的 whisperModel / chatModel 段）。

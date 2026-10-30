@@ -236,6 +236,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       font: {},
       pomodoro: { enabled: false, intervalMin: 50 },
       greeting: { enabled: true, mode: 'pool', poolSize: 100 },
+      mood: { enabled: true, initial: 60, touchGain: 4, decayPerHour: 4, low: 30, high: 70, texts: {} },
     } as unknown as SaveFields;
     assert.deepEqual(Object.keys(buildSaveBody(fields)).sort(), [
       'bubbleImageEnabled',
@@ -246,6 +247,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       'confineToScreen',
       'font',
       'greeting',
+      'mood',
       'notificationsEnabled',
       'pets',
       'physics',
@@ -271,11 +273,13 @@ describe('buildSaveBody —— 请求体字段', () => {
       font: { size: 20 },
       pomodoro: { enabled: true, intervalMin: 25 },
       greeting: { enabled: true, mode: 'pool', poolSize: 100 },
+      mood: { enabled: false, initial: 40, touchGain: 5, decayPerHour: 2, low: 20, high: 80, texts: {} },
     } as unknown as SaveFields;
     const body = buildSaveBody(fields);
     assert.equal(body.chatMemoryRounds, 0);
     assert.deepEqual(body.physics, { gravity: 3 });
     assert.equal(body.notificationsEnabled, false);
     assert.deepEqual(body.pomodoro, { enabled: true, intervalMin: 25 });
+    assert.equal((body.mood as { initial: number }).initial, 40);
   });
 });

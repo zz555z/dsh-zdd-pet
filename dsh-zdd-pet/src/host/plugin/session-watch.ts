@@ -15,11 +15,13 @@ import { toolDetailFromEvent } from '../tool-detail.ts';
 import {
   agentErrorFrame,
   isCompletionTurnEnd,
+  parseToolQuestions,
   reduceNotifyFrame,
   sessionIdOf,
   shouldNotifySession,
   withSessionId,
 } from '../notify-events.ts';
+import { confirmText } from '../confirm.ts';
 import type { SessionNotify, ToolCallKey, ToolCallLedger } from './session-notify.ts';
 import type { Extras } from './extras.ts';
 import type { WorkStatusBridge } from './work-status-bridge.ts';
@@ -30,7 +32,7 @@ import type { HostContext } from './context.ts';
 export type SessionWatchInput = {
   /** 宿主上下文（apply 收到的那一个）。 */
   ctx: HostContext;
-} & Pick<Extras, 'deliverEasterEgg'> &
+} & Pick<Extras, 'deliverEasterEgg' | 'deliverConfirm' | 'clearConfirm'> &
   Pick<SessionNotify, 'cancelTerminalCleanup'> &
   Pick<SessionNotify, 'lastTodoText'> &
   Pick<SessionNotify, 'notifyActivityTimers'> &
@@ -104,8 +106,8 @@ function trackToolPhase(
     let pending = ledger.get(sessionId);
     if (!pending) ledger.set(sessionId, (pending = new Map()));
     pending.set(phase.callId ?? Symbol(), phase.detail);
-    // 工具调用自身没有清单进度：显式清空，避免上一条清单的「2/5」挂在这条工具档位上。
-    return { task: phase.detail, progress: null, keepWorking: true };
+    // 工具调用不改变清单进度：保留原有 2/5，只把当前动作换成具体工具文案（进度条不再闪断）。
+    return { task: phase.detail, progress: undefined, keepWorking: true };
   }
   const pending = ledger.get(sessionId);
   // 缺标识的结果只释放一个匿名条目：不猜它是哪个具名调用，宁可少记一条也不删错别人的。
@@ -114,7 +116,7 @@ function trackToolPhase(
   const remaining = [...(pending?.values() ?? [])];
   if (pending?.size === 0) ledger.delete(sessionId);
   const active = remaining.pop();
-  if (active !== undefined) return { task: active, progress: null, keepWorking: true };
+  if (active !== undefined) return { task: active, progress: undefined, keepWorking: true };
   // 全部工具跑完：把气泡「还」给最近一次清单（文案 + 进度一起恢复），没有清单则回落到档位文案。
   return { task: lastTodo.task, progress: lastTodo.progress, keepWorking: false };
 }
@@ -147,6 +149,8 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
   const {
     ctx,
     cancelTerminalCleanup,
+    clearConfirm,
+    deliverConfirm,
     deliverEasterEgg,
     lastTodoText,
     log,
@@ -164,6 +168,8 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
   // 消费 turn/start、user/message（goal 续跑轮判定）、tool/call、tool/result、approval/asked、
   // turn/end、todo/write（只更新任务详情文案，不切档位）。纯监听不调用模型。
   ctx.effect(() => {
+    /** 当前正在等待用户确认的会话集合：确认气泡是常驻的，收到结果后要按会话清掉。 */
+    const pendingConfirms = new Set<string>();
     const dispose = ctx.on('session/event', (session: unknown, event: unknown) => {
       const type = (event as { type?: string } | null)?.type;
       if (!type) return;
@@ -172,6 +178,32 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
           (session as { id?: unknown } | null)?.id ??
           'unknown',
       );
+      // ---- 等待用户确认：approval/asked 与 ask_user_question ----
+      // 命中时给所有启用工作状态联动的宠物投一条「表情包 + 文案」常驻气泡（hold，不自动收起）；
+      // 用户作出选择 / 审批结果回来 / 回合结束 → clear。按会话记 pending，多个会话互不误清。
+      const data = (event as { data?: Record<string, unknown> } | null)?.data ?? {};
+      const showConfirm = (kind: 'approval' | 'question', detail?: string): void => {
+        if (deliverConfirm(kind, confirmText(kind, detail)) > 0) pendingConfirms.add(sessionId);
+      };
+      const resolveConfirm = (): void => {
+        if (pendingConfirms.delete(sessionId) && pendingConfirms.size === 0) clearConfirm();
+      };
+      if (type === 'approval/asked') {
+        const reason = typeof data.reason === 'string' ? data.reason : '';
+        const toolName = typeof data.toolName === 'string' ? data.toolName : '';
+        showConfirm('approval', reason || toolName);
+      } else if (type === 'tool/call' && String(data.name ?? '') === 'ask_user_question') {
+        const questions = parseToolQuestions(data.arguments);
+        showConfirm('question', questions?.[0]?.question);
+      } else if (type === 'approval/decided') {
+        // 审批结果回来：收起确认气泡，并立刻把档位从 waiting 拨回 working——
+        // 否则「需要你确认」的工作文案还会在确认后挂 15 秒，自相矛盾。
+        resolveConfirm();
+        const seq = Number((event as { seq?: unknown }).seq ?? 0);
+        if (workStatus.has(sessionId) && workStatus.setState(sessionId, 'working', seq)) publishWorkStatus();
+      } else if (type === 'tool/result' || type === 'turn/start' || type === 'turn/end') {
+        resolveConfirm();
+      }
       if (type === 'todo/write') {
         // 任务详情文案 + 清单进度只写该会话的条目（state/task/progress 同源，不可能串会话）。会话没有活动
         // 条目（已空闲/已清理）→ 不动：不会被展示，写进去只会成为一条幽灵文案。
@@ -179,8 +211,12 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
         const view = todoViewFromTodo(event as { data?: { todos?: Array<{ status?: string; content?: string }> } });
         // 缓存无条件更新：工具跑完要靠它把气泡（含进度）恢复回来（见下方 tool/call 的接线）
         lastTodoText.set(sessionId, view);
-        // 工具正在执行时不覆盖气泡：「修改 index.ts」比清单里那句更能说明此刻在动什么
-        if ((toolsInFlight.get(sessionId)?.size ?? 0) > 0) return;
+        if ((toolsInFlight.get(sessionId)?.size ?? 0) > 0) {
+          // 工具正在执行时不覆盖动作文案（「修改 index.ts」更有用），但**进度要实时更新**：
+          // 否则清单已经 3/5 了，气泡还挂着 2/5，直到工具跑完才跳。
+          if (workStatus.has(sessionId) && workStatus.setProgress(sessionId, view.progress)) publishWorkStatus();
+          return;
+        }
         if (workStatus.has(sessionId)) {
           workStatus.setTask(sessionId, view.task, view.progress);
           publishWorkStatus(); // 任务文案/进度变化也要写 S（气泡内容靠它更新）
@@ -253,7 +289,11 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
       // 还有操作没完就把档位压回 working：结果档与「仍在执行」的文案同时出现会自相矛盾。
       if (outcome?.keepWorking) next = 'working';
       const changed = workStatus.setState(sessionId, next, seq);
-      if (outcome?.task !== undefined) workStatus.setTask(sessionId, outcome.task, outcome.progress ?? null);
+      if (outcome?.task !== undefined) {
+        if (outcome.task === null) workStatus.setTask(sessionId, null, null);
+        // 有具体动作时只换文案，默认保留已有清单进度（传 undefined 表示「不碰进度」）。
+        else workStatus.setAction(sessionId, outcome.task, outcome.progress);
+      }
       publishWorkStatus(); // 档位或文案变了 → 写 S（内容没变时它自己会短路，不产生多余写入）
       // 同会话同状态不重复更新（防刷屏）：写已经落定，这里只负责跳过终态清理的重排
       if (!changed) return;
@@ -270,6 +310,7 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
     });
     return () => {
       dispose();
+      pendingConfirms.clear();
       for (const t of terminalTimers.values()) clearTimeout(t);
       terminalTimers.clear();
     };

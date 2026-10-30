@@ -13,13 +13,28 @@
 import { POMODORO_DEFAULT_INTERVAL_MIN, POMODORO_MAX_INTERVAL_MIN, POMODORO_MIN_INTERVAL_MIN } from '../shared/pomodoro.ts';
 export interface PomodoroConfig {
     enabled: boolean;
-    /** 间隔分钟；>0 的有限数，否则回落到默认 50 */
+    /** 专注时长（分钟）；>0 的有限数，否则回落到默认 50 */
     intervalMin: number;
+    /** 短休息时长（分钟） */
+    breakMin: number;
+    /** 长休息时长（分钟） */
+    longBreakMin: number;
+    /** 每几轮专注后进入长休息 */
+    roundsBeforeLongBreak: number;
+    /** 专注结束后是否自动开始休息 */
+    autoStartBreak: boolean;
+    /** 休息结束后是否自动开始下一轮专注 */
+    autoStartFocus: boolean;
+    /** 专注结束 / 休息提醒文案 */
     texts: string[];
+    /** 休息结束时的提醒文案 */
+    breakTexts: string[];
 }
 export { POMODORO_DEFAULT_INTERVAL_MIN, POMODORO_MAX_INTERVAL_MIN, POMODORO_MIN_INTERVAL_MIN };
-/** 默认文案（不配 texts 时用） */
+/** 默认文案（不配 texts 时用）——专注结束、该休息了 */
 export declare const POMODORO_DEFAULT_TEXTS: string[];
+/** 默认文案（不配 breakTexts 时用）——休息结束、该继续了 */
+export declare const POMODORO_DEFAULT_BREAK_TEXTS: string[];
 /**
  * 解析配置 → 生效值；未配置/关闭 → undefined（= 不起定时器）。
  * 间隔非法一律回落默认（不告警，这是"锦上添花"功能，配置写坏了不该报错打扰）。
@@ -27,5 +42,7 @@ export declare const POMODORO_DEFAULT_TEXTS: string[];
 export declare function parsePomodoro(raw: unknown): PomodoroConfig | undefined;
 /** 从配置里抽一句提醒；rand 可注入便于单测 */
 export declare function pickPomodoroText(cfg: PomodoroConfig, rand?: () => number): string;
+/** 从配置里抽一句「休息结束」提醒。 */
+export declare function pickBreakText(cfg: PomodoroConfig, rand?: () => number): string;
 /** 间隔分钟 → 毫秒（定时器用）；至少 1 分钟 */
 export declare function pomodoroMs(cfg: PomodoroConfig): number;

@@ -11,6 +11,7 @@ import {
   buildMenuTree,
   buildMoreBranch,
   displayMenuBranch,
+  pomodoroMenuBranch,
   mountContextMenu,
   type MenuNode,
 } from '../../../shared/menu.ts';
@@ -172,6 +173,8 @@ export function createCardEntry(rt: CardEntryRuntime) {
         { label: '碎碎念', action: 'whisper' },
         { label: '对话', action: 'chat', hint: CHAT_HOTKEY_HINT },
         { label: '回到初始位置', action: 'home' },
+        // 番茄钟：开始/暂停/继续/跳过/重置；具体状态由宿主计时引擎维护。
+        pomodoroMenuBranch(),
         // 显示位置子菜单与桌面端同一份；改成不含 web 的值后本宠物会从页面消失。
         displayMenuBranch(),
       ];

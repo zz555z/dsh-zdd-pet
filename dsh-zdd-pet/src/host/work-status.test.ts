@@ -111,8 +111,8 @@ describe('currentTaskFromTodo —— 任务详情文案（issue #59）', () => {
     assert.equal(currentTaskFromTodo(event), '正在执行 phase2');
   });
 
-  test('无 in_progress → 回落到第一个 pending；都没有 → null', () => {
-    assert.equal(currentTaskFromTodo(todo(['completed', 'a'], ['pending', 'b'], ['pending', 'c'])), 'b');
+  test('无 in_progress → 标出第一个 pending 为「接下来」；都没有 → null', () => {
+    assert.equal(currentTaskFromTodo(todo(['completed', 'a'], ['pending', 'b'], ['pending', 'c'])), '接下来：b');
     assert.equal(currentTaskFromTodo(todo(['completed', 'a'], ['completed', 'b'])), null);
     assert.equal(currentTaskFromTodo(todo()), null);
   });
@@ -280,5 +280,34 @@ describe('WorkStatusStore —— 按会话聚合与展示（issue #59）', () =>
       s.setState('high', order[i], 1);
       assert.equal(s.snapshot().state, order[i], `${order[i]} 应压过 ${order[i + 1]}`);
     }
+  });
+});
+
+describe('todoViewFromTodo —— 只有 pending 时标「接下来」', () => {
+  test('不把下一步 pending 冒充成当前正在做', () => {
+    const view = todoViewFromTodo({
+      data: {
+        todos: [
+          { status: 'completed', content: '第一步' },
+          { status: 'pending', content: '第二步' },
+        ],
+      },
+    });
+    assert.equal(view.task, '接下来：第二步');
+    assert.deepEqual(view.progress, { done: 1, total: 2 });
+  });
+});
+
+describe('WorkStatusStore —— 动作与进度分开写', () => {
+  test('setAction 默认保留已有进度；setProgress 只改进度不动文案', () => {
+    const s = new WorkStatusStore();
+    s.setState('a', 'working', 1);
+    s.setTask('a', '第二步', { done: 1, total: 3 });
+    assert.equal(s.setAction('a', '编辑 work-status.ts'), true);
+    assert.equal(s.snapshot().task, '编辑 work-status.ts');
+    assert.deepEqual(s.snapshot().progress, { done: 1, total: 3 }, '换动作不该清掉进度');
+    assert.equal(s.setProgress('a', { done: 2, total: 3 }), true);
+    assert.equal(s.snapshot().task, '编辑 work-status.ts', '改进度不该顶掉当前动作');
+    assert.deepEqual(s.snapshot().progress, { done: 2, total: 3 });
   });
 });

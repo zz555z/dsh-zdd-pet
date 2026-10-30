@@ -71,17 +71,21 @@ Object.assign(PetSprite.prototype, {
     const whisperOn = !!(this.whisperOn && this.whisperView);
     const balanceOn = !!(this.bubbleOn && this.balanceView);
     const workTerminal = this.workState === 'success' || this.workState === 'error';
-    const slot = taskLive
-      ? 'work'
-      : workTerminal && workOn
+    // 等待用户确认的常驻气泡最高优先：不被任务进度/终态/余额顶掉，用户不确认就一直显示。
+    const whisperHold = !!(whisperOn && this.whisperHold);
+    const slot = whisperHold
+      ? 'whisper'
+      : taskLive
         ? 'work'
-        : whisperOn
-          ? 'whisper'
-          : balanceOn
-            ? 'balance'
-            : workOn
-              ? 'work'
-              : 'none';
+        : workTerminal && workOn
+          ? 'work'
+          : whisperOn
+            ? 'whisper'
+            : balanceOn
+              ? 'balance'
+              : workOn
+                ? 'work'
+                : 'none';
     // 隐藏时必须先返回：不能在下面把影响字号的状态类（is-whisper / is-expanded）关掉再隐藏。
     // 否则气泡内容还在、只是随 opacity 淡出，那 0.25s 里字号会从碎碎念的小字号跳回基础大字号，
     // 表现就是「鼠标挪开的一瞬间字突然变大」。

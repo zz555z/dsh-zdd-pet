@@ -30,6 +30,8 @@ Object.assign(PetSprite.prototype, {
       { label: '碎碎念', action: 'whisper' },
       { label: '对话', action: 'chat', hint: S.CHAT_HOTKEY_HINT },
       { label: '回到初始位置', action: 'home' },
+      // 番茄钟：开始/暂停/继续/跳过/重置；具体状态由宿主计时引擎维护。
+      S.pomodoroMenuBranch(),
       // 显示位置（仅网页/仅桌面/两者/都不）：改这只宠物的 display 配置，由宿主重载生效。
       // 与浏览器端注入同一份子菜单，两端文案与取值不会漂移。不就地开关窗：窗口是进程启动时按
       // DSH_PET_PETS 一次性建的，就地增删既改不了磁盘配置也改不了窗口数量。
@@ -97,6 +99,15 @@ Object.assign(PetSprite.prototype, {
     }
     if (leaf.action === 'home') {
       this.goHome(); // 停漫游/移动，清会话位置，回配置角落
+      return;
+    }
+    if (typeof leaf.action === 'string' && leaf.action.indexOf('pomodoro-') === 0) {
+      const action = leaf.action.slice('pomodoro-'.length);
+      S.postAction(BASE + '/pomodoro?pet=' + encodeURIComponent(this.pet.id) + '&action=' + encodeURIComponent(action))
+        .then((ok) => {
+          if (!ok) console.warn('[dsh-zdd-pet] 番茄钟动作未成功 action=' + action);
+        })
+        .catch((e) => console.warn('[dsh-zdd-pet] 番茄钟动作异常', e));
       return;
     }
     if (leaf.action === 'set-display') {

@@ -68,6 +68,7 @@ export declare function readBalance(leaf: StateLeaf): {
 /** 说话指令（`pets.<id>.say` 的两种形态）。
  *  say：弹一个气泡，duration = 显示时长（毫秒；缺省 10s，0 = 字面意思「不显示」），
  *  anim 只在显式 false 时出现，表示这次不联动 events.whisper 动画、只弹气泡。
+ *  hold = true：**常驻气泡**（等待用户确认时用）——不自动收起、优先级最高，直到宿主写 clear。
  *  clear：收起当前气泡（POST /bubble/clear 的落点），必须是单独形态——空文本会被判成非法、整拍跳过。
  *  配图两种形态并列、由字段名区分：image = 表情包池内的名称（消费端拼图片路径），url = 第三方给的完整地址。
  *  不做「一个中性字段装两种值」：消费端必须知道该不该拼路径，靠 startsWith('http') 嗅探在名字像 URL 时会出错。
@@ -79,6 +80,7 @@ export type SayCue = {
     url?: string;
     duration?: number;
     anim?: boolean;
+    hold?: boolean;
 } | {
     kind: 'clear';
 };

@@ -81,6 +81,8 @@ Object.assign(PetSprite.prototype, {
     // 说话（碎碎念/命令气泡/对话回复）：文本与配图由容器统一轮询 /state 后经 showWhisper 送进来。
     this.whisperOn = false;
     this.whisperTimer = null;
+    // 常驻气泡（等待用户确认）：true = 不自动收起、优先级最高，直到宿主写 clear。
+    this.whisperHold = false;
     this.whisperView = null;
     this.whisperText = '';
     // 配图名称（配置 memes 的键；whisperImageEnabled 开启时由 host 随机抽定，随文本一起来）

@@ -25,7 +25,7 @@ import {
   SILENT_TOOLS,
   TOOL_COPY,
   TOOL_RULES,
-  UNKNOWN_TOOL_LINE,
+  unknownToolLine,
 } from './copy.ts';
 
 /**
@@ -41,15 +41,18 @@ function own<T>(table: Readonly<Record<string, T>>, key: string): T | undefined 
 /**
  * `pwsh` 的文案：按命令名（必要时加子命令）查表，查不到走兜底。
  *
- * 复合命令 → null，让前端回落配置文案（无法判断真正在做什么）；`git log` 这类命中「命令 + 子命令」
+ * 复合命令不猜完整语义，但亮出第一个命令名，避免气泡挂着上一条旧任务；`git log` 这类命中「命令 + 子命令」
  * 用子命令文案，只命中命令（`git`、`cd`）用通用文案，都没命中（`npm`、`python`、`node`…）走兜底——
  * 兜底带命令名，至少知道在跑什么。
  */
 function pwshDetail(args: Record<string, unknown> | null): string | null {
   const command = args === null ? null : str(args.command);
   if (command === null) return null;
-  if (COMPOUND_COMMAND.test(command)) return null;
   const tokens = tokenizeCommand(command);
+  if (COMPOUND_COMMAND.test(command)) {
+    const first = tokens.find((token) => COMMAND_LIKE.test(token));
+    return clip(first ? '几件事一起做，先从 ' + first + ' 开始' : '跑一段组合命令，稍等哈');
+  }
   const nameAt = tokens.findIndex((token) => COMMAND_LIKE.test(token));
   if (nameAt < 0) return null;
   const rawCmd = tokens[nameAt] as string;
@@ -76,11 +79,11 @@ export function toolDetailFromEvent(
   if (name === null) return null;
   if (SILENT_TOOLS.has(name)) return null;
   const args = parseArgs(event?.data?.arguments);
-  // pwsh 走命令表（它没有「文件目标」，目标就是命令本身）
-  if (name === 'pwsh') return pwshDetail(args);
+  // pwsh / bash 走命令表（它们没有「文件目标」，目标就是命令本身）
+  if (name === 'pwsh' || name === 'bash') return pwshDetail(args);
   const entry = own(TOOL_COPY, name);
-  // 未知工具：不猜参数，也不报工具名
-  if (entry === undefined) return clip(UNKNOWN_TOOL_LINE);
+  // 未知工具：不猜参数，但报出工具名——「让我研究下这是啥」对用户没有任何信息量。
+  if (entry === undefined) return clip(unknownToolLine(name));
   const rule = own(TOOL_RULES, name);
   const line = pickLine(entry.lines);
   // workflow 这类整句不带对象的，直接给（不需要目标）

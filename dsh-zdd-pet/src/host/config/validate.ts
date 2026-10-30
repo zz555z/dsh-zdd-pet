@@ -8,6 +8,8 @@
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../shared/fonts.ts';
 import { pomodoroValid } from '../../shared/pomodoro.ts';
 import { greetingValid } from '../../shared/greeting.ts';
+import { moodValid } from '../../shared/mood.ts';
+import { festivalValid } from '../../shared/festival.ts';
 import { FONT_FAMILY_SET } from './constants.ts';
 
 /** animations 段完整性校验（与旧 assertAnimationsHost 同一套规则；不 throw，非法返回 false） */
@@ -166,6 +168,10 @@ export function topFieldValid(key: string, value: unknown): boolean {
       return pomodoroValid(value);
     case 'greeting':
       return greetingValid(value);
+    case 'mood':
+      return moodValid(value);
+    case 'festival':
+      return festivalValid(value);
     case 'whisperModel':
     case 'chatModel':
       return modelSelectionValid(value);
