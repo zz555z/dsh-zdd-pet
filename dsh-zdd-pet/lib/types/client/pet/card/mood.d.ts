@@ -1,3 +1,4 @@
+import type { IntimacyTier } from '../../../shared/intimacy.ts';
 import type { MoodParams } from '../../../shared/types.ts';
 import type { MoodTier } from '../../../shared/mood.ts';
 import type { RuntimePet } from '../types.ts';
@@ -25,6 +26,12 @@ export interface MoodTouchResult {
     tier: MoodTier;
     /** 本次是否刚好点满（调用方据此播彩蛋动画）。 */
     hitMax: boolean;
+    /** 本次是否跨过亲密度阶段边界（调用方播「阶段解锁」气泡）；未启用亲密度时恒为 false。 */
+    promoted: boolean;
+    /** 升级前的阶段（promoted 时才用于对比，否则 undefined）。 */
+    promotedFrom?: IntimacyTier;
+    /** 升级后的阶段（promoted 时有效）。 */
+    promotedTo?: IntimacyTier;
 }
 /** 心情驱动对外的读写面。 */
 export interface CardMood {
@@ -40,7 +47,15 @@ export interface CardMood {
     label(): string;
     /** 按档位取点击台词池，空则回退 clickTexts。 */
     texts(fallback: readonly string[]): readonly string[];
-    /** 摸一下：涨 touchGain（或指定值），返回是否点满。 */
+    /** 亲密度：是否启用。 */
+    intimacyEnabled(): boolean;
+    /** 亲密度：当前阶段。 */
+    intimacyTier(): IntimacyTier;
+    /** 亲密度：阶段中文名（形如「亲近」）。 */
+    intimacyLabel(): string;
+    /** 亲密度：按当前阶段取专属台词池，空则回退传入兜底池。 */
+    intimacyTexts(fallback: readonly string[]): readonly string[];
+    /** 摸一下：涨 touchGain（或指定值），返回是否点满、是否升级。 */
     touch(gain?: number): MoodTouchResult;
     /** 彩蛋收尾：随机掉到 61~99，返回新值。 */
     finishExcite(): number;

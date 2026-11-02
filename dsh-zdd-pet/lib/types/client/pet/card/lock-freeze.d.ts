@@ -28,6 +28,8 @@ export interface LockFreezeInput extends FreezeHandlers {
 export interface LockFreeze {
     /** 本地立即解冻，并清掉解冻定时器；用户接管宠物时调。 */
     release(): void;
+    /** 当前是否冻结（随机小事件等自播行为据此让位）。 */
+    frozen(): boolean;
 }
 /** 注入的 react 能力。 */
 export interface LockFreezeRuntime {

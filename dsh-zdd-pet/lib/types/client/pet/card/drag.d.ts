@@ -48,8 +48,8 @@ export interface CardDragInput {
     setTipOn: (on: boolean) => void;
     /** 点击台词：弹一句台词（由上层接到气泡单槽）。 */
     onSayText?: (text: string) => void;
-    /** 记一次活动（用于宠物作息唤醒）。 */
-    onActivity?: () => void;
+    /** 记一次活动（用于宠物作息唤醒）。返回 true = 满格彩蛋已接管运动。 */
+    onActivity?: () => boolean;
 }
 /**
  * 造拖拽装配的 hook。

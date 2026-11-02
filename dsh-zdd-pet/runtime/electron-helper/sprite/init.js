@@ -83,6 +83,8 @@ Object.assign(PetSprite.prototype, {
     this.whisperTimer = null;
     // 常驻气泡（等待用户确认）：true = 不自动收起、优先级最高，直到宿主写 clear。
     this.whisperHold = false;
+    // 撞墙回调（满格碰撞彩蛋期间临时挂上，打粒子用；平时 null）。
+    this._bounceHandler = null;
     this.whisperView = null;
     this.whisperText = '';
     // 配图名称（配置 memes 的键；whisperImageEnabled 开启时由 host 随机抽定，随文本一起来）

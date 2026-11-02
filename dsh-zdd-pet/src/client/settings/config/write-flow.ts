@@ -71,6 +71,8 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
       pomodoro: fields.pomodoro,
       greeting: fields.greeting,
       mood: fields.mood,
+      intimacy: fields.intimacy,
+      idleEvents: fields.idleEvents,
     });
     if (invalid !== null) {
       setMsg({ kind: 'err', text: t(invalid) });

@@ -40,3 +40,19 @@ export type FestivalDeps = Pick<HostSetup, 'configPaths' | 'state' | 'log' | 'me
  * @returns 投递的宠物数；未启用 / 当天无节日 / 今天已演过 → 0。
  */
 export declare function maybeFestival(deps: FestivalDeps, now?: Date): number;
+/**
+ * 亲密度纪念日演出：某宠物今天正好是「首次达到某阶段」的周年日（同月同日、非首次当年），
+ * 就播该阶段的纪念日祝福 + 动画。
+ *
+ * 首次达成日期由渲染端在升级时经 POST /intimacy 上报并落盘（见 routes/intimacy.ts），
+ * 记录在 intimacy-state.json 的 petId → (stage → YYYY-M-D)。只有当首次日期存在、今天月日与之相同、
+ * 且不是同一年时才算周年（首次当天不算，避免和刚弹出的升级气泡重复）。
+ *
+ * @returns 投递的宠物数。
+ */
+export declare function maybeIntimacyAnniversary(deps: FestivalDeps, now?: Date): number;
+/**
+ * 记录一次亲密度阶段首次达成（由渲染端升级时上报）。已存在该阶段的首次日期则不覆盖。
+ * @returns 是否新写入。
+ */
+export declare function recordIntimacyReach(userRoot: string, petId: string, stage: string, dateKey: string): boolean;

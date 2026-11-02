@@ -7,6 +7,7 @@
  */
 import { pick } from '../../../shared/pickers.ts';
 import { postAction } from '../../../shared/state.ts';
+import { spawnScoreBurst } from '../../../shared/score-popup.ts';
 import { ROUTE_PATH } from '../../../shared/constants.ts';
 import { resolveFontPx } from '../../../shared/fonts.ts';
 import { hasTask, progressText } from '../../../shared/work-status.ts';
@@ -20,7 +21,10 @@ import { createBubbleSlots } from './bubble-slots.ts';
 import { createCardAnimation } from './animation.ts';
 import { createCardDrag } from './drag.ts';
 import { createCardMood, MOOD_EXCITE_ANIM, MOOD_EXCITE_SAFETY_MS } from './mood.ts';
+import { intimacyStageOf, readIntimacyParams } from '../../../shared/intimacy.ts';
+import type { IntimacyTier } from '../../../shared/intimacy.ts';
 import { createCardRest } from './rest.ts';
+import { createCardIdleEvents } from './idle-events.ts';
 import { createCardEntry, type CardEntry } from './entry.ts';
 import { createCardMotion } from './motion.ts';
 import { createCardState } from './state.ts';
@@ -81,6 +85,7 @@ export function createCardRuntime(rt: PetRuntime) {
   const useCardMotion = createCardMotion({ useEffect, useRef });
   const useCardDrag = createCardDrag({ useRef });
   const useCardRest = createCardRest({ useEffect, useRef });
+  const useCardIdleEvents = createCardIdleEvents({ useEffect, useRef });
   const useCardEntry = createCardEntry({ useEffect, useRef });
 
   return function useCardRuntime(props: PetCardProps): CardViewProps {
@@ -192,22 +197,50 @@ export function createCardRuntime(rt: PetRuntime) {
     });
     const markActivity = (): void => rest.poke();
 
-    /** 心情点满时的彩蛋：情绪气泡 + 冲刺跑；到时（或兜底超时）随机掉回 61~99。 */
-    const triggerMoodExcite = (): void => {
-      if (animExists(cfgRef.current.animations, MOOD_EXCITE_ANIM)) {
-        bubbles.showWhisper('心情满格！原地冲刺跑～', {}, 6000);
-        actions.setOnce(true);
-        actions.setAnim(MOOD_EXCITE_ANIM);
-        actions.bumpSeq();
-      } else {
-        bubbles.showWhisper('心情满格啦～', {}, 4000);
-      }
-      if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
-      exciteTimerRef.current = window.setTimeout(() => {
-        exciteTimerRef.current = null;
+    /** 心情点满时的彩蛋：朝最近屏幕边缘冲刺撞墙，接触点炸开暖色粒子，撞回后随机掉回 61~99。
+     *  返回 true = 冲刺抛掷真的起飞了（调用方据此不再收手，免得把彩蛋当场掐灭）；
+     *  拖拽中无法起飞时降级为原地冲刺跑并返回 false。 */
+    const triggerMoodExcite = (): boolean => {
+      const settle = (): void => {
+        if (exciteTimerRef.current !== null) {
+          window.clearTimeout(exciteTimerRef.current);
+          exciteTimerRef.current = null;
+        }
+        motion.clearBounceHandler();
         mood.finishExcite();
         bubbles.showWhisper(mood.label(), {}, 4000);
-      }, MOOD_EXCITE_SAFETY_MS);
+      };
+      // 撞墙打粒子：每次反弹在接触点爆一圈暖色粒子；第一次撞到就足够震撼，之后继续。
+      let bounced = false;
+      const onBounce = (x: number, y: number, speed: number): void => {
+        // 冲击越大粒子越猛（用速度给爆发做轻微增益：低俗时也至少正常爆一簇）。
+        spawnScoreBurst(x, y);
+        if (!bounced) {
+          bounced = true;
+          bubbles.showWhisper('心情满格！撞一下～', {}, 4000);
+        }
+        // 撞过墙后给一个较短的收尾窗口，让宠物弹回一两次就落定。
+        if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
+        exciteTimerRef.current = window.setTimeout(settle, 900);
+        void speed;
+      };
+      // 先停掉随机链/走位，再起飞；起飞成功就交给物理，失败则退化为原地动画。
+      const launched = motion.celebrate(onBounce);
+      if (!launched) {
+        if (animExists(cfgRef.current.animations, MOOD_EXCITE_ANIM)) {
+          bubbles.showWhisper('心情满格！原地冲刺跑～', {}, 6000);
+          actions.setOnce(true);
+          actions.setAnim(MOOD_EXCITE_ANIM);
+          actions.bumpSeq();
+        } else {
+          bubbles.showWhisper('心情满格啦～', {}, 4000);
+        }
+      }
+      // 兜底：万一一直没撞（比如朝开阔侧没墙/被拖拽打断），到时也结算。
+      if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
+      exciteTimerRef.current = window.setTimeout(settle, MOOD_EXCITE_SAFETY_MS);
+      // 无论冲刺起飞还是原地降级，彩蛋都已接管本次点击的运动/动画：返回 true，让点击处理放过它。
+      return true;
     };
 
     // 卸载时清掉彩蛋计时器（避免宠物被删后回调写气泡）。
@@ -220,6 +253,30 @@ export function createCardRuntime(rt: PetRuntime) {
       },
       [],
     );
+
+    /** 亲密度阶段达成：播一句阶段专属标语气泡（带阶段名），并（若有开心动画）播一遍表示高兴。 */
+    const triggerIntimacyPromote = (to: IntimacyTier): void => {
+      const stage = intimacyStageOf(readIntimacyParams(cfgRef.current.intimacy), to);
+      bubbles.showWhisper('【' + stage.label + '】' + stage.motto, {}, 6000);
+      const happy = mood.params().happyAnim;
+      if (happy && animExists(cfgRef.current.animations, happy)) {
+        actions.setOnce(true);
+        actions.setAnim(happy);
+        actions.bumpSeq();
+      }
+      // 上报宿主：记录首次达到该阶段（供周年纪念日演出）。日期取本地 Y-M-D。
+      const d = new Date();
+      const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+      void postAction(
+        ROUTE_PATH +
+          '/intimacy?pet=' +
+          encodeURIComponent(cfg.id) +
+          '&stage=' +
+          encodeURIComponent(to) +
+          '&date=' +
+          encodeURIComponent(key),
+      );
+    };
 
     const drag = useCardDrag({
       bumpSeq: actions.bumpSeq,
@@ -243,8 +300,30 @@ export function createCardRuntime(rt: PetRuntime) {
       onActivity: () => {
         markActivity();
         const touched = mood.touch();
-        if (touched.hitMax) triggerMoodExcite();
+        if (touched.hitMax) return triggerMoodExcite();
+        if (touched.promoted && touched.promotedTo) triggerIntimacyPromote(touched.promotedTo);
+        return false;
       },
+    });
+
+    // 随机小事件：空闲时自己跑出来做件事（伸懒腰/张望/打哈欠）。只在真的闲着时才播，
+    // 且会顺带刷新作息计时——小事件本身就是「活动」，避免和打瞌睡撞车。
+    useCardIdleEvents({
+      cfgRef,
+      hasAnim: (name) => animExists(cfgRef.current.animations, name),
+      canPlay: () =>
+        !drag.isActive() &&
+        !rest.isSleeping() &&
+        !lockFreeze.frozen() &&
+        (!workStatus || workStatus.state === null || workStatus.state === 'success' || workStatus.state === 'error'),
+      playOnce: (name) => {
+        actions.setOnce(true);
+        actions.setAnim(name);
+        actions.bumpSeq();
+        markActivity();
+      },
+      say: (text) => bubbles.showWhisper(text, {}),
+      currentAnim: () => card.animRef.current,
     });
 
     // 右键菜单、对话与悬浮提示：动作派发经 ref 转发，避免与 menu-actions 构造期成环。
@@ -349,8 +428,11 @@ export function createCardRuntime(rt: PetRuntime) {
       marginX: margin.x,
       marginY: margin.y,
       name: cfg.name,
-      // 悬浮提示：心情启用时附带当前数值与档位（与桌面端 showMoodOnHover 同一信息）。
-      tipText: mood.enabled() ? cfg.name + ' · ' + mood.label() : cfg.name,
+      // 悬浮提示：心情启用时附带当前数值与档位（与桌面端 showMoodOnHover 同一信息）；
+      // 亲密度启用时再附「阶段名」。
+      tipText: mood.enabled()
+        ? cfg.name + ' · ' + mood.label() + (mood.intimacyEnabled() ? ' · ' + mood.intimacyLabel() : '')
+        : cfg.name,
       onClick: drag.onClick,
       onContextMenu: entry.handleContextMenu,
       onPointerDown: drag.onPointerDown,

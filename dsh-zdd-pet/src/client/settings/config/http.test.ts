@@ -237,6 +237,8 @@ describe('buildSaveBody —— 请求体字段', () => {
       pomodoro: { enabled: false, intervalMin: 50 },
       greeting: { enabled: true, mode: 'pool', poolSize: 100 },
       mood: { enabled: true, initial: 60, touchGain: 4, decayPerHour: 4, low: 30, high: 70, texts: {} },
+      intimacy: { enabled: true, stages: {} },
+      idleEvents: { enabled: true, minGapSec: 90, maxGapSec: 300, events: [] },
     } as unknown as SaveFields;
     assert.deepEqual(Object.keys(buildSaveBody(fields)).sort(), [
       'bubbleImageEnabled',
@@ -247,6 +249,8 @@ describe('buildSaveBody —— 请求体字段', () => {
       'confineToScreen',
       'font',
       'greeting',
+      'idleEvents',
+      'intimacy',
       'mood',
       'notificationsEnabled',
       'pets',

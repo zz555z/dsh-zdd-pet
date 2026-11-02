@@ -8,6 +8,8 @@ import { FONT_PRESETS, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../../shared/font
 import { pomodoroValid } from '../../../shared/pomodoro.ts';
 import { GREETING_POOL_MAX, GREETING_POOL_MIN } from '../../../shared/greeting.ts';
 import { moodValid } from '../../../shared/mood.ts';
+import { intimacyValid } from '../../../shared/intimacy.ts';
+import { idleEventsValid } from '../../../shared/idle-events.ts';
 import type {
   FontConfig,
   GreetingParams,
@@ -17,6 +19,8 @@ import type {
   PhysicsParams,
   PomodoroParams,
 } from '../../../shared/types.ts';
+import type { IntimacyParams } from '../../../shared/intimacy.ts';
+import type { IdleEventsParams } from '../../../shared/idle-events.ts';
 
 /** 校验失败时返回的文案键。 */
 export type InvalidKey =
@@ -28,7 +32,9 @@ export type InvalidKey =
   | 'invalidFont'
   | 'invalidPomodoro'
   | 'invalidGreeting'
-  | 'invalidMood';
+  | 'invalidMood'
+  | 'invalidIntimacy'
+  | 'invalidIdleEvents';
 
 /** 保存前要校验的全部表单值。 */
 export interface FormValues {
@@ -42,6 +48,8 @@ export interface FormValues {
   pomodoro: PomodoroParams;
   greeting: GreetingParams;
   mood: MoodParams;
+  intimacy: IntimacyParams;
+  idleEvents: IdleEventsParams;
 }
 
 /** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
@@ -102,5 +110,8 @@ export function validateForm(values: FormValues): InvalidKey | null {
   }
   // 心情：五个数值都在 0~100（与宿主 moodValid 同一份规则）。
   if (!moodValid(values.mood)) return 'invalidMood';
+  // 亲密度阶段 / 随机小事件：与宿主 intimacyValid / idleEventsValid 同一份规则。
+  if (!intimacyValid(values.intimacy)) return 'invalidIntimacy';
+  if (!idleEventsValid(values.idleEvents)) return 'invalidIdleEvents';
   return null;
 }

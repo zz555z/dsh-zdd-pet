@@ -24,7 +24,8 @@ export interface DragCard {
     /** 点击时弹一句台词（气泡）。 */
     sayText: (text: string) => void;
     /** 记一次活动（点击/按下都算，用于宠物作息唤醒）。 */
-    onActivity: () => void;
+    /** 一次点击活动（摸心情）。返回 true = 满格彩蛋已接管运动，调用方不得再 stopFlight/播点击动画。 */
+    onActivity: () => boolean;
     /** 待机动画池。 */
     idleAnims: string[];
     /** 当前动画名，抽待机时用来避开自己。 */

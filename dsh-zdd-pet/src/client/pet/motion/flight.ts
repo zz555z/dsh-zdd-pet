@@ -56,6 +56,9 @@ export interface FlightDeps {
   commitFinal(center: Center): void;
   /** 落地挤压：入参是本帧落地前的竖直速度（冲击速度）。 */
   onLanding(impactVy: number): void;
+  /** 撞墙反馈：每次 bounced 帧触发一次，入参是宠物中心视口坐标与撞前速度大小。
+   *  供满格碰撞彩蛋在接触点打粒子；与 onLanding 分工——后者只管空中→落地的挤压。 */
+  onBounce?(x: number, y: number, impactSpeed: number): void;
 }
 
 /** 飞行驱动：一个宠物一个实例。 */
@@ -189,6 +192,7 @@ export function createFlight(deps: FlightDeps): Flight {
       const dt = (now - last) / 1000;
       last = now;
       const fallingVy = current.vy; // 本帧积分前的竖直速度，即落地冲击速度。
+      const preSpeed = Math.hypot(current.vx, current.vy); // 本帧积分前的合速度，撞墙反馈用。
       const res = integrate(current, dt, bounds, physics);
       current = { x: res.x, y: res.y, vx: res.vx, vy: res.vy };
       if (physics.petCollision) current = resolveCollisions(current, metrics);
@@ -197,6 +201,11 @@ export function createFlight(deps: FlightDeps): Flight {
       // 落地挤压：只在空中到地面的转换帧触发，力度随冲击速度。
       const grounded = res.y >= bounds.maxY - 1;
       if (res.bounced && grounded && !prevGrounded) deps.onLanding(fallingVy);
+      // 撞墙反弹反馈：任何 bounced 帧都回调一次（含地面），供满格碰撞彩蛋在接触点打粒子。
+      if (res.bounced && deps.onBounce) {
+        // 接触点取包围盒中心（视口坐标）：盒子左上角 + 半宽半高。
+        deps.onBounce(res.x + metrics.halfW, res.y + metrics.halfH, preSpeed);
+      }
       prevGrounded = grounded;
       if (res.atRest) {
         frame = null;

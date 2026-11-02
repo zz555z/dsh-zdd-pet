@@ -175,6 +175,18 @@ Object.assign(PetSprite.prototype, {
         this.startSquash(frontEl, S.landingSquash(fallingVy));
       }
       prevGrounded = grounded;
+      // 撞墙反馈：任何 bounced 帧回调一次（含地面），供满格碰撞彩蛋在接触点打粒子。
+      if (res.bounced && this._bounceHandler) {
+        // 宠物中心在本窗口视口里的坐标 = 窗口内坐标 + 屏幕原点 - 窗口屏幕原点。
+        const cx = this.pos.x - this.margin.l + this.halfW;
+        const cy = this.pos.y - this.margin.t + this.halfH;
+        const preSpeed = Math.hypot(state.vx, state.vy);
+        try {
+          this._bounceHandler(cx, cy, preSpeed);
+        } catch (e) {
+          /* 粒子渲染失败不影响物理 */
+        }
+      }
       if (res.atRest) {
         this.throwRef = null;
         this.throwState = null;
@@ -185,6 +197,35 @@ Object.assign(PetSprite.prototype, {
       this.throwRef = requestAnimationFrame(step);
     };
     this.throwRef = requestAnimationFrame(step);
+  },
+
+  /**
+   * 满格碰撞彩蛋：按当前位置往「对角方向」斜冲一下，撞墙时经 this._bounceHandler 打粒子。
+   * 在右下角就往左上抛、左上角就往右下抛，依此类推；力度也随机。与浏览器端同一套口径。
+   * onBounce(x, y, speed) 由调用方给出（mood.js 里用 spawnScoreBurst 打粒子）。
+   * 返回是否真的起飞（拖拽中不起飞）。
+   */
+  celebrate(onBounce) {
+    if (this.dragState && this.dragState.active) return false;
+    const cx = this.pos.x + this.halfW;
+    const cy = this.pos.y + this.halfH;
+    const speed = 2400 + Math.random() * 1000; // 2400~3400 px/s，每次不同
+    // 对角方向：左半边往右、右半边往左；上半边往下、下半边往上。
+    const dirX = cx < VIEW.w / 2 ? 1 : -1;
+    const dirY = cy < VIEW.h / 2 ? 1 : -1;
+    const comp = speed / Math.SQRT2;
+    const vx = dirX * comp;
+    let vy = dirY * comp;
+    if (dirY < 0) vy *= 1.15; // 向上要更猛才撞得到顶
+    const jitter = 0.85 + Math.random() * 0.3; // 力度再浮动 ±15%
+    this._bounceHandler = onBounce;
+    this.startThrow(this.pos.x, this.pos.y, vx * jitter, vy * jitter);
+    return true;
+  },
+
+  /** 清掉撞墙回调（彩蛋结算时调，避免之后的正常抛掷误打粒子）。 */
+  clearBounceHandler() {
+    this._bounceHandler = null;
   },
 
   // 位置 / 抛掷指令（POST /position、POST /throw）

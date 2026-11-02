@@ -2660,6 +2660,207 @@ function readMoodParams(raw) {
 }
 
 //#endregion
+//#region src/shared/intimacy.ts
+const INTIMACY_TIERS = [
+	"stranger",
+	"familiar",
+	"close",
+	"bonded"
+];
+const INTIMACY_THRESHOLDS = {
+	stranger: 0,
+	familiar: 25,
+	close: 50,
+	bonded: 75
+};
+const DEFAULT_INTIMACY = {
+	enabled: true,
+	stages: {
+		stranger: {
+			label: "陌生",
+			motto: "我们才刚认识呢…",
+			texts: []
+		},
+		familiar: {
+			label: "熟悉",
+			motto: "混熟啦，见到你就想打招呼～",
+			texts: ["今天也来啦？", "嘿嘿，又见面咯～"],
+			festival: "相识纪念日",
+			festivalText: "还记得我们第一次见面吗？谢谢你一直陪着我～"
+		},
+		close: {
+			label: "亲近",
+			motto: "越来越想腻着你啦～",
+			texts: ["今天也想黏着你～", "有你在就很安心～"],
+			festival: "亲近纪念日",
+			festivalText: "我们已经这么要好啦，往后也要一直在一起哦～"
+		},
+		bonded: {
+			label: "默契",
+			motto: "不说话也懂你～",
+			texts: ["不用说话我也懂你哦～", "你最懂我啦～"],
+			festival: "默契纪念日",
+			festivalText: "默契满分！你是我最最重要的人啦～"
+		}
+	}
+};
+function intimacyTierOf(value) {
+	const v = Number.isFinite(value) ? value : 0;
+	let tier = "stranger";
+	for (const t of INTIMACY_TIERS) if (v >= INTIMACY_THRESHOLDS[t]) tier = t;
+	return tier;
+}
+function intimacyRank(tier) {
+	return INTIMACY_TIERS.indexOf(tier);
+}
+function intimacyStageOf(params, tier) {
+	const own = params.stages?.[tier];
+	const def = DEFAULT_INTIMACY.stages[tier];
+	if (!own) return def;
+	return {
+		label: typeof own.label === "string" && own.label ? own.label : def.label,
+		motto: typeof own.motto === "string" ? own.motto : def.motto,
+		texts: Array.isArray(own.texts) ? own.texts.filter((s) => typeof s === "string" && s.trim() !== "") : def.texts,
+		festival: typeof own.festival === "string" && own.festival ? own.festival : def.festival,
+		festivalText: typeof own.festivalText === "string" && own.festivalText ? own.festivalText : def.festivalText
+	};
+}
+function intimacyTextPool(params, tier, fallback = []) {
+	if (!params.enabled) return fallback;
+	const pool = intimacyStageOf(params, tier).texts;
+	return pool.length > 0 ? pool : fallback;
+}
+function isPromotion(from, to) {
+	return intimacyRank(to) > intimacyRank(from);
+}
+/** 从任意 raw 里抽一个阶段配置（各子字段可选，非法回退默认）。 */
+function stageRaw(raw, tier) {
+	const def = DEFAULT_INTIMACY.stages[tier];
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return def;
+	const o = raw;
+	const str = (v, fb) => typeof v === "string" && v.trim() !== "" ? v : fb;
+	const optStr = (v) => typeof v === "string" && v.trim() !== "" ? v : void 0;
+	const arr = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim() !== "") : def.texts;
+	return {
+		label: str(o.label, def.label),
+		motto: typeof o.motto === "string" ? o.motto : def.motto,
+		texts: arr(o.texts),
+		festival: optStr(o.festival) ?? def.festival,
+		festivalText: optStr(o.festivalText) ?? def.festivalText
+	};
+}
+function readIntimacyParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {
+		enabled: DEFAULT_INTIMACY.enabled,
+		stages: { ...DEFAULT_INTIMACY.stages }
+	};
+	const o = raw;
+	const rawStages = o.stages && typeof o.stages === "object" ? o.stages : {};
+	const stages = {};
+	for (const t of INTIMACY_TIERS) stages[t] = stageRaw(rawStages[t], t);
+	return {
+		enabled: o.enabled !== false,
+		stages
+	};
+}
+function intimacyValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.stages !== void 0 && (typeof o.stages !== "object" || o.stages === null || Array.isArray(o.stages))) return false;
+	return true;
+}
+
+//#endregion
+//#region src/shared/idle-events.ts
+const IDLE_GAP_MIN_SEC = 20;
+const IDLE_GAP_MAX_SEC = 24 * 60 * 60;
+const DEFAULT_IDLE_EVENTS = {
+	enabled: true,
+	minGapSec: 90,
+	maxGapSec: 300,
+	events: [
+		{
+			anim: "超大伸懒腰",
+			text: "哈——伸个懒腰～"
+		},
+		{
+			anim: "哈欠连天",
+			text: "唔…有点困了…"
+		},
+		{
+			anim: "小幅度原地360度旋转展示",
+			text: "转个圈圈～"
+		},
+		{
+			anim: "东张西望",
+			text: "外面在干嘛呀？"
+		}
+	]
+};
+function pickIdleEvent(pool, currentAnim) {
+	const valid = pool.filter((e) => e && typeof e.anim === "string" && e.anim.trim() !== "");
+	if (valid.length === 0) return void 0;
+	if (valid.length === 1) return valid[0];
+	const filtered = valid.filter((e) => e.anim !== currentAnim);
+	const from = filtered.length > 0 ? filtered : valid;
+	return from[Math.floor(Math.random() * from.length)];
+}
+function randomIdleGapMs(params) {
+	let lo = Number(params.minGapSec);
+	let hi = Number(params.maxGapSec);
+	if (!Number.isFinite(lo) || lo < IDLE_GAP_MIN_SEC) lo = DEFAULT_IDLE_EVENTS.minGapSec;
+	if (!Number.isFinite(hi) || hi < lo) hi = Math.max(lo, DEFAULT_IDLE_EVENTS.maxGapSec);
+	const sec = lo + Math.random() * (hi - lo);
+	return Math.round(sec * 1e3);
+}
+function readIdleEventsParams(raw) {
+	const d = DEFAULT_IDLE_EVENTS;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {
+		enabled: d.enabled,
+		minGapSec: d.minGapSec,
+		maxGapSec: d.maxGapSec,
+		events: d.events.map((e) => ({ ...e }))
+	};
+	const o = raw;
+	const num = (v, fb, min, max) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= min && n <= max ? n : fb;
+	};
+	let minGapSec = num(o.minGapSec, d.minGapSec, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC);
+	let maxGapSec = num(o.maxGapSec, d.maxGapSec, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC);
+	if (maxGapSec < minGapSec) [minGapSec, maxGapSec] = [maxGapSec, minGapSec];
+	const events = Array.isArray(o.events) ? o.events.map((raw2) => {
+		if (!raw2 || typeof raw2 !== "object" || Array.isArray(raw2)) return null;
+		const e = raw2;
+		if (typeof e.anim !== "string" || e.anim.trim() === "") return null;
+		const text = typeof e.text === "string" && e.text.trim() !== "" ? e.text : void 0;
+		return text ? {
+			anim: e.anim,
+			text
+		} : { anim: e.anim };
+	}).filter((e) => e !== null) : d.events.map((e) => ({ ...e }));
+	return {
+		enabled: o.enabled !== false,
+		minGapSec,
+		maxGapSec,
+		events
+	};
+}
+function idleEventsValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	for (const key of ["minGapSec", "maxGapSec"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isFinite(n) || n < IDLE_GAP_MIN_SEC || n > IDLE_GAP_MAX_SEC) return false;
+	}
+	if (o.events !== void 0 && !Array.isArray(o.events)) return false;
+	return true;
+}
+
+//#endregion
 //#region src/shared/state.ts
 /** 叶子规范化：形状不对（非对象或 counter 非数字）→ null，不让脏数据进渲染层。 */
 function normLeaf(value) {
@@ -2933,6 +3134,8 @@ exports.CUSTOM_STYLE_KEYS = CUSTOM_STYLE_KEYS
 exports.CUSTOM_TAGS = CUSTOM_TAGS
 exports.DEAD_ZONE_SPEED = DEAD_ZONE_SPEED
 exports.DEFAULT_FONT = DEFAULT_FONT
+exports.DEFAULT_IDLE_EVENTS = DEFAULT_IDLE_EVENTS
+exports.DEFAULT_INTIMACY = DEFAULT_INTIMACY
 exports.DEFAULT_MOOD = DEFAULT_MOOD
 exports.DEFAULT_PHYSICS = DEFAULT_PHYSICS
 exports.DEFAULT_ROLLING_LABEL = DEFAULT_ROLLING_LABEL
@@ -2947,6 +3150,10 @@ exports.GRAVITY = GRAVITY
 exports.GROUND_FRICTION = GROUND_FRICTION
 exports.HANDLERS = HANDLERS
 exports.HIT_BOX = HIT_BOX
+exports.IDLE_GAP_MAX_SEC = IDLE_GAP_MAX_SEC
+exports.IDLE_GAP_MIN_SEC = IDLE_GAP_MIN_SEC
+exports.INTIMACY_THRESHOLDS = INTIMACY_THRESHOLDS
+exports.INTIMACY_TIERS = INTIMACY_TIERS
 exports.MAX_BODY = MAX_BODY
 exports.MAX_STEP_DT = MAX_STEP_DT
 exports.MAX_THROW_SPEED = MAX_THROW_SPEED
@@ -3034,13 +3241,20 @@ exports.flattenCounters = flattenCounters
 exports.fontStackOf = fontStackOf
 exports.frameToToast = frameToToast
 exports.hasTask = hasTask
+exports.idleEventsValid = idleEventsValid
 exports.indexAtPoint = indexAtPoint
 exports.injectMemeBubbleCss = injectMemeBubbleCss
+exports.intimacyRank = intimacyRank
+exports.intimacyStageOf = intimacyStageOf
+exports.intimacyTextPool = intimacyTextPool
+exports.intimacyTierOf = intimacyTierOf
+exports.intimacyValid = intimacyValid
 exports.isChatHotkey = isChatHotkey
 exports.isDesktopVisible = isDesktopVisible
 exports.isEventAnim = isEventAnim
 exports.isImageFile = isImageFile
 exports.isNoMirrorAnimation = isNoMirrorAnimation
+exports.isPromotion = isPromotion
 exports.isTypingTarget = isTypingTarget
 exports.isWebVisible = isWebVisible
 exports.landingSquash = landingSquash
@@ -3056,6 +3270,7 @@ exports.nearestIndex = nearestIndex
 exports.nextWorkStatusAnim = nextWorkStatusAnim
 exports.pick = pick
 exports.pickCategoryAction = pickCategoryAction
+exports.pickIdleEvent = pickIdleEvent
 exports.pickSlot = pickSlot
 exports.pickWeightedCategory = pickWeightedCategory
 exports.planMove = planMove
@@ -3068,8 +3283,11 @@ exports.progressText = progressText
 exports.pullAngle = pullAngle
 exports.quotaTone = quotaTone
 exports.randomBetween = randomBetween
+exports.randomIdleGapMs = randomIdleGapMs
 exports.readAnim = readAnim
 exports.readBalance = readBalance
+exports.readIdleEventsParams = readIdleEventsParams
+exports.readIntimacyParams = readIntimacyParams
 exports.readLock = readLock
 exports.readMenuItems = readMenuItems
 exports.readMoodParams = readMoodParams

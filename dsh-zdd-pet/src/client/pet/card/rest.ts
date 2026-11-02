@@ -39,6 +39,8 @@ export interface CardRestInput {
 export interface CardRest {
   /** 记一次活动：刷新空闲计时；若在瞌睡则播醒来动画。 */
   poke: () => void;
+  /** 当前是否在打瞌睡（随机小事件等自播行为据此让位）。 */
+  isSleeping: () => boolean;
 }
 
 /** 空闲检查间隔（ms）：15s 一次足够，开销可忽略。 */
@@ -110,6 +112,6 @@ export function createCardRest(rt: CardRestRuntime) {
       }
     };
 
-    return { poke };
+    return { poke, isSleeping: () => sleepingRef.current };
   };
 }

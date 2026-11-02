@@ -41,6 +41,8 @@ const SETTINGS_CSS = [
   '.dsh-zdd-pet-cfg__grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px;align-items:end}',
   '.dsh-zdd-pet-cfg__grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px;align-items:end}',
   '.dsh-zdd-pet-cfg__grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;align-items:end}',
+  '.dsh-zdd-pet-cfg__stage-list{display:flex;flex-direction:column;gap:6px}',
+  '.dsh-zdd-pet-cfg__stage-row{font-size:12px;line-height:1.5;color:var(--dsw-alias-text-2);padding:4px 8px;border-radius:8px;background:var(--dsw-alias-bg-2)}',
 
   '@container (max-width:600px){.dsh-zdd-pet-cfg__grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}',
   '@container (max-width:400px){.dsh-zdd-pet-cfg__grid2,.dsh-zdd-pet-cfg__grid3,.dsh-zdd-pet-cfg__grid4{grid-template-columns:minmax(0,1fr)}}',

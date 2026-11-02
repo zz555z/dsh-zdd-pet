@@ -66,6 +66,11 @@ export interface CardMotion {
   startThrow: (px: number, py: number, vx: number, vy: number) => void;
   /** 抛掷指令：角度（度）与力度倍率。 */
   applyThrow: (angleDeg: number, power: number) => void;
+  /** 满格碰撞彩蛋：朝最近屏幕边缘猛冲一下；每次撞墙回调 onBounce（供打粒子）。
+   *  返回是否真的起飞（冻结/拖拽中不起飞）。 */
+  celebrate: (onBounce: (x: number, y: number, speed: number) => void) => boolean;
+  /** 清掉撞墙回调（彩蛋结束时调，避免之后的正常抛掷误打粒子）。 */
+  clearBounceHandler: () => void;
   /** 被别的宠物撞到：从落点以新初速抛出。 */
   onPetHit: (vx: number, vy: number) => void;
   /** 自主走位。 */
@@ -149,6 +154,8 @@ export function createCardMotion(rt: CardMotionRuntime) {
     };
 
     const flightRef = useRef<Flight | null>(null);
+    /** 撞墙反馈回调：满格碰撞彩蛋期间临时挂上，用来在接触点打粒子；平时为 null。 */
+    const bounceHandlerRef = useRef<((x: number, y: number, speed: number) => void) | null>(null);
     flightRef.current ??= createFlight({
       root,
       metrics: () => motionRef.current,
@@ -168,6 +175,9 @@ export function createCardMotion(rt: CardMotionRuntime) {
         // 落地 Q 弹压的是新首帧：等前台视频就位后再压。
         const frontEl = live.current.ownAnim.frontVideo();
         if (frontEl) live.current.squash.start(frontEl, landingSquash(impactVy));
+      },
+      onBounce: (x, y, speed) => {
+        bounceHandlerRef.current?.(x, y, speed);
       },
     });
     const flight = flightRef.current;
@@ -215,6 +225,35 @@ export function createCardMotion(rt: CardMotionRuntime) {
       };
       startThrow(box.x, box.y, vx, vy);
     };
+    /** 满格碰撞彩蛋：按当前位置往「对角方向」斜冲一下，撞墙时经 bounceHandlerRef 打粒子。
+     *  在右下角就往左上抛、左上角就往右下抛，依此类推；力度也随机。只在非拖拽时起飞。 */
+    const celebrate = (onBounce: (x: number, y: number, speed: number) => void): boolean => {
+      if (live.current.drag.isActive()) return false; // 用户正在摆弄，优先。
+      const m = motionRef.current;
+      const cx = currentCenterX();
+      const cy = currentCenterY();
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      const speed = 2400 + Math.random() * 1000; // 2400~3400 px/s，每次不同
+      // 对角方向：左半边往右、右半边往左；上半边往下、下半边往上（斜抛穿过屏幕去撞远端）。
+      const dirX = cx < W / 2 ? 1 : -1;
+      const dirY = cy < H / 2 ? 1 : -1;
+      const comp = speed / Math.SQRT2; // 45° 拆成水平/竖直两个分量
+      const vx = dirX * comp;
+      let vy = dirY * comp;
+      if (dirY < 0) vy *= 1.15; // 向上要更猛才撞得到顶
+      // 力度整体再随机浮动 ±15%，让每次有点差异。
+      const jitter = 0.85 + Math.random() * 0.3;
+      const box = boxRef.current ?? { x: cx - m.halfW, y: cy - m.halfH };
+      bounceHandlerRef.current = onBounce;
+      startThrow(box.x, box.y, vx * jitter, vy * jitter);
+      return true;
+    };
+    /** 清掉撞墙回调（彩蛋结束时调，避免之后的正常抛掷误打粒子）。 */
+    const clearBounceHandler = (): void => {
+      bounceHandlerRef.current = null;
+    };
+
     /** 被撞回调：停当前动作，从落点以新初速抛出去。 */
     const onPetHit = (vx: number, vy: number): void => {
       stopMove();
@@ -269,6 +308,8 @@ export function createCardMotion(rt: CardMotionRuntime) {
     return {
       applyThrow,
       box: () => boxRef.current,
+      celebrate,
+      clearBounceHandler,
       center,
       flight,
       metrics: () => motionRef.current,

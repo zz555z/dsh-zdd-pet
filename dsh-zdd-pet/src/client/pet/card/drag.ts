@@ -52,8 +52,8 @@ export interface CardDragInput {
   setTipOn: (on: boolean) => void;
   /** 点击台词：弹一句台词（由上层接到气泡单槽）。 */
   onSayText?: (text: string) => void;
-  /** 记一次活动（用于宠物作息唤醒）。 */
-  onActivity?: () => void;
+  /** 记一次活动（用于宠物作息唤醒）。返回 true = 满格彩蛋已接管运动。 */
+  onActivity?: () => boolean;
 }
 
 /**
@@ -81,13 +81,14 @@ export function createCardDrag(rt: CardDragRuntime) {
         physics: cfgRef.current.physics,
         dragAnims: cfgRef.current.animations.drag,
         clickAnims: cfgRef.current.animations.clicks,
-        // 点击台词：心情启用时优先该档位台词池，空则回退 clickTexts（与桌面端同一口径）。
+        // 点击台词：亲密度阶段专属台词优先 → 心情档位台词 → clickTexts（与桌面端同一口径）。
         clickTexts: (() => {
           const base = Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [];
-          return input.mood ? [...input.mood.texts(base)] : base;
+          const moodPool = input.mood ? input.mood.texts(base) : base;
+          return input.mood ? [...input.mood.intimacyTexts(moodPool)] : base;
         })(),
         sayText: (text) => input.onSayText?.(text),
-        onActivity: () => input.onActivity?.(),
+        onActivity: () => input.onActivity?.() ?? false,
         idleAnims: cfgRef.current.animations.idle,
         currentAnim: card.animRef.current,
         setOnce: (on) => setOnce(on),

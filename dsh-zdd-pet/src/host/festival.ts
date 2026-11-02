@@ -13,6 +13,7 @@ import { entriesAt } from './time-context/lunar.ts';
 import type { RankedEntry } from './time-context/entries.ts';
 import { readFestivalParams } from '../shared/festival.ts';
 import type { FestivalParams } from '../shared/festival.ts';
+import { INTIMACY_TIERS, readIntimacyParams, intimacyStageOf } from '../shared/intimacy.ts';
 import { pickMeme, readMemePool } from './memes.ts';
 import type { HostSetup } from './plugin/setup.ts';
 
@@ -227,4 +228,125 @@ export function maybeFestival(deps: FestivalDeps, now: Date = new Date()): numbe
   }
   if (delivered > 0) writeLast(userRoot, { date, name: hit.entry.name });
   return delivered;
+}
+
+/** 亲密度纪念日状态文件：记录每只宠物「首次达到某阶段」的日期（MM-DD 用以比较周年）。 */
+const INTIMACY_STATE_FILE = 'intimacy-state.json';
+
+/** 某宠物各阶段首次达成日：petId → (stage → YYYY-M-D)。 */
+type IntimacyState = Record<string, Record<string, string>>;
+
+function readIntimacyState(userRoot: string): IntimacyState {
+  const file = join(userRoot, INTIMACY_STATE_FILE);
+  if (!existsSync(file)) return {};
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as unknown;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const out: IntimacyState = {};
+    for (const [petId, stages] of Object.entries(raw as Record<string, unknown>)) {
+      if (!stages || typeof stages !== 'object' || Array.isArray(stages)) continue;
+      const rec: Record<string, string> = {};
+      for (const [stage, d] of Object.entries(stages as Record<string, unknown>)) {
+        if (typeof d === 'string' && d) rec[stage] = d;
+      }
+      out[petId] = rec;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeIntimacyState(userRoot: string, value: IntimacyState): void {
+  try {
+    writeFileSync(join(userRoot, INTIMACY_STATE_FILE), JSON.stringify(value, null, 2), 'utf8');
+  } catch {
+    /* 写不进去只影响去重，不影响本次演出 */
+  }
+}
+
+/** 从当前心情值取亲密度阶段（动态 import 太重，直接用 shared 纯函数）。 */
+function resolveIntimacyParams(raw: unknown) {
+  return readIntimacyParams(raw);
+}
+
+/** 本地日期键的「月-日」（周年比较只认月日）。 */
+function monthDayOf(date: Date): string {
+  return date.getMonth() + 1 + '-' + date.getDate();
+}
+
+/** 把 YYYY-M-D 日期键取成「月-日」。 */
+function monthDayOfKey(key: string): string {
+  const parts = key.split('-');
+  if (parts.length !== 3) return '';
+  return parts[1] + '-' + parts[2];
+}
+
+/**
+ * 亲密度纪念日演出：某宠物今天正好是「首次达到某阶段」的周年日（同月同日、非首次当年），
+ * 就播该阶段的纪念日祝福 + 动画。
+ *
+ * 首次达成日期由渲染端在升级时经 POST /intimacy 上报并落盘（见 routes/intimacy.ts），
+ * 记录在 intimacy-state.json 的 petId → (stage → YYYY-M-D)。只有当首次日期存在、今天月日与之相同、
+ * 且不是同一年时才算周年（首次当天不算，避免和刚弹出的升级气泡重复）。
+ *
+ * @returns 投递的宠物数。
+ */
+export function maybeIntimacyAnniversary(deps: FestivalDeps, now: Date = new Date()): number {
+  const { configPaths, state, log, memeDirsFor, userRoot } = deps;
+  let cfg: Record<string, Record<string, unknown>>;
+  try {
+    cfg = readAllConfig(configPaths);
+  } catch {
+    return 0;
+  }
+  const todayMd = monthDayOf(now);
+  const todayYear = now.getFullYear();
+  const book = readIntimacyState(userRoot);
+  let delivered = 0;
+
+  for (const pet of flattenPetList(cfg)) {
+    const petId = String(pet.id ?? '');
+    if (!petId) continue;
+    const found = findPetInstance(cfg, petId);
+    if (!found) continue;
+    const ip = resolveIntimacyParams(found.conf.intimacy);
+    if (!ip.enabled) continue;
+    const rec = book[petId] ?? {};
+    // 周年检查：某阶段首次达成日与今天同月同日、但年份更早。
+    for (const t of INTIMACY_TIERS) {
+      const key = rec[t];
+      if (!key) continue;
+      if (monthDayOfKey(key) !== todayMd) continue;
+      const year = Number(key.split('-')[0]);
+      if (!Number.isFinite(year) || year >= todayYear) continue; // 首次当年不算周年
+      const stage = intimacyStageOf(ip, t);
+      if (!stage.festival) continue;
+      const text = stage.festivalText ?? '今天是我们的「' + stage.festival + '」，谢谢你一直陪着我～';
+      const meme =
+        found.conf.bubbleImageEnabled !== false
+          ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)))
+          : undefined;
+      state.writePet(petId, 'say', { text, ...(meme ? { image: meme.name } : {}), anim: false });
+      log.info(`[dsh-zdd-pet] 亲密度纪念日 pet=${petId}（${stage.festival}）：「${text}」`);
+      delivered += 1;
+      break; // 一只宠物一次只演一个纪念日
+    }
+  }
+  return delivered;
+}
+
+/**
+ * 记录一次亲密度阶段首次达成（由渲染端升级时上报）。已存在该阶段的首次日期则不覆盖。
+ * @returns 是否新写入。
+ */
+export function recordIntimacyReach(userRoot: string, petId: string, stage: string, dateKey: string): boolean {
+  if (!petId || !stage || !/^\d+-\d+-\d+$/.test(dateKey)) return false;
+  const book = readIntimacyState(userRoot);
+  const rec = book[petId] ?? {};
+  if (rec[stage]) return false; // 首次达成只记一次
+  rec[stage] = dateKey;
+  book[petId] = rec;
+  writeIntimacyState(userRoot, book);
+  return true;
 }

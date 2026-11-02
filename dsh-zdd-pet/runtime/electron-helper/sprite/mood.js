@@ -57,6 +57,22 @@ Object.assign(PetSprite.prototype, {
     return S.moodTier(this.mood ?? p.initial, p.low, p.high);
   },
 
+  /** 当前亲密度阶段参数（含默认值兜底）。 */
+  intimacyParams() {
+    return S.readIntimacyParams(this.pet.intimacy);
+  },
+
+  /** 当前亲密度阶段（stranger / familiar / close / bonded）。 */
+  intimacyTier() {
+    return S.intimacyTierOf(this.mood ?? 0);
+  },
+
+  /** 亲密度阶段中文名（形如「亲近」）。 */
+  intimacyLabel() {
+    const ip = this.intimacyParams();
+    return S.intimacyStageOf(ip, this.intimacyTier()).label;
+  },
+
   /**
    * 摸它：心情 +gain（默认 touchGain），夹在 0~100，写回。
    * @returns 本次点击后是否由彩蛋接管动画（点满触发，或彩蛋进行中）——调用方据此跳过普通点击台词/动画。
@@ -64,10 +80,33 @@ Object.assign(PetSprite.prototype, {
   touchMood(gain) {
     const p = this.moodParams();
     if (!p.enabled) return false;
+    const prevTier = this.intimacyTier();
     const g = Number.isFinite(gain) ? gain : p.touchGain;
     this.mood = S.clampMood((this.mood ?? p.initial) + g);
     this.moodSavedAt = Date.now();
     this.saveMood();
+    // 亲密度阶段升级：播一句阶段专属标语（彩蛋进行中不抢戏）。
+    const ip = this.intimacyParams();
+    if (ip.enabled && !this._exciteRunning) {
+      const nextTier = this.intimacyTier();
+      if (S.intimacyRank(nextTier) > S.intimacyRank(prevTier)) {
+        const stage = S.intimacyStageOf(ip, nextTier);
+        this.showWhisper('【' + stage.label + '】' + stage.motto, undefined, undefined, 6000, false);
+        // 上报宿主：记录首次达到该阶段（供周年纪念日演出）。日期取本地 Y-M-D。
+        const d = new Date();
+        const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+        S.postAction(
+          BASE +
+            '/intimacy?pet=' +
+            encodeURIComponent(this.pet.id) +
+            '&stage=' +
+            encodeURIComponent(nextTier) +
+            '&date=' +
+            encodeURIComponent(key),
+          { recorded: true },
+        ).catch(() => {});
+      }
+    }
     // 点满（到 100）就触发一次「原地冲刺跑」彩蛋（_exciteRunning 防重复触发）
     if (this.mood >= 100 && !this._exciteRunning) this.triggerExcite();
     // 彩蛋进行中同样返回 true：期间点击不再用普通点击动画/台词覆盖它
@@ -85,8 +124,8 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 彩蛋：心情点满到 100 时触发 —— 播一次「原地冲刺跑」，播完随机掉一点心情，
-   * 但结果始终保持在 60 以上（落在 61~99）。
+   * 彩蛋：心情点满到 100 时触发 —— 朝最近屏幕边缘冲刺撞墙，接触点炸开暖色粒子；
+   * 撞回后随机掉一点心情，但结果始终保持在 60 以上（落在 61~99）。
    */
   triggerExcite() {
     if (this._exciteRunning) return;
@@ -101,9 +140,28 @@ Object.assign(PetSprite.prototype, {
     this.mood = 101;
     this.moodSavedAt = Date.now();
     this.saveMood();
-    this.showWhisper('心情满格！原地冲刺跑～', undefined, undefined, 6000, false);
-    // 只执行「原地冲刺跑」这个动作（与右键菜单点播同一入口）；播完由 handleEnded 调用 finishExcite 结算
-    this.playOnce('原地冲刺跑');
+    // 撞墙打粒子：每次反弹在接触点爆一圈暖色粒子；第一次撞到就弹气泡。
+    const self = this;
+    let bounced = false;
+    const onBounce = (x, y) => {
+      if (typeof S.spawnScoreBurst === 'function') S.spawnScoreBurst(x, y);
+      if (!bounced) {
+        bounced = true;
+        self.showWhisper('心情满格！撞一下～', undefined, undefined, 4000, false);
+      }
+      // 撞过墙后给个较短的收尾窗口，弹回一两次就结算。
+      if (self._exciteAfterBounce) window.clearTimeout(self._exciteAfterBounce);
+      self._exciteAfterBounce = window.setTimeout(() => {
+        self._exciteAfterBounce = null;
+        self.finishExcite();
+      }, 900);
+    };
+    // 起飞成功就交给物理；失败（拖拽中）退化为原地冲刺跑。
+    const launched = this.celebrate(onBounce);
+    if (!launched) {
+      this.showWhisper('心情满格！原地冲刺跑～', undefined, undefined, 6000, false);
+      this.playOnce('原地冲刺跑');
+    }
   },
 
   /**
@@ -117,6 +175,12 @@ Object.assign(PetSprite.prototype, {
       window.clearTimeout(this._exciteSafety);
       this._exciteSafety = null;
     }
+    if (this._exciteAfterBounce) {
+      window.clearTimeout(this._exciteAfterBounce);
+      this._exciteAfterBounce = null;
+    }
+    // 清掉撞墙回调，避免之后的正常抛掷误打粒子。
+    if (this.clearBounceHandler) this.clearBounceHandler();
     // 随机掉心情：从满值掉 1~39 点 → 61~99，恒大于 60
     this.mood = S.clampMood(61 + Math.floor(Math.random() * 39));
     this.moodSavedAt = Date.now();
@@ -136,6 +200,14 @@ Object.assign(PetSprite.prototype, {
     if (!p.enabled) return;
     const v = S.clampMood(this.mood ?? p.initial);
     const tier = this.moodTier();
-    this.showWhisper('心情 ' + v + '/100（' + S.moodLabel(tier) + '）', undefined, undefined, 600000, false);
+    const ip = this.intimacyParams ? this.intimacyParams() : null;
+    const stageSuffix = ip && ip.enabled ? ' · ' + this.intimacyLabel() : '';
+    this.showWhisper(
+      '心情 ' + v + '/100（' + S.moodLabel(tier) + '）' + stageSuffix,
+      undefined,
+      undefined,
+      600000,
+      false,
+    );
   },
 });

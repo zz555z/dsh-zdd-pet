@@ -10,6 +10,8 @@ import { DEFAULT_PHYSICS } from '../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../shared/pomodoro.ts';
 import { DEFAULT_GREETING } from '../shared/greeting.ts';
 import { DEFAULT_MOOD } from '../shared/mood.ts';
+import { DEFAULT_INTIMACY } from '../shared/intimacy.ts';
+import { DEFAULT_IDLE_EVENTS } from '../shared/idle-events.ts';
 import type {
   FontConfig,
   GreetingParams,
@@ -18,6 +20,8 @@ import type {
   PhysicsParams,
   PomodoroParams,
 } from '../shared/types.ts';
+import type { IntimacyParams } from '../shared/intimacy.ts';
+import type { IdleEventsParams } from '../shared/idle-events.ts';
 import type { FunctionComponent } from 'react';
 import { requestNotificationPermission } from './notify.ts';
 import { injectSettingsCss } from './settings/css.ts';
@@ -40,6 +44,8 @@ import { makePhysicsCard } from './settings/physics-card.ts';
 import { makePomodoroCard } from './settings/pomodoro-card.ts';
 import { makeGreetingCard } from './settings/greeting-card.ts';
 import { makeMoodCard } from './settings/mood-card.ts';
+import { makeIntimacyCard } from './settings/intimacy-card.ts';
+import { makeIdleEventsCard } from './settings/idle-events-card.ts';
 import type { SettingsRuntime } from './settings/runtime.ts';
 import { useConfigLoad } from './settings/config/index.ts';
 import { usePetList } from './settings/use-pet-list.ts';
@@ -79,6 +85,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
   const PomodoroCard = makePomodoroCard(rt);
   const GreetingCard = makeGreetingCard(rt);
   const MoodCard = makeMoodCard(rt);
+  const IntimacyCard = makeIntimacyCard(rt);
+  const IdleEventsCard = makeIdleEventsCard(rt);
   const Actions = makeActions(rt);
   const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
   const SettingsDialog = makeDialog(rt);
@@ -134,6 +142,16 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const [greeting, setGreeting] = useState<GreetingParams>({ ...DEFAULT_GREETING });
     // 心情 / 亲密度（全局默认）：与 physics 同一套语义；初值仅占位，成品加载后覆盖。
     const [mood, setMood] = useState<MoodParams>({ ...DEFAULT_MOOD, texts: { ...DEFAULT_MOOD.texts } });
+    // 亲密度阶段（全局默认）：初值用内置默认，成品加载后覆盖。
+    const [intimacy, setIntimacy] = useState<IntimacyParams>({
+      ...DEFAULT_INTIMACY,
+      stages: { ...DEFAULT_INTIMACY.stages },
+    });
+    // 随机小事件（全局默认）：初值用内置默认，成品加载后覆盖。
+    const [idleEvents, setIdleEvents] = useState<IdleEventsParams>({
+      ...DEFAULT_IDLE_EVENTS,
+      events: DEFAULT_IDLE_EVENTS.events.map((e) => ({ ...e })),
+    });
     // 字体（全局默认）：与 physics 同一套语义；初值仅占位，成品加载成功后才允许编辑与保存。
     const [font, setFont] = useState<FontConfig>({ ...DEFAULT_FONT });
     // AI 模型（条目级）：碎碎念 / 对话各自的服务商与模型，两者都留空 = 跟随当前对话；随「保存」整包写入。
@@ -161,6 +179,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         if (patch.pomodoro !== undefined) setPomodoro(patch.pomodoro);
         if (patch.greeting !== undefined) setGreeting(patch.greeting);
         if (patch.mood !== undefined) setMood(patch.mood);
+        if (patch.intimacy !== undefined) setIntimacy(patch.intimacy);
+        if (patch.idleEvents !== undefined) setIdleEvents(patch.idleEvents);
         if (patch.font !== undefined) setFont(patch.font);
         if (patch.whisperModel !== undefined) setWhisperModel(patch.whisperModel);
         if (patch.chatModel !== undefined) setChatModel(patch.chatModel);
@@ -216,6 +236,10 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
     const patchGreeting = (patch: Partial<GreetingParams>): void =>
       setGreeting((current) => ({ ...current, ...patch }));
     const patchMood = (patch: Partial<MoodParams>): void => setMood((current) => ({ ...current, ...patch }));
+    const patchIntimacy = (patch: Partial<IntimacyParams>): void =>
+      setIntimacy((current) => ({ ...current, ...patch }));
+    const patchIdleEvents = (patch: Partial<IdleEventsParams>): void =>
+      setIdleEvents((current) => ({ ...current, ...patch }));
 
     /** 两个模型字段各有一份状态，卡片只回传键名。 */
     const setModel = (key: ModelFieldKey, value: ModelSelection): void => {
@@ -238,6 +262,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         pomodoro,
         greeting,
         mood,
+        intimacy,
+        idleEvents,
         whisperModel,
         chatModel,
         chatMemoryRounds: chatMemory,
@@ -324,6 +350,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         h(PomodoroCard, { busy, pomodoro, onChange: patchPomodoro }),
         h(GreetingCard, { busy, greeting, onChange: patchGreeting }),
         h(MoodCard, { busy, mood, onChange: patchMood }),
+        h(IntimacyCard, { busy, intimacy, onChange: patchIntimacy }),
+        h(IdleEventsCard, { busy, idleEvents, onChange: patchIdleEvents }),
         h(Actions, {
           busy,
           msg,

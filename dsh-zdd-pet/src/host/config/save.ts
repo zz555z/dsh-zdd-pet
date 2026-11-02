@@ -14,6 +14,8 @@ import { fontValid, modelSelectionValid, physicsValid, topFieldValid } from './v
 import { pomodoroValid } from '../../shared/pomodoro.ts';
 import { greetingValid } from '../../shared/greeting.ts';
 import { DEFAULT_MOOD, moodValid } from '../../shared/mood.ts';
+import { intimacyValid } from '../../shared/intimacy.ts';
+import { idleEventsValid } from '../../shared/idle-events.ts';
 
 /**
  * 保存用户层（PUT /config）：接受 pets + 全局开关 + physics / font / 两个模型 / 对话参数。
@@ -125,6 +127,12 @@ export function saveUserConfig(
   // 进白名单，没传则透传保留。设置页只编辑这六个子键，texts / happyAnim / sadAnim 由 existing 透传。
   const mo = o.mood;
   if (mo !== undefined && !moodValid(mo)) return null;
+  // intimacy（亲密度阶段）/ idleEvents（随机小事件）：与 mood 同语义——传了就校验后进白名单，
+  // 没传则透传保留。设置页只编辑 enabled，其余（stages / events 文案池）由 existing 透传。
+  const it = o.intimacy;
+  if (it !== undefined && !intimacyValid(it)) return null;
+  const ie = o.idleEvents;
+  if (ie !== undefined && !idleEventsValid(ie)) return null;
   // whisperModel / chatModel（碎碎念 / 对话各自的服务商 + 模型；设置页两个下拉框写的就是它们）：
   // 与 physics 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
   // 落盘时归一化成 { provider, model } 两个 trim 过的字符串（请求体多带的键不写进用户层）。
@@ -202,6 +210,29 @@ export function saveUserConfig(
       high: Number(mv.high),
     };
   }
+  if (it !== undefined) {
+    // intimacy 落盘：只写开关，stages（四阶段台词/节日）由 existing 透传；没有则用内置默认补齐。
+    const iv = it as Record<string, unknown>;
+    const prev =
+      (existing && typeof existing === 'object'
+        ? (existing.intimacy as Record<string, unknown> | undefined)
+        : undefined) ?? {};
+    outConfig.intimacy = { ...prev, enabled: iv.enabled };
+  }
+  if (ie !== undefined) {
+    // idleEvents 落盘：只写开关与两个间隔，events 池由 existing 透传；没有则用内置默认补齐。
+    const ev = ie as Record<string, unknown>;
+    const prev =
+      (existing && typeof existing === 'object'
+        ? (existing.idleEvents as Record<string, unknown> | undefined)
+        : undefined) ?? {};
+    outConfig.idleEvents = {
+      ...prev,
+      enabled: ev.enabled,
+      ...(ev.minGapSec !== undefined ? { minGapSec: Number(ev.minGapSec) } : {}),
+      ...(ev.maxGapSec !== undefined ? { maxGapSec: Number(ev.maxGapSec) } : {}),
+    };
+  }
   if (wm !== undefined) outConfig.whisperModel = cleanModel(wm as Record<string, unknown>);
   if (cm !== undefined) outConfig.chatModel = cleanModel(cm as Record<string, unknown>);
   // 数值归一化落盘：请求体传 "9" 也存成 9（与读取侧 topFieldValid 的 Number() 口径一致）
@@ -224,6 +255,8 @@ export function saveUserConfig(
   if (po !== undefined) bodyOwned.add('pomodoro');
   if (gr !== undefined) bodyOwned.add('greeting');
   if (mo !== undefined) bodyOwned.add('mood');
+  if (it !== undefined) bodyOwned.add('intimacy');
+  if (ie !== undefined) bodyOwned.add('idleEvents');
   if (wm !== undefined) bodyOwned.add('whisperModel');
   if (cm !== undefined) bodyOwned.add('chatModel');
   if (cmr !== undefined) bodyOwned.add('chatMemoryRounds');

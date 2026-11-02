@@ -7,6 +7,14 @@
  * @module dsh-zdd-pet/src/client/pet/card/mood
  */
 import { clampMood, decayMood, moodLabel, moodTextPool, moodTier, readMoodParams } from '../../../shared/mood.ts';
+import {
+  intimacyRank,
+  intimacyStageOf,
+  intimacyTextPool,
+  intimacyTierOf,
+  readIntimacyParams,
+} from '../../../shared/intimacy.ts';
+import type { IntimacyParams, IntimacyTier } from '../../../shared/intimacy.ts';
 import type { MoodParams } from '../../../shared/types.ts';
 import type { MoodTier } from '../../../shared/mood.ts';
 import type { RuntimePet } from '../types.ts';
@@ -45,6 +53,12 @@ export interface MoodTouchResult {
   tier: MoodTier;
   /** 本次是否刚好点满（调用方据此播彩蛋动画）。 */
   hitMax: boolean;
+  /** 本次是否跨过亲密度阶段边界（调用方播「阶段解锁」气泡）；未启用亲密度时恒为 false。 */
+  promoted: boolean;
+  /** 升级前的阶段（promoted 时才用于对比，否则 undefined）。 */
+  promotedFrom?: IntimacyTier;
+  /** 升级后的阶段（promoted 时有效）。 */
+  promotedTo?: IntimacyTier;
 }
 
 /** 心情驱动对外的读写面。 */
@@ -61,7 +75,15 @@ export interface CardMood {
   label(): string;
   /** 按档位取点击台词池，空则回退 clickTexts。 */
   texts(fallback: readonly string[]): readonly string[];
-  /** 摸一下：涨 touchGain（或指定值），返回是否点满。 */
+  /** 亲密度：是否启用。 */
+  intimacyEnabled(): boolean;
+  /** 亲密度：当前阶段。 */
+  intimacyTier(): IntimacyTier;
+  /** 亲密度：阶段中文名（形如「亲近」）。 */
+  intimacyLabel(): string;
+  /** 亲密度：按当前阶段取专属台词池，空则回退传入兜底池。 */
+  intimacyTexts(fallback: readonly string[]): readonly string[];
+  /** 摸一下：涨 touchGain（或指定值），返回是否点满、是否升级。 */
   touch(gain?: number): MoodTouchResult;
   /** 彩蛋收尾：随机掉到 61~99，返回新值。 */
   finishExcite(): number;
@@ -106,6 +128,7 @@ export function createCardMood(rt: CardMoodRuntime) {
   return function useCardMood(input: CardMoodInput): CardMood {
     const petId = input.cfgRef.current.id;
     const params = (): MoodParams => readMoodParams(input.cfgRef.current.mood);
+    const intimacyParams = (): IntimacyParams => readIntimacyParams(input.cfgRef.current.intimacy);
 
     // 初始值同步从 localStorage 读，避免首帧先显示初始值再跳。
     // 注入的 useState 只接受值、不支持惰性初始化函数，所以先算再传（只在本卡首次渲染执行有意义）。
@@ -157,13 +180,31 @@ export function createCardMood(rt: CardMoodRuntime) {
 
     const touch = (gain?: number): MoodTouchResult => {
       const p = params();
-      if (!p.enabled) return { value: valueRef.current, tier: 'normal', hitMax: false };
+      if (!p.enabled) return { value: valueRef.current, tier: 'normal', hitMax: false, promoted: false };
+      const ip = intimacyParams();
+      const prevTier = intimacyTierOf(valueRef.current);
       const g = Number.isFinite(gain) ? (gain as number) : p.touchGain;
       const next = clampMood(valueRef.current + g);
       commit(next);
       const hitMax = next >= 100 && !excitedRef.current;
       if (hitMax) excitedRef.current = true;
-      return { value: next, tier: moodTier(next, p.low, p.high), hitMax };
+      // 亲密度阶段是否升级（仅启用时检查；stranger 为起始态不会触发）。
+      let promoted = false;
+      let promotedTo: IntimacyTier | undefined;
+      if (ip.enabled) {
+        const nextTier = intimacyTierOf(next);
+        if (intimacyRank(nextTier) > intimacyRank(prevTier)) {
+          promoted = true;
+          promotedTo = nextTier;
+        }
+      }
+      return {
+        value: next,
+        tier: moodTier(next, p.low, p.high),
+        hitMax,
+        promoted,
+        ...(promoted ? { promotedFrom: prevTier, promotedTo } : {}),
+      };
     };
 
     const finishExcite = (): number => {
@@ -186,6 +227,16 @@ export function createCardMood(rt: CardMoodRuntime) {
       texts: (fallback) => {
         const p = params();
         return moodTextPool(p, moodTier(valueRef.current, p.low, p.high), fallback);
+      },
+      intimacyEnabled: () => intimacyParams().enabled,
+      intimacyTier: () => intimacyTierOf(valueRef.current),
+      intimacyLabel: () => {
+        const ip = intimacyParams();
+        return intimacyStageOf(ip, intimacyTierOf(valueRef.current)).label;
+      },
+      intimacyTexts: (fallback) => {
+        const ip = intimacyParams();
+        return intimacyTextPool(ip, intimacyTierOf(valueRef.current), fallback);
       },
       touch,
       finishExcite,

@@ -73,6 +73,11 @@ export interface CardMotion {
     startThrow: (px: number, py: number, vx: number, vy: number) => void;
     /** 抛掷指令：角度（度）与力度倍率。 */
     applyThrow: (angleDeg: number, power: number) => void;
+    /** 满格碰撞彩蛋：朝最近屏幕边缘猛冲一下；每次撞墙回调 onBounce（供打粒子）。
+     *  返回是否真的起飞（冻结/拖拽中不起飞）。 */
+    celebrate: (onBounce: (x: number, y: number, speed: number) => void) => boolean;
+    /** 清掉撞墙回调（彩蛋结束时调，避免之后的正常抛掷误打粒子）。 */
+    clearBounceHandler: () => void;
     /** 被别的宠物撞到：从落点以新初速抛出。 */
     onPetHit: (vx: number, vy: number) => void;
     /** 自主走位。 */

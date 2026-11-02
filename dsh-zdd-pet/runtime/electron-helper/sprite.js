@@ -95,6 +95,7 @@ class PetSprite {
     this.buildDom();
     this.bindEvents();
     this.loadMood();
+    this.initIdleEvents();
   }
 
   dispose() {

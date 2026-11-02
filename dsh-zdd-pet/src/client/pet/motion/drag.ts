@@ -61,7 +61,8 @@ export interface DragCard {
   /** 点击时弹一句台词（气泡）。 */
   sayText: (text: string) => void;
   /** 记一次活动（点击/按下都算，用于宠物作息唤醒）。 */
-  onActivity: () => void;
+  /** 一次点击活动（摸心情）。返回 true = 满格彩蛋已接管运动，调用方不得再 stopFlight/播点击动画。 */
+  onActivity: () => boolean;
   /** 待机动画池。 */
   idleAnims: string[];
   /** 当前动画名，抽待机时用来避开自己。 */
@@ -404,8 +405,10 @@ export function createDrag(card: () => DragCard): Drag {
 
   const onClick = (): void => {
     const c = card();
-    c.onActivity();
+    const celebrating = c.onActivity();
     if (press.active || press.dragging || performance.now() < justDraggedUntil) return;
+    // 满格彩蛋已接管运动（刚起了冲刺抛掷）：本次点击不再收手/播普通点击动画，否则会把冲刺当场掐灭。
+    if (celebrating) return;
     // 本次按下已触发过积分：只收手停住，不再播普通点击动画。
     if (pressScoreFired) {
       pressScoreFired = false;

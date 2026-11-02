@@ -1760,6 +1760,164 @@ async function postAction(baseUrl, body) {
 }
 
 //#endregion
+//#region src/shared/score.ts
+const SCORE_MIN_SPEED = 400;
+/** 每 100 px/s 记 1 分（基准尺寸 462px 下）。 */
+const SCORE_SPEED_PER_POINT = 100;
+const clickScore = (speed, size) => {
+	if (speed <= 0 || size <= 0) return 0;
+	return Math.max(1, Math.round(speed / SCORE_SPEED_PER_POINT * (PET_REF_WIDTH / size)));
+};
+
+//#endregion
+//#region src/shared/score-popup.ts
+const SCORE_POPUP_DURATION_MS = 2200;
+const SCORE_POPUP_CSS = [
+	".dsh-zdd-pet-score{position:fixed;z-index:2147483002;min-width:120px;text-align:center;",
+	"background:rgba(255,255,255,.97);border:1px solid rgba(255,179,0,.35);border-radius:12px;",
+	"box-shadow:0 10px 32px rgba(0,0,0,.22);padding:8px 16px 9px;user-select:none;pointer-events:auto;",
+	"font-family:var(--dsh-zdd-pet-font-family,'ShangshouSoftCandy','Yuanti SC','YouYuan','幼圆','Comic Sans MS','PingFang SC','Microsoft YaHei',sans-serif);}",
+	".dsh-zdd-pet-score.is-in{animation:dshPetScorePop .28s ease}",
+	".dsh-zdd-pet-score-val{font-size:22px;line-height:1.25;font-weight:700;color:#ff8f00;font-variant-numeric:tabular-nums}",
+	".dsh-zdd-pet-score-sub{font-size:11px;line-height:1.4;color:rgba(43,43,43,.6);margin-top:2px;white-space:nowrap}",
+	".dsh-zdd-pet-score-burst{position:fixed;inset:0;pointer-events:none;z-index:2147483002}",
+	".dsh-zdd-pet-score-particle{position:absolute;border-radius:50%;pointer-events:none}",
+	"@keyframes dshPetScorePop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}"
+].join("");
+/** 样式只注入一次（同 CHAT_CSS 的注入模式）。 */
+let scoreCssInjected = false;
+function injectScoreCss() {
+	if (scoreCssInjected || typeof document === "undefined") return;
+	scoreCssInjected = true;
+	const tag = document.createElement("style");
+	tag.dataset.plugin = "dsh-zdd-pet";
+	tag.dataset.pluginCss = "dsh-zdd-pet/score";
+	tag.textContent = SCORE_POPUP_CSS;
+	document.head.appendChild(tag);
+}
+/** 粒子数量。 */
+const BURST_COUNT = 20;
+/** 初速范围（px/s）。 */
+const BURST_SPEED_MIN = 120;
+const BURST_SPEED_MAX = 460;
+/** 重力（px/s²）：粒子向上喷出后回落。 */
+const BURST_GRAVITY = 700;
+/** 单粒子寿命范围（ms）。 */
+const BURST_LIFE_MIN = 500;
+const BURST_LIFE_MAX = 900;
+/** 粒子半径范围（px）。 */
+const BURST_RADIUS_MIN = 3;
+const BURST_RADIUS_MAX = 7;
+/** 暖色盘（积分与庆祝感）。 */
+const BURST_COLORS = [
+	"#ffb300",
+	"#ff8f00",
+	"#ff7043",
+	"#f4511e",
+	"#ffc400",
+	"#ffd54f",
+	"#ef5350"
+];
+function spawnScoreBurst(x, y) {
+	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+	injectScoreCss();
+	const root = document.createElement("div");
+	root.className = "dsh-zdd-pet-score-burst";
+	document.body.appendChild(root);
+	const parts = [];
+	for (let i = 0; i < BURST_COUNT; i++) {
+		const angle = Math.random() * Math.PI * 2;
+		const speed = BURST_SPEED_MIN + Math.random() * (BURST_SPEED_MAX - BURST_SPEED_MIN);
+		const r = BURST_RADIUS_MIN + Math.random() * (BURST_RADIUS_MAX - BURST_RADIUS_MIN);
+		const el = document.createElement("div");
+		el.className = "dsh-zdd-pet-score-particle";
+		el.style.left = x + "px";
+		el.style.top = y + "px";
+		el.style.width = r * 2 + "px";
+		el.style.height = r * 2 + "px";
+		el.style.background = BURST_COLORS[Math.floor(Math.random() * BURST_COLORS.length)];
+		root.appendChild(el);
+		parts.push({
+			el,
+			vx: Math.cos(angle) * speed,
+			vy: Math.sin(angle) * speed - 80,
+			t0: performance.now(),
+			life: BURST_LIFE_MIN + Math.random() * (BURST_LIFE_MAX - BURST_LIFE_MIN)
+		});
+	}
+	const step = () => {
+		const now = performance.now();
+		let alive = false;
+		for (const p of parts) {
+			const tSec = (now - p.t0) / 1e3;
+			const lifeRatio = (now - p.t0) / p.life;
+			if (lifeRatio >= 1) continue;
+			alive = true;
+			p.el.style.transform = "translate(" + p.vx * tSec + "px," + (p.vy * tSec + .5 * BURST_GRAVITY * tSec * tSec) + "px)";
+			p.el.style.opacity = String(Math.max(0, 1 - lifeRatio));
+		}
+		if (alive) requestAnimationFrame(step);
+		else root.remove();
+	};
+	requestAnimationFrame(step);
+}
+function mountScorePopup(opts) {
+	injectScoreCss();
+	const x = opts.x;
+	const y = opts.y;
+	const root = document.createElement("div");
+	root.className = "dsh-zdd-pet-score";
+	const val = document.createElement("div");
+	val.className = "dsh-zdd-pet-score-val";
+	val.textContent = "+" + opts.score;
+	const sub = document.createElement("div");
+	sub.className = "dsh-zdd-pet-score-sub";
+	sub.textContent = "速度 " + Math.round(opts.speed) + " · 大小 " + Math.round(opts.size);
+	root.appendChild(val);
+	root.appendChild(sub);
+	document.body.appendChild(root);
+	const rr = root.getBoundingClientRect();
+	root.style.left = Math.max(4, Math.min(x - rr.width / 2, window.innerWidth - rr.width - 4)) + "px";
+	root.style.top = Math.max(4, y - rr.height - 14) + "px";
+	root.offsetWidth;
+	root.classList.add("is-in");
+	let closed = false;
+	let timer = null;
+	const close = () => {
+		if (closed) return;
+		closed = true;
+		if (timer !== null) window.clearTimeout(timer);
+		timer = null;
+		document.removeEventListener("mousedown", onDocPointerDown, true);
+		document.removeEventListener("keydown", onDocKeyDown, true);
+		root.remove();
+		if (opts.onClose) opts.onClose();
+	};
+	const mountedAt = performance.now();
+	let graceConsumed = false;
+	const onDocPointerDown = (e) => {
+		if (closed) return;
+		if (!graceConsumed) {
+			graceConsumed = true;
+			if (e.timeStamp - mountedAt < 300) return;
+		}
+		if (root.contains(e.target)) return;
+		close();
+	};
+	const onDocKeyDown = (e) => {
+		if (closed) return;
+		if (e.key === "Escape") close();
+	};
+	document.addEventListener("mousedown", onDocPointerDown, true);
+	document.addEventListener("keydown", onDocKeyDown, true);
+	timer = window.setTimeout(close, SCORE_POPUP_DURATION_MS);
+	return {
+		el: root,
+		close
+	};
+}
+
+//#endregion
 //#region src/shared/fonts.ts
 const FONT_PRESETS = [
 	{
@@ -2221,6 +2379,204 @@ function readMoodParams(raw) {
 }
 
 //#endregion
+//#region src/shared/intimacy.ts
+const INTIMACY_TIERS = [
+	"stranger",
+	"familiar",
+	"close",
+	"bonded"
+];
+const INTIMACY_THRESHOLDS = {
+	stranger: 0,
+	familiar: 25,
+	close: 50,
+	bonded: 75
+};
+const DEFAULT_INTIMACY = {
+	enabled: true,
+	stages: {
+		stranger: {
+			label: "陌生",
+			motto: "我们才刚认识呢…",
+			texts: []
+		},
+		familiar: {
+			label: "熟悉",
+			motto: "混熟啦，见到你就想打招呼～",
+			texts: ["今天也来啦？", "嘿嘿，又见面咯～"],
+			festival: "相识纪念日",
+			festivalText: "还记得我们第一次见面吗？谢谢你一直陪着我～"
+		},
+		close: {
+			label: "亲近",
+			motto: "越来越想腻着你啦～",
+			texts: ["今天也想黏着你～", "有你在就很安心～"],
+			festival: "亲近纪念日",
+			festivalText: "我们已经这么要好啦，往后也要一直在一起哦～"
+		},
+		bonded: {
+			label: "默契",
+			motto: "不说话也懂你～",
+			texts: ["不用说话我也懂你哦～", "你最懂我啦～"],
+			festival: "默契纪念日",
+			festivalText: "默契满分！你是我最最重要的人啦～"
+		}
+	}
+};
+function intimacyTierOf(value) {
+	const v = Number.isFinite(value) ? value : 0;
+	let tier = "stranger";
+	for (const t of INTIMACY_TIERS) if (v >= INTIMACY_THRESHOLDS[t]) tier = t;
+	return tier;
+}
+function intimacyRank(tier) {
+	return INTIMACY_TIERS.indexOf(tier);
+}
+function intimacyStageOf(params, tier) {
+	const own = params.stages?.[tier];
+	const def = DEFAULT_INTIMACY.stages[tier];
+	if (!own) return def;
+	return {
+		label: typeof own.label === "string" && own.label ? own.label : def.label,
+		motto: typeof own.motto === "string" ? own.motto : def.motto,
+		texts: Array.isArray(own.texts) ? own.texts.filter((s) => typeof s === "string" && s.trim() !== "") : def.texts,
+		festival: typeof own.festival === "string" && own.festival ? own.festival : def.festival,
+		festivalText: typeof own.festivalText === "string" && own.festivalText ? own.festivalText : def.festivalText
+	};
+}
+function intimacyTextPool(params, tier, fallback = []) {
+	if (!params.enabled) return fallback;
+	const pool = intimacyStageOf(params, tier).texts;
+	return pool.length > 0 ? pool : fallback;
+}
+/** 从任意 raw 里抽一个阶段配置（各子字段可选，非法回退默认）。 */
+function stageRaw(raw, tier) {
+	const def = DEFAULT_INTIMACY.stages[tier];
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return def;
+	const o = raw;
+	const str = (v, fb) => typeof v === "string" && v.trim() !== "" ? v : fb;
+	const optStr = (v) => typeof v === "string" && v.trim() !== "" ? v : void 0;
+	const arr = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim() !== "") : def.texts;
+	return {
+		label: str(o.label, def.label),
+		motto: typeof o.motto === "string" ? o.motto : def.motto,
+		texts: arr(o.texts),
+		festival: optStr(o.festival) ?? def.festival,
+		festivalText: optStr(o.festivalText) ?? def.festivalText
+	};
+}
+function readIntimacyParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {
+		enabled: DEFAULT_INTIMACY.enabled,
+		stages: { ...DEFAULT_INTIMACY.stages }
+	};
+	const o = raw;
+	const rawStages = o.stages && typeof o.stages === "object" ? o.stages : {};
+	const stages = {};
+	for (const t of INTIMACY_TIERS) stages[t] = stageRaw(rawStages[t], t);
+	return {
+		enabled: o.enabled !== false,
+		stages
+	};
+}
+function intimacyValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.stages !== void 0 && (typeof o.stages !== "object" || o.stages === null || Array.isArray(o.stages))) return false;
+	return true;
+}
+
+//#endregion
+//#region src/shared/idle-events.ts
+const IDLE_GAP_MIN_SEC = 20;
+const IDLE_GAP_MAX_SEC = 24 * 60 * 60;
+const DEFAULT_IDLE_EVENTS = {
+	enabled: true,
+	minGapSec: 90,
+	maxGapSec: 300,
+	events: [
+		{
+			anim: "超大伸懒腰",
+			text: "哈——伸个懒腰～"
+		},
+		{
+			anim: "哈欠连天",
+			text: "唔…有点困了…"
+		},
+		{
+			anim: "小幅度原地360度旋转展示",
+			text: "转个圈圈～"
+		},
+		{
+			anim: "东张西望",
+			text: "外面在干嘛呀？"
+		}
+	]
+};
+function pickIdleEvent(pool, currentAnim) {
+	const valid = pool.filter((e) => e && typeof e.anim === "string" && e.anim.trim() !== "");
+	if (valid.length === 0) return void 0;
+	if (valid.length === 1) return valid[0];
+	const filtered = valid.filter((e) => e.anim !== currentAnim);
+	const from = filtered.length > 0 ? filtered : valid;
+	return from[Math.floor(Math.random() * from.length)];
+}
+function randomIdleGapMs(params) {
+	let lo = Number(params.minGapSec);
+	let hi = Number(params.maxGapSec);
+	if (!Number.isFinite(lo) || lo < IDLE_GAP_MIN_SEC) lo = DEFAULT_IDLE_EVENTS.minGapSec;
+	if (!Number.isFinite(hi) || hi < lo) hi = Math.max(lo, DEFAULT_IDLE_EVENTS.maxGapSec);
+	const sec = lo + Math.random() * (hi - lo);
+	return Math.round(sec * 1e3);
+}
+function readIdleEventsParams(raw) {
+	const d = DEFAULT_IDLE_EVENTS;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {
+		enabled: d.enabled,
+		minGapSec: d.minGapSec,
+		maxGapSec: d.maxGapSec,
+		events: d.events.map((e) => ({ ...e }))
+	};
+	const o = raw;
+	const num = (v, fb, min, max) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= min && n <= max ? n : fb;
+	};
+	let minGapSec = num(o.minGapSec, d.minGapSec, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC);
+	let maxGapSec = num(o.maxGapSec, d.maxGapSec, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC);
+	if (maxGapSec < minGapSec) [minGapSec, maxGapSec] = [maxGapSec, minGapSec];
+	const events = Array.isArray(o.events) ? o.events.map((raw2) => {
+		if (!raw2 || typeof raw2 !== "object" || Array.isArray(raw2)) return null;
+		const e = raw2;
+		if (typeof e.anim !== "string" || e.anim.trim() === "") return null;
+		const text = typeof e.text === "string" && e.text.trim() !== "" ? e.text : void 0;
+		return text ? {
+			anim: e.anim,
+			text
+		} : { anim: e.anim };
+	}).filter((e) => e !== null) : d.events.map((e) => ({ ...e }));
+	return {
+		enabled: o.enabled !== false,
+		minGapSec,
+		maxGapSec,
+		events
+	};
+}
+function idleEventsValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	for (const key of ["minGapSec", "maxGapSec"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isFinite(n) || n < IDLE_GAP_MIN_SEC || n > IDLE_GAP_MAX_SEC) return false;
+	}
+	if (o.events !== void 0 && !Array.isArray(o.events)) return false;
+	return true;
+}
+
+//#endregion
 //#region src/shared/notify.ts
 const NOTIFY_ICONS$1 = {
 	done: "notify-done",
@@ -2455,6 +2811,8 @@ const SETTINGS_CSS = [
 	".dsh-zdd-pet-cfg__grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px;align-items:end}",
 	".dsh-zdd-pet-cfg__grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 16px;align-items:end}",
 	".dsh-zdd-pet-cfg__grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;align-items:end}",
+	".dsh-zdd-pet-cfg__stage-list{display:flex;flex-direction:column;gap:6px}",
+	".dsh-zdd-pet-cfg__stage-row{font-size:12px;line-height:1.5;color:var(--dsw-alias-text-2);padding:4px 8px;border-radius:8px;background:var(--dsw-alias-bg-2)}",
 	"@container (max-width:600px){.dsh-zdd-pet-cfg__grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}",
 	"@container (max-width:400px){.dsh-zdd-pet-cfg__grid2,.dsh-zdd-pet-cfg__grid3,.dsh-zdd-pet-cfg__grid4{grid-template-columns:minmax(0,1fr)}}",
 	".dsh-zdd-pet-cfg__field{display:flex;flex-direction:column;gap:4px;min-width:0}",
@@ -2681,6 +3039,8 @@ function readMainConfig(merged) {
 		...DEFAULT_MOOD,
 		...main.mood
 	};
+	if (main.intimacy !== void 0) patch.intimacy = readIntimacyParams(main.intimacy);
+	if (main.idleEvents !== void 0) patch.idleEvents = readIdleEventsParams(main.idleEvents);
 	const whisperModel = readModel(main.whisperModel);
 	if (whisperModel) patch.whisperModel = whisperModel;
 	const chatModel = readModel(main.chatModel);
@@ -2729,7 +3089,9 @@ function buildSaveBody(fields) {
 		font: fields.font,
 		pomodoro: fields.pomodoro,
 		greeting: fields.greeting,
-		mood: fields.mood
+		mood: fields.mood,
+		intimacy: fields.intimacy,
+		idleEvents: fields.idleEvents
 	};
 }
 async function loadConfig(signal) {
@@ -2916,6 +3278,8 @@ function validateForm(values) {
 	if (!["pool", "live"].includes(values.greeting.mode)) return "invalidGreeting";
 	if (!Number.isInteger(values.greeting.poolSize) || values.greeting.poolSize < GREETING_POOL_MIN || values.greeting.poolSize > GREETING_POOL_MAX) return "invalidGreeting";
 	if (!moodValid(values.mood)) return "invalidMood";
+	if (!intimacyValid(values.intimacy)) return "invalidIntimacy";
+	if (!idleEventsValid(values.idleEvents)) return "invalidIdleEvents";
 	return null;
 }
 
@@ -2936,7 +3300,9 @@ function createWriteFlow(deps) {
 			font: fields.font,
 			pomodoro: fields.pomodoro,
 			greeting: fields.greeting,
-			mood: fields.mood
+			mood: fields.mood,
+			intimacy: fields.intimacy,
+			idleEvents: fields.idleEvents
 		});
 		if (invalid !== null) {
 			setMsg({
@@ -4245,6 +4611,77 @@ function makeMoodCard(rt) {
 }
 
 //#endregion
+//#region src/client/settings/intimacy-card.ts
+function makeIntimacyCard(rt) {
+	const { h, t } = rt;
+	const { cardHead, toggleCell } = makeUiKit({
+		h,
+		t
+	});
+	return function IntimacyCard(props) {
+		const { busy, intimacy } = props;
+		const stageRows = INTIMACY_TIERS.map((tier) => {
+			const stage = intimacyStageOf(intimacy, tier);
+			const thr = INTIMACY_THRESHOLDS[tier];
+			const parts = [stage.label + "（≥" + thr + "）", stage.motto];
+			if (stage.festival) parts.push(t("intimacyFestivalPrefix") + stage.festival);
+			return h("div", {
+				className: "dsh-zdd-pet-cfg__stage-row",
+				children: parts.join(" · ")
+			});
+		});
+		return h("div", {
+			className: "dsh-zdd-pet-cfg__card",
+			children: [
+				cardHead(t("intimacyTitle"), t("intimacyHint")),
+				toggleCell("intimacyEnabled", intimacy.enabled, busy, (v) => props.onChange({ enabled: v })),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__stage-list",
+					children: stageRows
+				})
+			]
+		});
+	};
+}
+
+//#endregion
+//#region src/client/settings/idle-events-card.ts
+function makeIdleEventsCard(rt) {
+	const { h, t } = rt;
+	const { cardHead, field, toggleCell } = makeUiKit({
+		h,
+		t
+	});
+	return function IdleEventsCard(props) {
+		const { busy, idleEvents } = props;
+		const gapInput = (key, value) => h("input", {
+			type: "number",
+			className: INPUT_CLASS,
+			step: "1",
+			min: String(IDLE_GAP_MIN_SEC),
+			max: String(IDLE_GAP_MAX_SEC),
+			value: String(value),
+			disabled: busy,
+			onChange: (e) => {
+				const n = Number(e.target.value);
+				if (Number.isFinite(n)) props.onChange({ [key]: n });
+			}
+		});
+		return h("div", {
+			className: "dsh-zdd-pet-cfg__card",
+			children: [
+				cardHead(t("idleEventsTitle"), t("idleEventsHint")),
+				toggleCell("idleEventsEnabled", idleEvents.enabled, busy, (v) => props.onChange({ enabled: v })),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid3",
+					children: [field(t("idleEventsMin"), gapInput("minGapSec", idleEvents.minGapSec), t("idleEventsMinHint")), field(t("idleEventsMax"), gapInput("maxGapSec", idleEvents.maxGapSec), t("idleEventsMaxHint"))]
+				})
+			]
+		});
+	};
+}
+
+//#endregion
 //#region src/client/settings/pet-draft.ts
 function nextPetId(list, kind = "main") {
 	const prefix = kind === "main" ? "pet" : kind;
@@ -4577,6 +5014,21 @@ const zh = {
 	moodHigh: "开心分界",
 	moodHighHint: "高于这个值算「超开心」（0~100）。",
 	invalidMood: "请检查心情设置：五个数值都需在 0~100 之间。",
+	intimacyTitle: "亲密度阶段",
+	intimacyHint: "在心情数值上再切四个阶段（陌生/熟悉/亲近/默契），越亲密点击台词越亲昵；每阶段的纪念日首次达成的周年会触发专属演出。台词与纪念日想自定义请手改 main-config.jsonc 的 intimacy.stages。",
+	intimacyEnabled: "启用亲密度阶段",
+	intimacyEnabledHint: "关闭后只保留心情三档行为，不播阶段解锁与纪念日演出。",
+	intimacyFestivalPrefix: "纪念日：",
+	idleEventsTitle: "随机小事件",
+	idleEventsHint: "空闲时每隔一段随机时间让桌宠自己做个动作（伸懒腰/张望/打哈欠…），偶尔配一句话。具体动作池想自定义请手改 main-config.jsonc 的 idleEvents.events。",
+	idleEventsEnabled: "启用随机小事件",
+	idleEventsEnabledHint: "关闭后桌宠空闲时不再自娱自乐。",
+	idleEventsMin: "最短间隔（秒）",
+	idleEventsMinHint: "两次小事件之间的最短间隔（20~86400）。",
+	idleEventsMax: "最长间隔（秒）",
+	idleEventsMaxHint: "两次小事件之间的最长间隔（20~86400）。",
+	invalidIntimacy: "请检查亲密度设置：格式不正确。",
+	invalidIdleEvents: "请检查随机小事件设置：间隔需在 20~86400 秒之间。",
 	"font.candy": "软糖体（内置）",
 	"font.yahei": "微软雅黑 / 苹方",
 	"font.youyuan": "幼圆",
@@ -4787,6 +5239,21 @@ const en = {
 	moodHigh: "High threshold",
 	moodHighHint: "Above this value counts as cheerful (0–100).",
 	invalidMood: "Check the mood setting: all five values must be between 0 and 100.",
+	intimacyTitle: "Intimacy stages",
+	intimacyHint: "Splits mood into four stages (stranger / familiar / close / bonded); the closer, the more affectionate the click lines. Each stage has an anniversary that fires a special performance on its yearly return. To customise lines or anniversaries, edit intimacy.stages in main-config.jsonc.",
+	intimacyEnabled: "Enable intimacy stages",
+	intimacyEnabledHint: "When off, only the three mood tiers remain; no stage-unlock or anniversary performances.",
+	intimacyFestivalPrefix: "Anniversary: ",
+	idleEventsTitle: "Idle mini-events",
+	idleEventsHint: "When idle, the pet occasionally does something on its own (stretch / look around / yawn…), sometimes with a line. To customise the event pool, edit idleEvents.events in main-config.jsonc.",
+	idleEventsEnabled: "Enable idle mini-events",
+	idleEventsEnabledHint: "When off, the pet no longer entertains itself while idle.",
+	idleEventsMin: "Min gap (sec)",
+	idleEventsMinHint: "Shortest gap between two mini-events (20–86400).",
+	idleEventsMax: "Max gap (sec)",
+	idleEventsMaxHint: "Longest gap between two mini-events (20–86400).",
+	invalidIntimacy: "Check the intimacy setting: the format is invalid.",
+	invalidIdleEvents: "Check the idle mini-events setting: gaps must be between 20 and 86400 seconds.",
 	"font.candy": "Candy (bundled)",
 	"font.yahei": "Microsoft YaHei / PingFang",
 	"font.youyuan": "YouYuan",
@@ -4870,6 +5337,8 @@ function makePetConfigSection(rt) {
 	const PomodoroCard = makePomodoroCard(rt);
 	const GreetingCard = makeGreetingCard(rt);
 	const MoodCard = makeMoodCard(rt);
+	const IntimacyCard = makeIntimacyCard(rt);
+	const IdleEventsCard = makeIdleEventsCard(rt);
 	const Actions = makeActions(rt);
 	const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
 	const SettingsDialog = makeDialog(rt);
@@ -4903,6 +5372,14 @@ function makePetConfigSection(rt) {
 			...DEFAULT_MOOD,
 			texts: { ...DEFAULT_MOOD.texts }
 		});
+		const [intimacy, setIntimacy] = useState({
+			...DEFAULT_INTIMACY,
+			stages: { ...DEFAULT_INTIMACY.stages }
+		});
+		const [idleEvents, setIdleEvents] = useState({
+			...DEFAULT_IDLE_EVENTS,
+			events: DEFAULT_IDLE_EVENTS.events.map((e) => ({ ...e }))
+		});
 		const [font, setFont] = useState({ ...DEFAULT_FONT });
 		const [whisperModel, setWhisperModel] = useState({
 			provider: "",
@@ -4928,6 +5405,8 @@ function makePetConfigSection(rt) {
 			if (patch.pomodoro !== void 0) setPomodoro(patch.pomodoro);
 			if (patch.greeting !== void 0) setGreeting(patch.greeting);
 			if (patch.mood !== void 0) setMood(patch.mood);
+			if (patch.intimacy !== void 0) setIntimacy(patch.intimacy);
+			if (patch.idleEvents !== void 0) setIdleEvents(patch.idleEvents);
 			if (patch.font !== void 0) setFont(patch.font);
 			if (patch.whisperModel !== void 0) setWhisperModel(patch.whisperModel);
 			if (patch.chatModel !== void 0) setChatModel(patch.chatModel);
@@ -4982,6 +5461,14 @@ function makePetConfigSection(rt) {
 			...current,
 			...patch
 		}));
+		const patchIntimacy = (patch) => setIntimacy((current) => ({
+			...current,
+			...patch
+		}));
+		const patchIdleEvents = (patch) => setIdleEvents((current) => ({
+			...current,
+			...patch
+		}));
 		/** 两个模型字段各有一份状态，卡片只回传键名。 */
 		const setModel = (key, value) => {
 			if (key === "whisperModel") setWhisperModel(value);
@@ -4999,6 +5486,8 @@ function makePetConfigSection(rt) {
 				pomodoro,
 				greeting,
 				mood,
+				intimacy,
+				idleEvents,
 				whisperModel,
 				chatModel,
 				chatMemoryRounds: chatMemory,
@@ -5108,6 +5597,16 @@ function makePetConfigSection(rt) {
 					busy,
 					mood,
 					onChange: patchMood
+				}),
+				h(IntimacyCard, {
+					busy,
+					intimacy,
+					onChange: patchIntimacy
+				}),
+				h(IdleEventsCard, {
+					busy,
+					idleEvents,
+					onChange: patchIdleEvents
 				}),
 				h(Actions, {
 					busy,
@@ -5996,164 +6495,6 @@ function createCardAnimation(rt) {
 }
 
 //#endregion
-//#region src/shared/score.ts
-const SCORE_MIN_SPEED = 400;
-/** 每 100 px/s 记 1 分（基准尺寸 462px 下）。 */
-const SCORE_SPEED_PER_POINT = 100;
-const clickScore = (speed, size) => {
-	if (speed <= 0 || size <= 0) return 0;
-	return Math.max(1, Math.round(speed / SCORE_SPEED_PER_POINT * (PET_REF_WIDTH / size)));
-};
-
-//#endregion
-//#region src/shared/score-popup.ts
-const SCORE_POPUP_DURATION_MS = 2200;
-const SCORE_POPUP_CSS = [
-	".dsh-zdd-pet-score{position:fixed;z-index:2147483002;min-width:120px;text-align:center;",
-	"background:rgba(255,255,255,.97);border:1px solid rgba(255,179,0,.35);border-radius:12px;",
-	"box-shadow:0 10px 32px rgba(0,0,0,.22);padding:8px 16px 9px;user-select:none;pointer-events:auto;",
-	"font-family:var(--dsh-zdd-pet-font-family,'ShangshouSoftCandy','Yuanti SC','YouYuan','幼圆','Comic Sans MS','PingFang SC','Microsoft YaHei',sans-serif);}",
-	".dsh-zdd-pet-score.is-in{animation:dshPetScorePop .28s ease}",
-	".dsh-zdd-pet-score-val{font-size:22px;line-height:1.25;font-weight:700;color:#ff8f00;font-variant-numeric:tabular-nums}",
-	".dsh-zdd-pet-score-sub{font-size:11px;line-height:1.4;color:rgba(43,43,43,.6);margin-top:2px;white-space:nowrap}",
-	".dsh-zdd-pet-score-burst{position:fixed;inset:0;pointer-events:none;z-index:2147483002}",
-	".dsh-zdd-pet-score-particle{position:absolute;border-radius:50%;pointer-events:none}",
-	"@keyframes dshPetScorePop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}"
-].join("");
-/** 样式只注入一次（同 CHAT_CSS 的注入模式）。 */
-let scoreCssInjected = false;
-function injectScoreCss() {
-	if (scoreCssInjected || typeof document === "undefined") return;
-	scoreCssInjected = true;
-	const tag = document.createElement("style");
-	tag.dataset.plugin = "dsh-zdd-pet";
-	tag.dataset.pluginCss = "dsh-zdd-pet/score";
-	tag.textContent = SCORE_POPUP_CSS;
-	document.head.appendChild(tag);
-}
-/** 粒子数量。 */
-const BURST_COUNT = 20;
-/** 初速范围（px/s）。 */
-const BURST_SPEED_MIN = 120;
-const BURST_SPEED_MAX = 460;
-/** 重力（px/s²）：粒子向上喷出后回落。 */
-const BURST_GRAVITY = 700;
-/** 单粒子寿命范围（ms）。 */
-const BURST_LIFE_MIN = 500;
-const BURST_LIFE_MAX = 900;
-/** 粒子半径范围（px）。 */
-const BURST_RADIUS_MIN = 3;
-const BURST_RADIUS_MAX = 7;
-/** 暖色盘（积分与庆祝感）。 */
-const BURST_COLORS = [
-	"#ffb300",
-	"#ff8f00",
-	"#ff7043",
-	"#f4511e",
-	"#ffc400",
-	"#ffd54f",
-	"#ef5350"
-];
-function spawnScoreBurst(x, y) {
-	if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-	injectScoreCss();
-	const root = document.createElement("div");
-	root.className = "dsh-zdd-pet-score-burst";
-	document.body.appendChild(root);
-	const parts = [];
-	for (let i = 0; i < BURST_COUNT; i++) {
-		const angle = Math.random() * Math.PI * 2;
-		const speed = BURST_SPEED_MIN + Math.random() * (BURST_SPEED_MAX - BURST_SPEED_MIN);
-		const r = BURST_RADIUS_MIN + Math.random() * (BURST_RADIUS_MAX - BURST_RADIUS_MIN);
-		const el = document.createElement("div");
-		el.className = "dsh-zdd-pet-score-particle";
-		el.style.left = x + "px";
-		el.style.top = y + "px";
-		el.style.width = r * 2 + "px";
-		el.style.height = r * 2 + "px";
-		el.style.background = BURST_COLORS[Math.floor(Math.random() * BURST_COLORS.length)];
-		root.appendChild(el);
-		parts.push({
-			el,
-			vx: Math.cos(angle) * speed,
-			vy: Math.sin(angle) * speed - 80,
-			t0: performance.now(),
-			life: BURST_LIFE_MIN + Math.random() * (BURST_LIFE_MAX - BURST_LIFE_MIN)
-		});
-	}
-	const step = () => {
-		const now = performance.now();
-		let alive = false;
-		for (const p of parts) {
-			const tSec = (now - p.t0) / 1e3;
-			const lifeRatio = (now - p.t0) / p.life;
-			if (lifeRatio >= 1) continue;
-			alive = true;
-			p.el.style.transform = "translate(" + p.vx * tSec + "px," + (p.vy * tSec + .5 * BURST_GRAVITY * tSec * tSec) + "px)";
-			p.el.style.opacity = String(Math.max(0, 1 - lifeRatio));
-		}
-		if (alive) requestAnimationFrame(step);
-		else root.remove();
-	};
-	requestAnimationFrame(step);
-}
-function mountScorePopup(opts) {
-	injectScoreCss();
-	const x = opts.x;
-	const y = opts.y;
-	const root = document.createElement("div");
-	root.className = "dsh-zdd-pet-score";
-	const val = document.createElement("div");
-	val.className = "dsh-zdd-pet-score-val";
-	val.textContent = "+" + opts.score;
-	const sub = document.createElement("div");
-	sub.className = "dsh-zdd-pet-score-sub";
-	sub.textContent = "速度 " + Math.round(opts.speed) + " · 大小 " + Math.round(opts.size);
-	root.appendChild(val);
-	root.appendChild(sub);
-	document.body.appendChild(root);
-	const rr = root.getBoundingClientRect();
-	root.style.left = Math.max(4, Math.min(x - rr.width / 2, window.innerWidth - rr.width - 4)) + "px";
-	root.style.top = Math.max(4, y - rr.height - 14) + "px";
-	root.offsetWidth;
-	root.classList.add("is-in");
-	let closed = false;
-	let timer = null;
-	const close = () => {
-		if (closed) return;
-		closed = true;
-		if (timer !== null) window.clearTimeout(timer);
-		timer = null;
-		document.removeEventListener("mousedown", onDocPointerDown, true);
-		document.removeEventListener("keydown", onDocKeyDown, true);
-		root.remove();
-		if (opts.onClose) opts.onClose();
-	};
-	const mountedAt = performance.now();
-	let graceConsumed = false;
-	const onDocPointerDown = (e) => {
-		if (closed) return;
-		if (!graceConsumed) {
-			graceConsumed = true;
-			if (e.timeStamp - mountedAt < 300) return;
-		}
-		if (root.contains(e.target)) return;
-		close();
-	};
-	const onDocKeyDown = (e) => {
-		if (closed) return;
-		if (e.key === "Escape") close();
-	};
-	document.addEventListener("mousedown", onDocPointerDown, true);
-	document.addEventListener("keydown", onDocKeyDown, true);
-	timer = window.setTimeout(close, SCORE_POPUP_DURATION_MS);
-	return {
-		el: root,
-		close
-	};
-}
-
-//#endregion
 //#region src/client/pet/motion/drag-follow.ts
 function createDragFollow(deps) {
 	/** 在跑的 rAF；`null` = 没在追。 */
@@ -6542,8 +6883,9 @@ function createDrag(card) {
 	};
 	const onClick = () => {
 		const c = card();
-		c.onActivity();
+		const celebrating = c.onActivity();
 		if (press.active || press.dragging || performance.now() < justDraggedUntil) return;
+		if (celebrating) return;
 		if (pressScoreFired) {
 			pressScoreFired = false;
 			c.stopFlight();
@@ -6623,10 +6965,11 @@ function createCardDrag(rt) {
 				clickAnims: cfgRef.current.animations.clicks,
 				clickTexts: (() => {
 					const base = Array.isArray(cfgRef.current.clickTexts) ? cfgRef.current.clickTexts : [];
-					return input.mood ? [...input.mood.texts(base)] : base;
+					const moodPool = input.mood ? input.mood.texts(base) : base;
+					return input.mood ? [...input.mood.intimacyTexts(moodPool)] : base;
 				})(),
 				sayText: (text) => input.onSayText?.(text),
-				onActivity: () => input.onActivity?.(),
+				onActivity: () => input.onActivity?.() ?? false,
 				idleAnims: cfgRef.current.animations.idle,
 				currentAnim: card.animRef.current,
 				setOnce: (on) => setOnce(on),
@@ -6727,6 +7070,7 @@ function createCardMood(rt) {
 	return function useCardMood(input) {
 		const petId = input.cfgRef.current.id;
 		const params = () => readMoodParams(input.cfgRef.current.mood);
+		const intimacyParams = () => readIntimacyParams(input.cfgRef.current.intimacy);
 		const initialValue = (() => {
 			const p = params();
 			if (!p.enabled) return clampMood(p.initial);
@@ -6770,17 +7114,34 @@ function createCardMood(rt) {
 			if (!p.enabled) return {
 				value: valueRef.current,
 				tier: "normal",
-				hitMax: false
+				hitMax: false,
+				promoted: false
 			};
+			const ip = intimacyParams();
+			const prevTier = intimacyTierOf(valueRef.current);
 			const g = Number.isFinite(gain) ? gain : p.touchGain;
 			const next = clampMood(valueRef.current + g);
 			commit(next);
 			const hitMax = next >= 100 && !excitedRef.current;
 			if (hitMax) excitedRef.current = true;
+			let promoted = false;
+			let promotedTo;
+			if (ip.enabled) {
+				const nextTier = intimacyTierOf(next);
+				if (intimacyRank(nextTier) > intimacyRank(prevTier)) {
+					promoted = true;
+					promotedTo = nextTier;
+				}
+			}
 			return {
 				value: next,
 				tier: moodTier(next, p.low, p.high),
-				hitMax
+				hitMax,
+				promoted,
+				...promoted ? {
+					promotedFrom: prevTier,
+					promotedTo
+				} : {}
 			};
 		};
 		const finishExcite = () => {
@@ -6801,6 +7162,16 @@ function createCardMood(rt) {
 			texts: (fallback) => {
 				const p = params();
 				return moodTextPool(p, moodTier(valueRef.current, p.low, p.high), fallback);
+			},
+			intimacyEnabled: () => intimacyParams().enabled,
+			intimacyTier: () => intimacyTierOf(valueRef.current),
+			intimacyLabel: () => {
+				const ip = intimacyParams();
+				return intimacyStageOf(ip, intimacyTierOf(valueRef.current)).label;
+			},
+			intimacyTexts: (fallback) => {
+				const ip = intimacyParams();
+				return intimacyTextPool(ip, intimacyTierOf(valueRef.current), fallback);
 			},
 			touch,
 			finishExcite
@@ -6866,7 +7237,50 @@ function createCardRest(rt) {
 				input.actions.bumpSeq();
 			}
 		};
-		return { poke };
+		return {
+			poke,
+			isSleeping: () => sleepingRef.current
+		};
+	};
+}
+
+//#endregion
+//#region src/client/pet/card/idle-events.ts
+function createCardIdleEvents(rt) {
+	const { useEffect, useRef } = rt;
+	return function useCardIdleEvents(input) {
+		const timerRef = useRef(null);
+		const fire = () => {
+			if (!input.canPlay()) return;
+			const params = readIdleEventsParams(input.cfgRef.current.idleEvents);
+			if (!params.enabled || params.events.length === 0) return;
+			const ev = pickIdleEvent(params.events, input.currentAnim());
+			if (!ev || !input.hasAnim(ev.anim)) return;
+			input.playOnce(ev.anim);
+			if (ev.text) input.say(ev.text);
+		};
+		useEffect(() => {
+			const schedule = () => {
+				const params = readIdleEventsParams(input.cfgRef.current.idleEvents);
+				if (!params.enabled) {
+					timerRef.current = window.setTimeout(schedule, 5e3);
+					return;
+				}
+				const gap = randomIdleGapMs(params);
+				timerRef.current = window.setTimeout(() => {
+					fire();
+					schedule();
+				}, gap);
+			};
+			schedule();
+			return () => {
+				if (timerRef.current !== null) {
+					window.clearTimeout(timerRef.current);
+					timerRef.current = null;
+				}
+			};
+		}, []);
+		return { fire };
 	};
 }
 
@@ -7783,6 +8197,7 @@ function createFlight(deps) {
 			const dt = (now - last) / 1e3;
 			last = now;
 			const fallingVy = current.vy;
+			const preSpeed = Math.hypot(current.vx, current.vy);
 			const res = integrate(current, dt, bounds, physics);
 			current = {
 				x: res.x,
@@ -7795,6 +8210,7 @@ function createFlight(deps) {
 			const center = commitPose(res);
 			const grounded = res.y >= bounds.maxY - 1;
 			if (res.bounced && grounded && !prevGrounded) deps.onLanding(fallingVy);
+			if (res.bounced && deps.onBounce) deps.onBounce(res.x + metrics.halfW, res.y + metrics.halfH, preSpeed);
 			prevGrounded = grounded;
 			if (res.atRest) {
 				frame = null;
@@ -8171,6 +8587,8 @@ function createCardMotion(rt) {
 			posFollowRef.current?.stop();
 		};
 		const flightRef = useRef(null);
+		/** 撞墙反馈回调：满格碰撞彩蛋期间临时挂上，用来在接触点打粒子；平时为 null。 */
+		const bounceHandlerRef = useRef(null);
 		flightRef.current ?? (flightRef.current = createFlight({
 			root,
 			metrics: () => motionRef.current,
@@ -8192,6 +8610,9 @@ function createCardMotion(rt) {
 			onLanding: (impactVy) => {
 				const frontEl = live.current.ownAnim.frontVideo();
 				if (frontEl) live.current.squash.start(frontEl, landingSquash(impactVy));
+			},
+			onBounce: (x, y, speed) => {
+				bounceHandlerRef.current?.(x, y, speed);
 			}
 		}));
 		const flight = flightRef.current;
@@ -8240,6 +8661,35 @@ function createCardMotion(rt) {
 				y: currentCenterY() - motionRef.current.halfH
 			};
 			startThrow(box.x, box.y, vx, vy);
+		};
+		/** 满格碰撞彩蛋：按当前位置往「对角方向」斜冲一下，撞墙时经 bounceHandlerRef 打粒子。
+		*  在右下角就往左上抛、左上角就往右下抛，依此类推；力度也随机。只在非拖拽时起飞。 */
+		const celebrate = (onBounce) => {
+			if (live.current.drag.isActive()) return false;
+			const m = motionRef.current;
+			const cx = currentCenterX();
+			const cy = currentCenterY();
+			const W = window.innerWidth;
+			const H = window.innerHeight;
+			const speed = 2400 + Math.random() * 1e3;
+			const dirX = cx < W / 2 ? 1 : -1;
+			const dirY = cy < H / 2 ? 1 : -1;
+			const comp = speed / Math.SQRT2;
+			const vx = dirX * comp;
+			let vy = dirY * comp;
+			if (dirY < 0) vy *= 1.15;
+			const jitter = .85 + Math.random() * .3;
+			const box = boxRef.current ?? {
+				x: cx - m.halfW,
+				y: cy - m.halfH
+			};
+			bounceHandlerRef.current = onBounce;
+			startThrow(box.x, box.y, vx * jitter, vy * jitter);
+			return true;
+		};
+		/** 清掉撞墙回调（彩蛋结束时调，避免之后的正常抛掷误打粒子）。 */
+		const clearBounceHandler = () => {
+			bounceHandlerRef.current = null;
 		};
 		/** 被撞回调：停当前动作，从落点以新初速抛出去。 */
 		const onPetHit = (vx, vy) => {
@@ -8300,6 +8750,8 @@ function createCardMotion(rt) {
 		return {
 			applyThrow,
 			box: () => boxRef.current,
+			celebrate,
+			clearBounceHandler,
 			center,
 			flight,
 			metrics: () => motionRef.current,
@@ -8605,6 +9057,8 @@ function createLockFreeze(rt) {
 	return function useLockFreeze(input) {
 		/** 解冻定时器；重算与本地解冻前都必须清掉，否则旧定时器会提前解冻。 */
 		const timerRef = useRef(null);
+		/** 当前是否冻结（自播行为据此让位；与 setFrozen 的视图态同源）。 */
+		const frozenRef = useRef(false);
 		/** 清掉解冻定时器；重复调用安全。 */
 		const clearTimer = () => {
 			if (timerRef.current !== null) {
@@ -8616,18 +9070,24 @@ function createLockFreeze(rt) {
 			clearTimer();
 			const now = Date.now();
 			const expiresAt = freezeDeadline(input.lock, now);
-			dispatchCue(input.setFrozen(expiresAt > now), input);
+			frozenRef.current = expiresAt > now;
+			dispatchCue(input.setFrozen(frozenRef.current), input);
 			if (expiresAt <= now) return clearTimer;
 			timerRef.current = window.setTimeout(() => {
 				timerRef.current = null;
+				frozenRef.current = false;
 				dispatchCue(input.setFrozen(false), input);
 			}, expiresAt - now);
 			return clearTimer;
 		}, [input.lockTick, input.lock]);
-		return { release: () => {
-			clearTimer();
-			dispatchCue(input.setFrozen(false), input);
-		} };
+		return {
+			release: () => {
+				clearTimer();
+				frozenRef.current = false;
+				dispatchCue(input.setFrozen(false), input);
+			},
+			frozen: () => frozenRef.current
+		};
 	};
 }
 
@@ -8703,6 +9163,10 @@ function createCardRuntime(rt) {
 	});
 	const useCardDrag = createCardDrag({ useRef });
 	const useCardRest = createCardRest({
+		useEffect,
+		useRef
+	});
+	const useCardIdleEvents = createCardIdleEvents({
 		useEffect,
 		useRef
 	});
@@ -8810,20 +9274,39 @@ function createCardRuntime(rt) {
 			hasAnim: (name) => animExists(cfgRef.current.animations, name)
 		});
 		const markActivity = () => rest.poke();
-		/** 心情点满时的彩蛋：情绪气泡 + 冲刺跑；到时（或兜底超时）随机掉回 61~99。 */
+		/** 心情点满时的彩蛋：朝最近屏幕边缘冲刺撞墙，接触点炸开暖色粒子，撞回后随机掉回 61~99。
+		*  返回 true = 冲刺抛掷真的起飞了（调用方据此不再收手，免得把彩蛋当场掐灭）；
+		*  拖拽中无法起飞时降级为原地冲刺跑并返回 false。 */
 		const triggerMoodExcite = () => {
-			if (animExists(cfgRef.current.animations, MOOD_EXCITE_ANIM)) {
+			const settle = () => {
+				if (exciteTimerRef.current !== null) {
+					window.clearTimeout(exciteTimerRef.current);
+					exciteTimerRef.current = null;
+				}
+				motion.clearBounceHandler();
+				mood.finishExcite();
+				bubbles.showWhisper(mood.label(), {}, 4e3);
+			};
+			let bounced = false;
+			const onBounce = (x, y, speed) => {
+				spawnScoreBurst(x, y);
+				if (!bounced) {
+					bounced = true;
+					bubbles.showWhisper("心情满格！撞一下～", {}, 4e3);
+				}
+				if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
+				exciteTimerRef.current = window.setTimeout(settle, 900);
+			};
+			const launched = motion.celebrate(onBounce);
+			if (!launched) if (animExists(cfgRef.current.animations, MOOD_EXCITE_ANIM)) {
 				bubbles.showWhisper("心情满格！原地冲刺跑～", {}, 6e3);
 				actions.setOnce(true);
 				actions.setAnim(MOOD_EXCITE_ANIM);
 				actions.bumpSeq();
 			} else bubbles.showWhisper("心情满格啦～", {}, 4e3);
 			if (exciteTimerRef.current !== null) window.clearTimeout(exciteTimerRef.current);
-			exciteTimerRef.current = window.setTimeout(() => {
-				exciteTimerRef.current = null;
-				mood.finishExcite();
-				bubbles.showWhisper(mood.label(), {}, 4e3);
-			}, MOOD_EXCITE_SAFETY_MS);
+			exciteTimerRef.current = window.setTimeout(settle, MOOD_EXCITE_SAFETY_MS);
+			return true;
 		};
 		useEffect(() => () => {
 			if (exciteTimerRef.current !== null) {
@@ -8831,6 +9314,20 @@ function createCardRuntime(rt) {
 				exciteTimerRef.current = null;
 			}
 		}, []);
+		/** 亲密度阶段达成：播一句阶段专属标语气泡（带阶段名），并（若有开心动画）播一遍表示高兴。 */
+		const triggerIntimacyPromote = (to) => {
+			const stage = intimacyStageOf(readIntimacyParams(cfgRef.current.intimacy), to);
+			bubbles.showWhisper("【" + stage.label + "】" + stage.motto, {}, 6e3);
+			const happy = mood.params().happyAnim;
+			if (happy && animExists(cfgRef.current.animations, happy)) {
+				actions.setOnce(true);
+				actions.setAnim(happy);
+				actions.bumpSeq();
+			}
+			const d = new Date();
+			const key = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+			postAction(ROUTE_PATH + "/intimacy?pet=" + encodeURIComponent(cfg.id) + "&stage=" + encodeURIComponent(to) + "&date=" + encodeURIComponent(key));
+		};
 		const drag = useCardDrag({
 			bumpSeq: actions.bumpSeq,
 			card,
@@ -8853,8 +9350,23 @@ function createCardRuntime(rt) {
 			onActivity: () => {
 				markActivity();
 				const touched = mood.touch();
-				if (touched.hitMax) triggerMoodExcite();
+				if (touched.hitMax) return triggerMoodExcite();
+				if (touched.promoted && touched.promotedTo) triggerIntimacyPromote(touched.promotedTo);
+				return false;
 			}
+		});
+		useCardIdleEvents({
+			cfgRef,
+			hasAnim: (name) => animExists(cfgRef.current.animations, name),
+			canPlay: () => !drag.isActive() && !rest.isSleeping() && !lockFreeze.frozen() && (!workStatus || workStatus.state === null || workStatus.state === "success" || workStatus.state === "error"),
+			playOnce: (name) => {
+				actions.setOnce(true);
+				actions.setAnim(name);
+				actions.bumpSeq();
+				markActivity();
+			},
+			say: (text) => bubbles.showWhisper(text, {}),
+			currentAnim: () => card.animRef.current
 		});
 		const entry = useCardEntry({
 			card,
@@ -8947,7 +9459,7 @@ function createCardRuntime(rt) {
 			marginX: margin.x,
 			marginY: margin.y,
 			name: cfg.name,
-			tipText: mood.enabled() ? cfg.name + " · " + mood.label() : cfg.name,
+			tipText: mood.enabled() ? cfg.name + " · " + mood.label() + (mood.intimacyEnabled() ? " · " + mood.intimacyLabel() : "") : cfg.name,
 			onClick: drag.onClick,
 			onContextMenu: entry.handleContextMenu,
 			onPointerDown: drag.onPointerDown,

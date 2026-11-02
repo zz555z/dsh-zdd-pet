@@ -8,7 +8,14 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { dateKeyOf, festivalOf, maybeFestival, resolveFestival } from './festival.ts';
+import {
+  dateKeyOf,
+  festivalOf,
+  maybeFestival,
+  maybeIntimacyAnniversary,
+  recordIntimacyReach,
+  resolveFestival,
+} from './festival.ts';
 import { PollStateStore } from './state.ts';
 import { DEFAULT_FESTIVAL, festivalValid, readFestivalParams } from '../shared/festival.ts';
 
@@ -144,5 +151,75 @@ describe('maybeFestival —— 投递与去重', () => {
   test('普通日子 → 不投递', () => {
     const { deps } = setup({ enabled: true, cooldownHours: 20 });
     assert.equal(maybeFestival(deps, new Date(2026, 10, 15)), 0);
+  });
+});
+
+/** 亲密度纪念日用的最小配置：一只宠物 + intimacy 段（含纪念日）。 */
+function setupIntimacy() {
+  const userRoot = mkdtempSync(join(tmpdir(), 'intimacy-'));
+  const defFile = join(userRoot, 'default.jsonc');
+  writeFileSync(
+    defFile,
+    JSON.stringify({
+      bubbleImageEnabled: false,
+      intimacy: { enabled: true },
+      pets: [
+        {
+          id: 'main',
+          name: '鱼',
+          size: 300,
+          balanceEnabled: false,
+          display: 'desktop',
+          position: { corner: 'bottom-right', marginX: 24, marginY: 20 },
+        },
+      ],
+      animations: {
+        idle: ['待机'],
+        turn: [],
+        drag: [],
+        clicks: [],
+        moves: { default: {}, actions: [] },
+        categories: [],
+        events: { balance: ['x'] },
+      },
+    }),
+    'utf8',
+  );
+  return {
+    userRoot,
+    deps: {
+      configPaths: { defaultFile: defFile, userFile: join(userRoot, 'main-config.jsonc') },
+      state: new PollStateStore(),
+      log,
+      memeDirsFor: () => [],
+      userRoot,
+    } as unknown as Parameters<typeof maybeFestival>[0],
+  };
+}
+
+describe('maybeIntimacyAnniversary —— 亲密度纪念日', () => {
+  test('recordIntimacyReach 只记首次，周年当天触发一次', () => {
+    const { userRoot, deps } = setupIntimacy();
+    // 去年达成「熟悉」阶段
+    assert.equal(recordIntimacyReach(userRoot, 'main', 'familiar', '2025-3-20'), true);
+    // 重复记录不覆盖
+    assert.equal(recordIntimacyReach(userRoot, 'main', 'familiar', '2026-1-1'), false);
+    // 周年当天（同月同日、年份更早）→ 演一次
+    assert.equal(maybeIntimacyAnniversary(deps, new Date(2026, 2, 20)), 1);
+    const snap = deps.state.read() as { pets: Record<string, Record<string, { data?: { text?: string } }>> };
+    assert.ok((snap.pets.main?.say?.data?.text ?? '').includes('第一次见面'));
+    // 非周年、非当天 → 不演
+    assert.equal(maybeIntimacyAnniversary(deps, new Date(2026, 2, 21)), 0);
+    // 首次当年不触发：某阶段 2026-5-10 首次达成，2026-5-10 当天不算周年
+    const s2 = setupIntimacy();
+    recordIntimacyReach(s2.userRoot, 'main', 'close', '2026-5-10');
+    assert.equal(maybeIntimacyAnniversary(s2.deps, new Date(2026, 4, 10)), 0);
+    // 但次年同日（2027-5-10）就算周年
+    assert.equal(maybeIntimacyAnniversary(s2.deps, new Date(2027, 4, 10)), 1);
+  });
+
+  test('没有记录 → 不演', () => {
+    const { deps } = setupIntimacy();
+    assert.equal(maybeIntimacyAnniversary(deps, new Date(2026, 2, 20)), 0);
   });
 });

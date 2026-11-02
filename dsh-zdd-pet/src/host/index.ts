@@ -16,7 +16,7 @@ import { createBalancePoll } from './plugin/balance-poll.ts';
 import { createChatMemory } from './plugin/chat-memory.ts';
 import { createExtras } from './plugin/extras.ts';
 import { maybeGreeting } from './greeting.ts';
-import { maybeFestival } from './festival.ts';
+import { maybeFestival, maybeIntimacyAnniversary } from './festival.ts';
 import { createPomodoroEngine } from './pomodoro-engine.ts';
 import { createSessionNotify } from './plugin/session-notify.ts';
 import { createPetLookup } from './plugin/pet-lookup.ts';
@@ -185,6 +185,11 @@ export function apply(ctx: any): void {
       maybeFestival({ configPaths, state, log, memeDirsFor, userRoot });
     } catch {
       /* 节日演出是锦上添花，失败静默 */
+    }
+    try {
+      maybeIntimacyAnniversary({ configPaths, state, log, memeDirsFor, userRoot });
+    } catch {
+      /* 亲密度纪念日同样是锦上添花，失败静默 */
     }
   })();
 

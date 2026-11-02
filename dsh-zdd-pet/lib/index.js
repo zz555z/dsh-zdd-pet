@@ -663,6 +663,8 @@ const GLOBAL_DEFAULT_KEYS = [
 	"rest",
 	"celebrate",
 	"mood",
+	"intimacy",
+	"idleEvents",
 	"festival"
 ];
 /** 已告警过的 文件:字段（进程内去重：同一问题只告警一次，避免每请求刷屏；重启重置） */
@@ -826,6 +828,112 @@ function moodValid(value) {
 }
 
 //#endregion
+//#region src/shared/intimacy.ts
+const INTIMACY_TIERS = [
+	"stranger",
+	"familiar",
+	"close",
+	"bonded"
+];
+const DEFAULT_INTIMACY = {
+	enabled: true,
+	stages: {
+		stranger: {
+			label: "陌生",
+			motto: "我们才刚认识呢…",
+			texts: []
+		},
+		familiar: {
+			label: "熟悉",
+			motto: "混熟啦，见到你就想打招呼～",
+			texts: ["今天也来啦？", "嘿嘿，又见面咯～"],
+			festival: "相识纪念日",
+			festivalText: "还记得我们第一次见面吗？谢谢你一直陪着我～"
+		},
+		close: {
+			label: "亲近",
+			motto: "越来越想腻着你啦～",
+			texts: ["今天也想黏着你～", "有你在就很安心～"],
+			festival: "亲近纪念日",
+			festivalText: "我们已经这么要好啦，往后也要一直在一起哦～"
+		},
+		bonded: {
+			label: "默契",
+			motto: "不说话也懂你～",
+			texts: ["不用说话我也懂你哦～", "你最懂我啦～"],
+			festival: "默契纪念日",
+			festivalText: "默契满分！你是我最最重要的人啦～"
+		}
+	}
+};
+function intimacyStageOf(params, tier) {
+	const own$1 = params.stages?.[tier];
+	const def = DEFAULT_INTIMACY.stages[tier];
+	if (!own$1) return def;
+	return {
+		label: typeof own$1.label === "string" && own$1.label ? own$1.label : def.label,
+		motto: typeof own$1.motto === "string" ? own$1.motto : def.motto,
+		texts: Array.isArray(own$1.texts) ? own$1.texts.filter((s) => typeof s === "string" && s.trim() !== "") : def.texts,
+		festival: typeof own$1.festival === "string" && own$1.festival ? own$1.festival : def.festival,
+		festivalText: typeof own$1.festivalText === "string" && own$1.festivalText ? own$1.festivalText : def.festivalText
+	};
+}
+/** 从任意 raw 里抽一个阶段配置（各子字段可选，非法回退默认）。 */
+function stageRaw(raw, tier) {
+	const def = DEFAULT_INTIMACY.stages[tier];
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return def;
+	const o = raw;
+	const str$2 = (v, fb) => typeof v === "string" && v.trim() !== "" ? v : fb;
+	const optStr = (v) => typeof v === "string" && v.trim() !== "" ? v : void 0;
+	const arr = (v) => Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim() !== "") : def.texts;
+	return {
+		label: str$2(o.label, def.label),
+		motto: typeof o.motto === "string" ? o.motto : def.motto,
+		texts: arr(o.texts),
+		festival: optStr(o.festival) ?? def.festival,
+		festivalText: optStr(o.festivalText) ?? def.festivalText
+	};
+}
+function readIntimacyParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {
+		enabled: DEFAULT_INTIMACY.enabled,
+		stages: { ...DEFAULT_INTIMACY.stages }
+	};
+	const o = raw;
+	const rawStages = o.stages && typeof o.stages === "object" ? o.stages : {};
+	const stages = {};
+	for (const t of INTIMACY_TIERS) stages[t] = stageRaw(rawStages[t], t);
+	return {
+		enabled: o.enabled !== false,
+		stages
+	};
+}
+function intimacyValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.stages !== void 0 && (typeof o.stages !== "object" || o.stages === null || Array.isArray(o.stages))) return false;
+	return true;
+}
+
+//#endregion
+//#region src/shared/idle-events.ts
+const IDLE_GAP_MIN_SEC = 20;
+const IDLE_GAP_MAX_SEC = 24 * 60 * 60;
+function idleEventsValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	for (const key of ["minGapSec", "maxGapSec"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isFinite(n) || n < IDLE_GAP_MIN_SEC || n > IDLE_GAP_MAX_SEC) return false;
+	}
+	if (o.events !== void 0 && !Array.isArray(o.events)) return false;
+	return true;
+}
+
+//#endregion
 //#region src/shared/festival.ts
 const DEFAULT_FESTIVAL = {
 	enabled: true,
@@ -966,6 +1074,8 @@ function topFieldValid(key, value) {
 		case "pomodoro": return pomodoroValid(value);
 		case "greeting": return greetingValid(value);
 		case "mood": return moodValid(value);
+		case "intimacy": return intimacyValid(value);
+		case "idleEvents": return idleEventsValid(value);
 		case "festival": return festivalValid(value);
 		case "whisperModel":
 		case "chatModel": return modelSelectionValid(value);
@@ -1252,6 +1362,10 @@ function saveUserConfig(raw, existing) {
 	if (gr !== void 0 && !greetingValid(gr)) return null;
 	const mo = o.mood;
 	if (mo !== void 0 && !moodValid(mo)) return null;
+	const it = o.intimacy;
+	if (it !== void 0 && !intimacyValid(it)) return null;
+	const ie = o.idleEvents;
+	if (ie !== void 0 && !idleEventsValid(ie)) return null;
 	const wm = o.whisperModel;
 	if (wm !== void 0 && !modelSelectionValid(wm)) return null;
 	const cm = o.chatModel;
@@ -1312,6 +1426,24 @@ function saveUserConfig(raw, existing) {
 			high: Number(mv.high)
 		};
 	}
+	if (it !== void 0) {
+		const iv = it;
+		const prev = (existing && typeof existing === "object" ? existing.intimacy : void 0) ?? {};
+		outConfig.intimacy = {
+			...prev,
+			enabled: iv.enabled
+		};
+	}
+	if (ie !== void 0) {
+		const ev = ie;
+		const prev = (existing && typeof existing === "object" ? existing.idleEvents : void 0) ?? {};
+		outConfig.idleEvents = {
+			...prev,
+			enabled: ev.enabled,
+			...ev.minGapSec !== void 0 ? { minGapSec: Number(ev.minGapSec) } : {},
+			...ev.maxGapSec !== void 0 ? { maxGapSec: Number(ev.maxGapSec) } : {}
+		};
+	}
 	if (wm !== void 0) outConfig.whisperModel = cleanModel(wm);
 	if (cm !== void 0) outConfig.chatModel = cleanModel(cm);
 	if (cmr !== void 0) outConfig.chatMemoryRounds = Number(cmr);
@@ -1329,6 +1461,8 @@ function saveUserConfig(raw, existing) {
 	if (po !== void 0) bodyOwned.add("pomodoro");
 	if (gr !== void 0) bodyOwned.add("greeting");
 	if (mo !== void 0) bodyOwned.add("mood");
+	if (it !== void 0) bodyOwned.add("intimacy");
+	if (ie !== void 0) bodyOwned.add("idleEvents");
 	if (wm !== void 0) bodyOwned.add("whisperModel");
 	if (cm !== void 0) bodyOwned.add("chatModel");
 	if (cmr !== void 0) bodyOwned.add("chatMemoryRounds");
@@ -4419,6 +4553,609 @@ async function handlePomodoroRoutes(deps, input) {
 }
 
 //#endregion
+//#region src/host/time-context/constants.ts
+/**
+* 时段划分表：[起始小时, 时段]，按起始小时从晚到早排列——匹配时取第一个不超过当前小时的档。
+* 口径含起始小时（0–23 全覆盖、不重叠）：凌晨 0–4、清晨 5–6、早上 7–8、上午 9–10、中午 11–12、
+* 下午 13–16、傍晚 17–18、晚上 19–22、深夜 23。
+*/
+const SLOTS = [
+	[23, "深夜"],
+	[19, "晚上"],
+	[17, "傍晚"],
+	[13, "下午"],
+	[11, "中午"],
+	[9, "上午"],
+	[7, "早上"],
+	[5, "清晨"],
+	[0, "凌晨"]
+];
+const WEEKDAYS = [
+	"星期日",
+	"星期一",
+	"星期二",
+	"星期三",
+	"星期四",
+	"星期五",
+	"星期六"
+];
+const DAY_MS = 864e5;
+const DEFAULT_AHEAD = 3;
+const DEFAULT_SPAN = 1;
+const DEFAULT_AFTER = 3;
+const SEASON_AHEAD = 3;
+const SEASON_ENDING_AHEAD = 3;
+const SEASON_AFTER = 3;
+function pad2(n) {
+	return String(n).padStart(2, "0");
+}
+function timeSlotOf(hour) {
+	for (const [start, slot] of SLOTS) if (hour >= start) return slot;
+	return "凌晨";
+}
+function dayKindOf(day) {
+	return day === 0 || day === 6 ? "周末" : "工作日";
+}
+
+//#endregion
+//#region src/host/time-context/entries.ts
+/**
+* 顺序 = 优先级（靠前的先说话）。一天只出一个从句，所以同一天被多个节日/假期覆盖时，谁在数组里
+* 靠前就由谁说；想改优先级就挪那几行，不必动逻辑。几条硬约束：只有当天值得说的小节排在邻座之前
+* 并掐掉回味；除夕、元宵必须排在春节之前；寒暑假排在传统节日之后、纪念日之前——假期里的节日仍由
+* 节日说话，7/1 这类与纪念日撞车的日子则由暑假说话。`ahead / span / after` 缺省 3 / 1 / 3。
+*/
+const PRIORITY = [
+	{
+		kind: "solar",
+		key: "2-14",
+		name: "情人节",
+		after: 0
+	},
+	{
+		kind: "solar",
+		key: "12-31",
+		name: "跨年夜",
+		after: 0
+	},
+	{
+		kind: "solar",
+		key: "4-1",
+		name: "愚人节",
+		after: 0
+	},
+	{
+		kind: "solar",
+		key: "5-4",
+		name: "青年节",
+		ahead: 0,
+		after: 0
+	},
+	{
+		kind: "lunarEve",
+		name: "除夕",
+		ahead: 1,
+		after: 0
+	},
+	{
+		kind: "lunar",
+		key: "1-15",
+		name: "元宵节"
+	},
+	{
+		kind: "lunar",
+		key: "1-1",
+		name: "春节",
+		spoken: "大年初一",
+		span: 15
+	},
+	{
+		kind: "lunar",
+		key: "8-15",
+		name: "中秋节",
+		span: 3,
+		after: 2
+	},
+	{
+		kind: "solar",
+		key: "10-1",
+		name: "国庆节",
+		span: 7
+	},
+	{
+		kind: "solar",
+		key: "1-1",
+		name: "元旦",
+		spoken: "新年第一天",
+		span: 3
+	},
+	{
+		kind: "lunar",
+		key: "5-5",
+		name: "端午节",
+		span: 3
+	},
+	{
+		kind: "solar",
+		key: "4-4",
+		name: "清明节",
+		span: 3,
+		ahead: 1
+	},
+	{
+		kind: "solar",
+		key: "5-1",
+		name: "劳动节",
+		span: 3
+	},
+	{
+		kind: "solar",
+		key: "6-1",
+		name: "儿童节"
+	},
+	{
+		kind: "lunar",
+		key: "7-7",
+		name: "七夕"
+	},
+	{
+		kind: "lunar",
+		key: "7-15",
+		name: "中元节"
+	},
+	{
+		kind: "lunar",
+		key: "2-2",
+		name: "龙抬头"
+	},
+	{
+		kind: "lunar",
+		key: "9-9",
+		name: "重阳节"
+	},
+	{
+		kind: "lunar",
+		key: "12-8",
+		name: "腊八节"
+	},
+	{
+		kind: "lunar",
+		key: "12-23",
+		name: "小年"
+	},
+	{
+		kind: "season",
+		from: "1-20",
+		to: "2-18",
+		name: "寒假"
+	},
+	{
+		kind: "season",
+		from: "7-1",
+		to: "8-29",
+		name: "暑假"
+	},
+	{
+		kind: "solar",
+		key: "3-8",
+		name: "妇女节"
+	},
+	{
+		kind: "solar",
+		key: "9-10",
+		name: "教师节"
+	},
+	{
+		kind: "solar",
+		key: "7-1",
+		name: "建党节"
+	},
+	{
+		kind: "solar",
+		key: "8-1",
+		name: "建军节"
+	},
+	{
+		kind: "solar",
+		key: "10-31",
+		name: "万圣夜"
+	},
+	{
+		kind: "solar",
+		key: "12-24",
+		name: "平安夜",
+		after: 0
+	},
+	{
+		kind: "solar",
+		key: "12-25",
+		name: "圣诞节"
+	}
+];
+const SOLAR_INDEX = new Map();
+const LUNAR_INDEX = new Map();
+const SEASON_ENTRIES = [];
+let LUNAR_EVE;
+PRIORITY.forEach((entry, priority) => {
+	if (entry.kind === "solar") SOLAR_INDEX.set(entry.key, {
+		entry,
+		priority
+	});
+	else if (entry.kind === "lunar") LUNAR_INDEX.set(entry.key, {
+		entry,
+		priority
+	});
+	else if (entry.kind === "lunarEve") LUNAR_EVE = {
+		entry,
+		priority
+	};
+	else SEASON_ENTRIES.push({
+		entry,
+		priority,
+		from: entry.from,
+		to: entry.to
+	});
+});
+/** 条目里最长的预热天数与回看距离（长假 15 天 + 回味 3 天），据此决定扫描窗口。 */
+const HOLIDAY_ENTRIES = PRIORITY.filter((e) => e.kind !== "season");
+const MAX_AHEAD = Math.max(...HOLIDAY_ENTRIES.map((e) => e.ahead ?? DEFAULT_AHEAD));
+const MAX_LOOKBACK = Math.max(...HOLIDAY_ENTRIES.map((e) => (e.span ?? DEFAULT_SPAN) - 1 + (e.after ?? DEFAULT_AFTER)));
+
+//#endregion
+//#region src/host/time-context/lunar.ts
+/** ICU 中国农历格式器；null = 已判定本环境不可用（不重试、不抛错）。 */
+let lunarFormatter;
+/**
+* 取 ICU 农历格式器。Intl 在缺少该日历时不会抛错，而是静默退回公历——那会让每个月都被当成农历
+* 同月同日，所以用 resolvedOptions().calendar 确认它真的解析成了 'chinese'，否则一律判不可用。
+*/
+function getLunarFormatter() {
+	if (lunarFormatter === null) return void 0;
+	if (!lunarFormatter) {
+		const fmt = new Intl.DateTimeFormat("en-u-ca-chinese", {
+			month: "numeric",
+			day: "numeric",
+			year: "numeric"
+		});
+		lunarFormatter = fmt.resolvedOptions().calendar === "chinese" ? fmt : null;
+	}
+	return lunarFormatter ?? void 0;
+}
+function dayOfYear(date) {
+	return (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 1)) / DAY_MS;
+}
+function dayOfYearOf(year, monthDay) {
+	const [month, day] = monthDay.split("-").map(Number);
+	return (Date.UTC(year, (month ?? 1) - 1, day ?? 1) - Date.UTC(year, 0, 1)) / DAY_MS;
+}
+/**
+* 公历日期 → 农历月日。
+*
+* 已知精度边界（已评估并接受）：朔时刻贴近 UTC+8 午夜时 ICU 会把农历初一放错一天——2025–2060 的
+* 445 个月起点里错 2 个，都是正月（2027-02-06 距午夜 8 分钟、2030-02-03 距午夜 5 分钟），表现为那
+* 两年春节与元宵各差一天；2027 一例已与香港天文台官方对照表核对。要绝对准确只需换掉本函数实现
+* （换库或加修正表），下游逻辑一行不用动。
+* @returns 农历月/日（闰月 month 为负）；环境不支持农历、取不到月日，或农历年与公历年不吻合
+*   （自洽校验：农历年只可能是当年或前一年，挡住 ICU 退化时把公历当农历返回）→ undefined。
+*/
+function lunarPartsOf(date) {
+	const fmt = getLunarFormatter();
+	if (!fmt) return void 0;
+	const parts = fmt.formatToParts(date);
+	const pick$1 = (type) => parts.find((p) => p.type === type)?.value;
+	const rawMonth = pick$1("month");
+	const rawDay = pick$1("day");
+	const rawYear = pick$1("relatedYear") ?? pick$1("year");
+	if (!rawMonth || !rawDay || !rawYear) return void 0;
+	const month = Number.parseInt(rawMonth, 10);
+	const day = Number.parseInt(rawDay, 10);
+	const year = Number.parseInt(rawYear, 10);
+	if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) return void 0;
+	const gregorianYear = date.getFullYear();
+	if (year !== gregorianYear && year !== gregorianYear - 1) return void 0;
+	return {
+		month: /bis/i.test(rawMonth) ? -month : month,
+		day
+	};
+}
+/** 当天是否是除夕（腊月最后一天：次日为正月初一即成立，廿九/三十都能认）。 */
+function isLunarEve(date) {
+	const today = lunarPartsOf(date);
+	if (!today || today.month !== 12) return false;
+	const next = lunarPartsOf(new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1));
+	return Boolean(next && next.month === 1 && next.day === 1);
+}
+function entriesAt(date) {
+	const out = [];
+	const solar = SOLAR_INDEX.get(date.getMonth() + 1 + "-" + date.getDate());
+	if (solar) out.push(solar);
+	const lunar = lunarPartsOf(date);
+	if (lunar && lunar.month > 0) {
+		const hit = LUNAR_INDEX.get(lunar.month + "-" + lunar.day);
+		if (hit) out.push(hit);
+	}
+	if (LUNAR_EVE && isLunarEve(date)) out.push(LUNAR_EVE);
+	return out;
+}
+
+//#endregion
+//#region src/host/festival.ts
+const FESTIVAL_ANIMATIONS = {
+	春节: "收红包",
+	除夕: "放烟花",
+	元宵节: "吃汤圆",
+	元旦: "写福字",
+	中秋节: "中秋赏月吃月饼",
+	国庆节: "放烟花",
+	端午节: "吃粽子",
+	清明节: "被落叶淹没",
+	劳动节: "超大伸懒腰",
+	儿童节: "吹气球",
+	七夕: "穿针乞巧",
+	中元节: "萌化小幽灵",
+	龙抬头: "吃年糕",
+	重阳节: "吃重阳糕",
+	腊八节: "吃腊八粥",
+	小年: "吃饺子",
+	情人节: "凭空生花",
+	跨年夜: "放烟花",
+	愚人节: "变鸽子",
+	青年节: "原地冲刺跑",
+	妇女节: "凭空生花",
+	教师节: "女仆屈膝礼仪",
+	建党节: "放烟花",
+	建军节: "舞狮头",
+	万圣夜: "讨糖南瓜灯",
+	平安夜: "装点圣诞树",
+	圣诞节: "装点圣诞树",
+	寒假: "堆雪人",
+	暑假: "吃西瓜"
+};
+const FESTIVAL_TEXTS = {
+	春节: "新春快乐，红包拿来～",
+	除夕: "除夕夜守岁啦，新年快乐！",
+	元宵节: "元宵节快乐，吃汤圆咯～",
+	元旦: "新年第一天，万事顺遂！",
+	中秋节: "中秋快乐，月亮好圆呀～",
+	国庆节: "国庆快乐，好好休息～",
+	端午节: "端午安康，吃粽子啦～",
+	清明节: "清明时节，记得踏青哦～",
+	劳动节: "劳动节快乐，今天也要好好休息～",
+	儿童节: "儿童节快乐，永远是小朋友～",
+	七夕: "七夕快乐，愿你被温柔以待～",
+	中元节: "中元节，早点回家哦～",
+	龙抬头: "龙抬头，鸿运当头！",
+	重阳节: "重阳节，登高赏菊啦～",
+	腊八节: "腊八节，喝碗腊八粥～",
+	小年: "小年到，年味渐浓啦～",
+	情人节: "情人节快乐，甜甜蜜蜜～",
+	跨年夜: "跨年夜快乐，新年见！",
+	愚人节: "愚人节快乐，别被骗啦～",
+	青年节: "青年节快乐，元气满满！",
+	妇女节: "节日快乐，今天你最美～",
+	教师节: "教师节快乐，桃李满天下～",
+	建党节: "节日快乐，铭记初心～",
+	建军节: "建军节快乐，致敬最可爱的人～",
+	万圣夜: "万圣夜快乐，不给糖就捣蛋！",
+	平安夜: "平安夜快乐，记得吃苹果～",
+	圣诞节: "圣诞快乐，礼物收到了吗～",
+	寒假: "放寒假啦，开心玩吧～",
+	暑假: "放暑假啦，吃西瓜咯～"
+};
+function dateKeyOf(date) {
+	return date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
+}
+function festivalOf(date) {
+	if (Number.isNaN(date.getTime())) return void 0;
+	const hits = entriesAt(date);
+	if (hits.length === 0) return void 0;
+	return hits.reduce((best, cur) => cur.priority < best.priority ? cur : best, hits[0]);
+}
+function animExists(anims, target) {
+	const seen = new Set();
+	const stack = [anims];
+	while (stack.length) {
+		const o = stack.pop();
+		if (!o || seen.has(o)) continue;
+		if (typeof o === "string") {
+			if (o === target) return true;
+			continue;
+		}
+		if (Array.isArray(o)) {
+			for (const x of o) stack.push(x);
+			continue;
+		}
+		if (typeof o === "object") {
+			seen.add(o);
+			for (const v of Object.values(o)) stack.push(v);
+		}
+	}
+	return false;
+}
+function resolveFestival(date, params) {
+	if (!params.enabled) return void 0;
+	const hit = festivalOf(date);
+	if (!hit) return void 0;
+	const name$1 = hit.entry.name;
+	const text = params.texts[name$1] ?? FESTIVAL_TEXTS[name$1] ?? "今天是" + (hit.entry.spoken ?? name$1) + "，祝主人一切顺遂～";
+	const anim = params.animations[name$1] ?? FESTIVAL_ANIMATIONS[name$1];
+	return {
+		name: name$1,
+		text,
+		...anim ? { anim } : {}
+	};
+}
+/** 去重状态文件：记录最近一次演出的日期与节日名。 */
+const STATE_FILE = "festival-state.json";
+function readLast(userRoot) {
+	const file = join(userRoot, STATE_FILE);
+	if (!existsSync(file)) return void 0;
+	try {
+		const raw = JSON.parse(readFileSync(file, "utf8"));
+		return typeof raw.date === "string" && typeof raw.name === "string" ? {
+			date: raw.date,
+			name: raw.name
+		} : void 0;
+	} catch {
+		return void 0;
+	}
+}
+function writeLast(userRoot, value) {
+	try {
+		writeFileSync(join(userRoot, STATE_FILE), JSON.stringify(value, null, 2), "utf8");
+	} catch {}
+}
+function maybeFestival(deps, now = new Date()) {
+	const { configPaths, state, log, memeDirsFor, userRoot } = deps;
+	let cfg;
+	try {
+		cfg = readAllConfig(configPaths);
+	} catch {
+		return 0;
+	}
+	const date = dateKeyOf(now);
+	const hit = festivalOf(now);
+	if (!hit) return 0;
+	const last = readLast(userRoot);
+	if (last && last.date === date && last.name === hit.entry.name) return 0;
+	let delivered = 0;
+	for (const pet of flattenPetList(cfg)) {
+		const petId = String(pet.id ?? "");
+		if (!petId) continue;
+		const found = findPetInstance(cfg, petId);
+		if (!found) continue;
+		const params = readFestivalParams(found.conf.festival);
+		const cue = resolveFestival(now, params);
+		if (!cue) continue;
+		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
+		state.writePet(petId, "say", {
+			text: cue.text,
+			...meme ? { image: meme.name } : {},
+			anim: false
+		});
+		if (cue.anim && animExists(found.conf.animations, cue.anim)) state.writePet(petId, "anim", { name: cue.anim });
+		log.info(`[dsh-zdd-pet] 节日演出 pet=${petId}（${cue.name}）：「${cue.text}」` + (cue.anim ? ` 动画=${cue.anim}` : ""));
+		delivered += 1;
+	}
+	if (delivered > 0) writeLast(userRoot, {
+		date,
+		name: hit.entry.name
+	});
+	return delivered;
+}
+/** 亲密度纪念日状态文件：记录每只宠物「首次达到某阶段」的日期（MM-DD 用以比较周年）。 */
+const INTIMACY_STATE_FILE = "intimacy-state.json";
+function readIntimacyState(userRoot) {
+	const file = join(userRoot, INTIMACY_STATE_FILE);
+	if (!existsSync(file)) return {};
+	try {
+		const raw = JSON.parse(readFileSync(file, "utf8"));
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+		const out = {};
+		for (const [petId, stages] of Object.entries(raw)) {
+			if (!stages || typeof stages !== "object" || Array.isArray(stages)) continue;
+			const rec = {};
+			for (const [stage, d] of Object.entries(stages)) if (typeof d === "string" && d) rec[stage] = d;
+			out[petId] = rec;
+		}
+		return out;
+	} catch {
+		return {};
+	}
+}
+function writeIntimacyState(userRoot, value) {
+	try {
+		writeFileSync(join(userRoot, INTIMACY_STATE_FILE), JSON.stringify(value, null, 2), "utf8");
+	} catch {}
+}
+/** 从当前心情值取亲密度阶段（动态 import 太重，直接用 shared 纯函数）。 */
+function resolveIntimacyParams(raw) {
+	return readIntimacyParams(raw);
+}
+/** 本地日期键的「月-日」（周年比较只认月日）。 */
+function monthDayOf(date) {
+	return date.getMonth() + 1 + "-" + date.getDate();
+}
+/** 把 YYYY-M-D 日期键取成「月-日」。 */
+function monthDayOfKey(key) {
+	const parts = key.split("-");
+	if (parts.length !== 3) return "";
+	return parts[1] + "-" + parts[2];
+}
+function maybeIntimacyAnniversary(deps, now = new Date()) {
+	const { configPaths, state, log, memeDirsFor, userRoot } = deps;
+	let cfg;
+	try {
+		cfg = readAllConfig(configPaths);
+	} catch {
+		return 0;
+	}
+	const todayMd = monthDayOf(now);
+	const todayYear = now.getFullYear();
+	const book = readIntimacyState(userRoot);
+	let delivered = 0;
+	for (const pet of flattenPetList(cfg)) {
+		const petId = String(pet.id ?? "");
+		if (!petId) continue;
+		const found = findPetInstance(cfg, petId);
+		if (!found) continue;
+		const ip = resolveIntimacyParams(found.conf.intimacy);
+		if (!ip.enabled) continue;
+		const rec = book[petId] ?? {};
+		for (const t of INTIMACY_TIERS) {
+			const key = rec[t];
+			if (!key) continue;
+			if (monthDayOfKey(key) !== todayMd) continue;
+			const year = Number(key.split("-")[0]);
+			if (!Number.isFinite(year) || year >= todayYear) continue;
+			const stage = intimacyStageOf(ip, t);
+			if (!stage.festival) continue;
+			const text = stage.festivalText ?? "今天是我们的「" + stage.festival + "」，谢谢你一直陪着我～";
+			const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
+			state.writePet(petId, "say", {
+				text,
+				...meme ? { image: meme.name } : {},
+				anim: false
+			});
+			log.info(`[dsh-zdd-pet] 亲密度纪念日 pet=${petId}（${stage.festival}）：「${text}」`);
+			delivered += 1;
+			break;
+		}
+	}
+	return delivered;
+}
+function recordIntimacyReach(userRoot, petId, stage, dateKey) {
+	if (!petId || !stage || !/^\d+-\d+-\d+$/.test(dateKey)) return false;
+	const book = readIntimacyState(userRoot);
+	const rec = book[petId] ?? {};
+	if (rec[stage]) return false;
+	rec[stage] = dateKey;
+	book[petId] = rec;
+	writeIntimacyState(userRoot, book);
+	return true;
+}
+
+//#endregion
+//#region src/host/routes/intimacy.ts
+async function handleIntimacyRoutes(deps, input) {
+	const { rest, method, url } = input;
+	if (rest !== "intimacy") return void 0;
+	if (method !== "POST") return methodNotAllowed();
+	const pet = String(url.searchParams.get("pet") ?? "");
+	const stage = String(url.searchParams.get("stage") ?? "");
+	const date = String(url.searchParams.get("date") ?? "");
+	if (!pet) return failResult("bad-request", "缺少 pet");
+	if (!INTIMACY_TIERS.includes(stage)) return failResult("bad-request", "stage 必须是 stranger / familiar / close / bonded");
+	if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(date)) return failResult("bad-request", "date 必须是 YYYY-M-D");
+	try {
+		recordIntimacyReach(deps.userRoot, pet, stage, date);
+		return okResult({ ok: true });
+	} catch (e) {
+		return failResult("generate-error", e instanceof Error ? e.message : String(e));
+	}
+}
+
+//#endregion
 //#region src/host/routes/state.ts
 async function handleStateRoutes(deps, input) {
 	const { EXTERNAL_WORK_SESSION, ctx, nextExternalWorkSeq, publishWorkStatus, state, workStatus } = deps;
@@ -4538,6 +5275,7 @@ const HANDLERS$1 = [
 	handleMotionRoutes,
 	handlePlaybackRoutes,
 	handlePomodoroRoutes,
+	handleIntimacyRoutes,
 	handleChatRoutes,
 	handleAttachmentRoutes,
 	handleAssetsRoutes
@@ -6734,332 +7472,6 @@ async function generateWith$1(ctx, once) {
 }
 
 //#endregion
-//#region src/host/time-context/constants.ts
-/**
-* 时段划分表：[起始小时, 时段]，按起始小时从晚到早排列——匹配时取第一个不超过当前小时的档。
-* 口径含起始小时（0–23 全覆盖、不重叠）：凌晨 0–4、清晨 5–6、早上 7–8、上午 9–10、中午 11–12、
-* 下午 13–16、傍晚 17–18、晚上 19–22、深夜 23。
-*/
-const SLOTS = [
-	[23, "深夜"],
-	[19, "晚上"],
-	[17, "傍晚"],
-	[13, "下午"],
-	[11, "中午"],
-	[9, "上午"],
-	[7, "早上"],
-	[5, "清晨"],
-	[0, "凌晨"]
-];
-const WEEKDAYS = [
-	"星期日",
-	"星期一",
-	"星期二",
-	"星期三",
-	"星期四",
-	"星期五",
-	"星期六"
-];
-const DAY_MS = 864e5;
-const DEFAULT_AHEAD = 3;
-const DEFAULT_SPAN = 1;
-const DEFAULT_AFTER = 3;
-const SEASON_AHEAD = 3;
-const SEASON_ENDING_AHEAD = 3;
-const SEASON_AFTER = 3;
-function pad2(n) {
-	return String(n).padStart(2, "0");
-}
-function timeSlotOf(hour) {
-	for (const [start, slot] of SLOTS) if (hour >= start) return slot;
-	return "凌晨";
-}
-function dayKindOf(day) {
-	return day === 0 || day === 6 ? "周末" : "工作日";
-}
-
-//#endregion
-//#region src/host/time-context/entries.ts
-/**
-* 顺序 = 优先级（靠前的先说话）。一天只出一个从句，所以同一天被多个节日/假期覆盖时，谁在数组里
-* 靠前就由谁说；想改优先级就挪那几行，不必动逻辑。几条硬约束：只有当天值得说的小节排在邻座之前
-* 并掐掉回味；除夕、元宵必须排在春节之前；寒暑假排在传统节日之后、纪念日之前——假期里的节日仍由
-* 节日说话，7/1 这类与纪念日撞车的日子则由暑假说话。`ahead / span / after` 缺省 3 / 1 / 3。
-*/
-const PRIORITY = [
-	{
-		kind: "solar",
-		key: "2-14",
-		name: "情人节",
-		after: 0
-	},
-	{
-		kind: "solar",
-		key: "12-31",
-		name: "跨年夜",
-		after: 0
-	},
-	{
-		kind: "solar",
-		key: "4-1",
-		name: "愚人节",
-		after: 0
-	},
-	{
-		kind: "solar",
-		key: "5-4",
-		name: "青年节",
-		ahead: 0,
-		after: 0
-	},
-	{
-		kind: "lunarEve",
-		name: "除夕",
-		ahead: 1,
-		after: 0
-	},
-	{
-		kind: "lunar",
-		key: "1-15",
-		name: "元宵节"
-	},
-	{
-		kind: "lunar",
-		key: "1-1",
-		name: "春节",
-		spoken: "大年初一",
-		span: 15
-	},
-	{
-		kind: "lunar",
-		key: "8-15",
-		name: "中秋节",
-		span: 3,
-		after: 2
-	},
-	{
-		kind: "solar",
-		key: "10-1",
-		name: "国庆节",
-		span: 7
-	},
-	{
-		kind: "solar",
-		key: "1-1",
-		name: "元旦",
-		spoken: "新年第一天",
-		span: 3
-	},
-	{
-		kind: "lunar",
-		key: "5-5",
-		name: "端午节",
-		span: 3
-	},
-	{
-		kind: "solar",
-		key: "4-4",
-		name: "清明节",
-		span: 3,
-		ahead: 1
-	},
-	{
-		kind: "solar",
-		key: "5-1",
-		name: "劳动节",
-		span: 3
-	},
-	{
-		kind: "solar",
-		key: "6-1",
-		name: "儿童节"
-	},
-	{
-		kind: "lunar",
-		key: "7-7",
-		name: "七夕"
-	},
-	{
-		kind: "lunar",
-		key: "7-15",
-		name: "中元节"
-	},
-	{
-		kind: "lunar",
-		key: "2-2",
-		name: "龙抬头"
-	},
-	{
-		kind: "lunar",
-		key: "9-9",
-		name: "重阳节"
-	},
-	{
-		kind: "lunar",
-		key: "12-8",
-		name: "腊八节"
-	},
-	{
-		kind: "lunar",
-		key: "12-23",
-		name: "小年"
-	},
-	{
-		kind: "season",
-		from: "1-20",
-		to: "2-18",
-		name: "寒假"
-	},
-	{
-		kind: "season",
-		from: "7-1",
-		to: "8-29",
-		name: "暑假"
-	},
-	{
-		kind: "solar",
-		key: "3-8",
-		name: "妇女节"
-	},
-	{
-		kind: "solar",
-		key: "9-10",
-		name: "教师节"
-	},
-	{
-		kind: "solar",
-		key: "7-1",
-		name: "建党节"
-	},
-	{
-		kind: "solar",
-		key: "8-1",
-		name: "建军节"
-	},
-	{
-		kind: "solar",
-		key: "10-31",
-		name: "万圣夜"
-	},
-	{
-		kind: "solar",
-		key: "12-24",
-		name: "平安夜",
-		after: 0
-	},
-	{
-		kind: "solar",
-		key: "12-25",
-		name: "圣诞节"
-	}
-];
-const SOLAR_INDEX = new Map();
-const LUNAR_INDEX = new Map();
-const SEASON_ENTRIES = [];
-let LUNAR_EVE;
-PRIORITY.forEach((entry, priority) => {
-	if (entry.kind === "solar") SOLAR_INDEX.set(entry.key, {
-		entry,
-		priority
-	});
-	else if (entry.kind === "lunar") LUNAR_INDEX.set(entry.key, {
-		entry,
-		priority
-	});
-	else if (entry.kind === "lunarEve") LUNAR_EVE = {
-		entry,
-		priority
-	};
-	else SEASON_ENTRIES.push({
-		entry,
-		priority,
-		from: entry.from,
-		to: entry.to
-	});
-});
-/** 条目里最长的预热天数与回看距离（长假 15 天 + 回味 3 天），据此决定扫描窗口。 */
-const HOLIDAY_ENTRIES = PRIORITY.filter((e) => e.kind !== "season");
-const MAX_AHEAD = Math.max(...HOLIDAY_ENTRIES.map((e) => e.ahead ?? DEFAULT_AHEAD));
-const MAX_LOOKBACK = Math.max(...HOLIDAY_ENTRIES.map((e) => (e.span ?? DEFAULT_SPAN) - 1 + (e.after ?? DEFAULT_AFTER)));
-
-//#endregion
-//#region src/host/time-context/lunar.ts
-/** ICU 中国农历格式器；null = 已判定本环境不可用（不重试、不抛错）。 */
-let lunarFormatter;
-/**
-* 取 ICU 农历格式器。Intl 在缺少该日历时不会抛错，而是静默退回公历——那会让每个月都被当成农历
-* 同月同日，所以用 resolvedOptions().calendar 确认它真的解析成了 'chinese'，否则一律判不可用。
-*/
-function getLunarFormatter() {
-	if (lunarFormatter === null) return void 0;
-	if (!lunarFormatter) {
-		const fmt = new Intl.DateTimeFormat("en-u-ca-chinese", {
-			month: "numeric",
-			day: "numeric",
-			year: "numeric"
-		});
-		lunarFormatter = fmt.resolvedOptions().calendar === "chinese" ? fmt : null;
-	}
-	return lunarFormatter ?? void 0;
-}
-function dayOfYear(date) {
-	return (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 1)) / DAY_MS;
-}
-function dayOfYearOf(year, monthDay) {
-	const [month, day] = monthDay.split("-").map(Number);
-	return (Date.UTC(year, (month ?? 1) - 1, day ?? 1) - Date.UTC(year, 0, 1)) / DAY_MS;
-}
-/**
-* 公历日期 → 农历月日。
-*
-* 已知精度边界（已评估并接受）：朔时刻贴近 UTC+8 午夜时 ICU 会把农历初一放错一天——2025–2060 的
-* 445 个月起点里错 2 个，都是正月（2027-02-06 距午夜 8 分钟、2030-02-03 距午夜 5 分钟），表现为那
-* 两年春节与元宵各差一天；2027 一例已与香港天文台官方对照表核对。要绝对准确只需换掉本函数实现
-* （换库或加修正表），下游逻辑一行不用动。
-* @returns 农历月/日（闰月 month 为负）；环境不支持农历、取不到月日，或农历年与公历年不吻合
-*   （自洽校验：农历年只可能是当年或前一年，挡住 ICU 退化时把公历当农历返回）→ undefined。
-*/
-function lunarPartsOf(date) {
-	const fmt = getLunarFormatter();
-	if (!fmt) return void 0;
-	const parts = fmt.formatToParts(date);
-	const pick$1 = (type) => parts.find((p) => p.type === type)?.value;
-	const rawMonth = pick$1("month");
-	const rawDay = pick$1("day");
-	const rawYear = pick$1("relatedYear") ?? pick$1("year");
-	if (!rawMonth || !rawDay || !rawYear) return void 0;
-	const month = Number.parseInt(rawMonth, 10);
-	const day = Number.parseInt(rawDay, 10);
-	const year = Number.parseInt(rawYear, 10);
-	if (!Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(year)) return void 0;
-	const gregorianYear = date.getFullYear();
-	if (year !== gregorianYear && year !== gregorianYear - 1) return void 0;
-	return {
-		month: /bis/i.test(rawMonth) ? -month : month,
-		day
-	};
-}
-/** 当天是否是除夕（腊月最后一天：次日为正月初一即成立，廿九/三十都能认）。 */
-function isLunarEve(date) {
-	const today = lunarPartsOf(date);
-	if (!today || today.month !== 12) return false;
-	const next = lunarPartsOf(new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1));
-	return Boolean(next && next.month === 1 && next.day === 1);
-}
-function entriesAt(date) {
-	const out = [];
-	const solar = SOLAR_INDEX.get(date.getMonth() + 1 + "-" + date.getDate());
-	if (solar) out.push(solar);
-	const lunar = lunarPartsOf(date);
-	if (lunar && lunar.month > 0) {
-		const hit = LUNAR_INDEX.get(lunar.month + "-" + lunar.day);
-		if (hit) out.push(hit);
-	}
-	if (LUNAR_EVE && isLunarEve(date)) out.push(LUNAR_EVE);
-	return out;
-}
-
-//#endregion
 //#region src/host/time-context/context.ts
 /**
 * 相位 → 从句措辞。
@@ -7829,172 +8241,6 @@ async function maybeGreeting(deps) {
 		log.info(`[dsh-zdd-pet] 启动吉祥话 pet=${petId}（${greeting.mode}）：「${text}」`);
 	}
 	return true;
-}
-
-//#endregion
-//#region src/host/festival.ts
-const FESTIVAL_ANIMATIONS = {
-	春节: "收红包",
-	除夕: "放烟花",
-	元宵节: "吃汤圆",
-	元旦: "写福字",
-	中秋节: "中秋赏月吃月饼",
-	国庆节: "放烟花",
-	端午节: "吃粽子",
-	清明节: "被落叶淹没",
-	劳动节: "超大伸懒腰",
-	儿童节: "吹气球",
-	七夕: "穿针乞巧",
-	中元节: "萌化小幽灵",
-	龙抬头: "吃年糕",
-	重阳节: "吃重阳糕",
-	腊八节: "吃腊八粥",
-	小年: "吃饺子",
-	情人节: "凭空生花",
-	跨年夜: "放烟花",
-	愚人节: "变鸽子",
-	青年节: "原地冲刺跑",
-	妇女节: "凭空生花",
-	教师节: "女仆屈膝礼仪",
-	建党节: "放烟花",
-	建军节: "舞狮头",
-	万圣夜: "讨糖南瓜灯",
-	平安夜: "装点圣诞树",
-	圣诞节: "装点圣诞树",
-	寒假: "堆雪人",
-	暑假: "吃西瓜"
-};
-const FESTIVAL_TEXTS = {
-	春节: "新春快乐，红包拿来～",
-	除夕: "除夕夜守岁啦，新年快乐！",
-	元宵节: "元宵节快乐，吃汤圆咯～",
-	元旦: "新年第一天，万事顺遂！",
-	中秋节: "中秋快乐，月亮好圆呀～",
-	国庆节: "国庆快乐，好好休息～",
-	端午节: "端午安康，吃粽子啦～",
-	清明节: "清明时节，记得踏青哦～",
-	劳动节: "劳动节快乐，今天也要好好休息～",
-	儿童节: "儿童节快乐，永远是小朋友～",
-	七夕: "七夕快乐，愿你被温柔以待～",
-	中元节: "中元节，早点回家哦～",
-	龙抬头: "龙抬头，鸿运当头！",
-	重阳节: "重阳节，登高赏菊啦～",
-	腊八节: "腊八节，喝碗腊八粥～",
-	小年: "小年到，年味渐浓啦～",
-	情人节: "情人节快乐，甜甜蜜蜜～",
-	跨年夜: "跨年夜快乐，新年见！",
-	愚人节: "愚人节快乐，别被骗啦～",
-	青年节: "青年节快乐，元气满满！",
-	妇女节: "节日快乐，今天你最美～",
-	教师节: "教师节快乐，桃李满天下～",
-	建党节: "节日快乐，铭记初心～",
-	建军节: "建军节快乐，致敬最可爱的人～",
-	万圣夜: "万圣夜快乐，不给糖就捣蛋！",
-	平安夜: "平安夜快乐，记得吃苹果～",
-	圣诞节: "圣诞快乐，礼物收到了吗～",
-	寒假: "放寒假啦，开心玩吧～",
-	暑假: "放暑假啦，吃西瓜咯～"
-};
-function dateKeyOf(date) {
-	return date.getFullYear() + "-" + (date.getMonth() + 1) + "-" + date.getDate();
-}
-function festivalOf(date) {
-	if (Number.isNaN(date.getTime())) return void 0;
-	const hits = entriesAt(date);
-	if (hits.length === 0) return void 0;
-	return hits.reduce((best, cur) => cur.priority < best.priority ? cur : best, hits[0]);
-}
-function animExists(anims, target) {
-	const seen = new Set();
-	const stack = [anims];
-	while (stack.length) {
-		const o = stack.pop();
-		if (!o || seen.has(o)) continue;
-		if (typeof o === "string") {
-			if (o === target) return true;
-			continue;
-		}
-		if (Array.isArray(o)) {
-			for (const x of o) stack.push(x);
-			continue;
-		}
-		if (typeof o === "object") {
-			seen.add(o);
-			for (const v of Object.values(o)) stack.push(v);
-		}
-	}
-	return false;
-}
-function resolveFestival(date, params) {
-	if (!params.enabled) return void 0;
-	const hit = festivalOf(date);
-	if (!hit) return void 0;
-	const name$1 = hit.entry.name;
-	const text = params.texts[name$1] ?? FESTIVAL_TEXTS[name$1] ?? "今天是" + (hit.entry.spoken ?? name$1) + "，祝主人一切顺遂～";
-	const anim = params.animations[name$1] ?? FESTIVAL_ANIMATIONS[name$1];
-	return {
-		name: name$1,
-		text,
-		...anim ? { anim } : {}
-	};
-}
-/** 去重状态文件：记录最近一次演出的日期与节日名。 */
-const STATE_FILE = "festival-state.json";
-function readLast(userRoot) {
-	const file = join(userRoot, STATE_FILE);
-	if (!existsSync(file)) return void 0;
-	try {
-		const raw = JSON.parse(readFileSync(file, "utf8"));
-		return typeof raw.date === "string" && typeof raw.name === "string" ? {
-			date: raw.date,
-			name: raw.name
-		} : void 0;
-	} catch {
-		return void 0;
-	}
-}
-function writeLast(userRoot, value) {
-	try {
-		writeFileSync(join(userRoot, STATE_FILE), JSON.stringify(value, null, 2), "utf8");
-	} catch {}
-}
-function maybeFestival(deps, now = new Date()) {
-	const { configPaths, state, log, memeDirsFor, userRoot } = deps;
-	let cfg;
-	try {
-		cfg = readAllConfig(configPaths);
-	} catch {
-		return 0;
-	}
-	const date = dateKeyOf(now);
-	const hit = festivalOf(now);
-	if (!hit) return 0;
-	const last = readLast(userRoot);
-	if (last && last.date === date && last.name === hit.entry.name) return 0;
-	let delivered = 0;
-	for (const pet of flattenPetList(cfg)) {
-		const petId = String(pet.id ?? "");
-		if (!petId) continue;
-		const found = findPetInstance(cfg, petId);
-		if (!found) continue;
-		const params = readFestivalParams(found.conf.festival);
-		const cue = resolveFestival(now, params);
-		if (!cue) continue;
-		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
-		state.writePet(petId, "say", {
-			text: cue.text,
-			...meme ? { image: meme.name } : {},
-			anim: false
-		});
-		if (cue.anim && animExists(found.conf.animations, cue.anim)) state.writePet(petId, "anim", { name: cue.anim });
-		log.info(`[dsh-zdd-pet] 节日演出 pet=${petId}（${cue.name}）：「${cue.text}」` + (cue.anim ? ` 动画=${cue.anim}` : ""));
-		delivered += 1;
-	}
-	if (delivered > 0) writeLast(userRoot, {
-		date,
-		name: hit.entry.name
-	});
-	return delivered;
 }
 
 //#endregion
@@ -8939,6 +9185,15 @@ function apply(ctx) {
 		} catch {}
 		try {
 			maybeFestival({
+				configPaths,
+				state,
+				log,
+				memeDirsFor,
+				userRoot
+			});
+		} catch {}
+		try {
+			maybeIntimacyAnniversary({
 				configPaths,
 				state,
 				log,

@@ -4,6 +4,8 @@
  * 纯类型与常量，无 React / DOM 依赖。
  * @module dsh-zdd-pet/src/shared/types
  */
+import type { IntimacyParams } from './intimacy.ts';
+import type { IdleEventsParams } from './idle-events.ts';
 
 /** 支持的角落。 */
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -121,11 +123,20 @@ export interface Pet {
   celebrate?: PetCelebrate;
   /** 条目级：心情/亲密度系统。 */
   mood?: MoodParams;
+  /** 条目级：亲密度阶段（在 mood 数值上加成长故事线；复用 MoodParams 的数值）。 */
+  intimacy?: IntimacyParams;
+  /** 条目级：随机小事件（空闲时自己跑出来做件事）。 */
+  idleEvents?: IdleEventsParams;
   /** 全局默认：番茄钟 / 久坐提醒（设置页可开/关并选提醒间隔；文案池不在设置页暴露，手改 config 可自定义） */
   pomodoro?: PomodoroParams;
   /** 全局默认：启动吉祥话（每次 DSH 启动让宠物说一句吉利话） */
   greeting?: GreetingParams;
 }
+
+/** 亲密度阶段（config.jsonc 的 intimacy 段）：形状与校验见 shared/intimacy.ts。 */
+export type { IntimacyParams, IntimacyStage, IntimacyTier } from './intimacy.ts';
+/** 随机小事件（config.jsonc 的 idleEvents 段）：形状与校验见 shared/idle-events.ts。 */
+export type { IdleEvent, IdleEventsParams } from './idle-events.ts';
 
 /** config.jsonc 的 greeting 段：启动吉祥话。
  *  默认值见 shared/greeting.ts 的 DEFAULT_GREETING，与内置 config.jsonc 保持一致。 */

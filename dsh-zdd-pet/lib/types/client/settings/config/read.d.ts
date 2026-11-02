@@ -1,4 +1,6 @@
 import type { FontConfig, GreetingParams, ModelSelection, MoodParams, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import type { IntimacyParams } from '../../../shared/intimacy.ts';
+import type { IdleEventsParams } from '../../../shared/idle-events.ts';
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
 /** 表单要吃的补丁；字段缺省表示「这次响应里没有可信值」。 */
@@ -22,6 +24,10 @@ export interface MainConfigPatch {
     greeting?: GreetingParams;
     /** 心情 / 亲密度（开关 + 五个数值）：同上，用内置默认补满。 */
     mood?: MoodParams;
+    /** 亲密度阶段（开关 + 四阶段）：同上，用内置默认补满。 */
+    intimacy?: IntimacyParams;
+    /** 随机小事件（开关 + 间隔 + 事件池）：同上，用内置默认补满。 */
+    idleEvents?: IdleEventsParams;
     whisperModel?: ModelSelection;
     chatModel?: ModelSelection;
     chatMemoryRounds?: number;

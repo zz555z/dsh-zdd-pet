@@ -9,6 +9,8 @@ import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../shared/fonts.ts';
 import { pomodoroValid } from '../../shared/pomodoro.ts';
 import { greetingValid } from '../../shared/greeting.ts';
 import { moodValid } from '../../shared/mood.ts';
+import { intimacyValid } from '../../shared/intimacy.ts';
+import { idleEventsValid } from '../../shared/idle-events.ts';
 import { festivalValid } from '../../shared/festival.ts';
 import { FONT_FAMILY_SET } from './constants.ts';
 
@@ -170,6 +172,10 @@ export function topFieldValid(key: string, value: unknown): boolean {
       return greetingValid(value);
     case 'mood':
       return moodValid(value);
+    case 'intimacy':
+      return intimacyValid(value);
+    case 'idleEvents':
+      return idleEventsValid(value);
     case 'festival':
       return festivalValid(value);
     case 'whisperModel':

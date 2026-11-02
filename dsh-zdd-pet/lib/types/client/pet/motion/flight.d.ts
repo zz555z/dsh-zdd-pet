@@ -47,6 +47,9 @@ export interface FlightDeps {
     commitFinal(center: Center): void;
     /** 落地挤压：入参是本帧落地前的竖直速度（冲击速度）。 */
     onLanding(impactVy: number): void;
+    /** 撞墙反馈：每次 bounced 帧触发一次，入参是宠物中心视口坐标与撞前速度大小。
+     *  供满格碰撞彩蛋在接触点打粒子；与 onLanding 分工——后者只管空中→落地的挤压。 */
+    onBounce?(x: number, y: number, impactSpeed: number): void;
 }
 /** 飞行驱动：一个宠物一个实例。 */
 export interface Flight {

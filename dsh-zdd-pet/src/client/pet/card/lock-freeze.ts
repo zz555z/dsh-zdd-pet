@@ -31,6 +31,8 @@ export interface LockFreezeInput extends FreezeHandlers {
 export interface LockFreeze {
   /** 本地立即解冻，并清掉解冻定时器；用户接管宠物时调。 */
   release(): void;
+  /** 当前是否冻结（随机小事件等自播行为据此让位）。 */
+  frozen(): boolean;
 }
 
 /** 注入的 react 能力。 */
@@ -74,6 +76,8 @@ export function createLockFreeze(rt: LockFreezeRuntime) {
   return function useLockFreeze(input: LockFreezeInput): LockFreeze {
     /** 解冻定时器；重算与本地解冻前都必须清掉，否则旧定时器会提前解冻。 */
     const timerRef = useRef<number | null>(null);
+    /** 当前是否冻结（自播行为据此让位；与 setFrozen 的视图态同源）。 */
+    const frozenRef = useRef(false);
 
     /** 清掉解冻定时器；重复调用安全。 */
     const clearTimer = () => {
@@ -87,10 +91,12 @@ export function createLockFreeze(rt: LockFreezeRuntime) {
       clearTimer();
       const now = Date.now();
       const expiresAt = freezeDeadline(input.lock, now);
-      dispatchCue(input.setFrozen(expiresAt > now), input);
+      frozenRef.current = expiresAt > now;
+      dispatchCue(input.setFrozen(frozenRef.current), input);
       if (expiresAt <= now) return clearTimer;
       timerRef.current = window.setTimeout(() => {
         timerRef.current = null;
+        frozenRef.current = false;
         dispatchCue(input.setFrozen(false), input);
       }, expiresAt - now);
       return clearTimer;
@@ -101,8 +107,10 @@ export function createLockFreeze(rt: LockFreezeRuntime) {
     return {
       release: () => {
         clearTimer();
+        frozenRef.current = false;
         dispatchCue(input.setFrozen(false), input);
       },
+      frozen: () => frozenRef.current,
     };
   };
 }

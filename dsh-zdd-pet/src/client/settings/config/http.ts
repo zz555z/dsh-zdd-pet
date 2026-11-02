@@ -14,6 +14,8 @@ import type {
   PhysicsParams,
   PomodoroParams,
 } from '../../../shared/types.ts';
+import type { IntimacyParams } from '../../../shared/intimacy.ts';
+import type { IdleEventsParams } from '../../../shared/idle-events.ts';
 import type { ModelCatalogGroup } from '../picker/index.ts';
 import type { MergedConfig } from './read.ts';
 
@@ -49,6 +51,8 @@ export interface SaveFields {
   pomodoro: PomodoroParams;
   greeting: GreetingParams;
   mood: MoodParams;
+  intimacy: IntimacyParams;
+  idleEvents: IdleEventsParams;
 }
 
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
@@ -81,6 +85,8 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     pomodoro: fields.pomodoro,
     greeting: fields.greeting,
     mood: fields.mood,
+    intimacy: fields.intimacy,
+    idleEvents: fields.idleEvents,
   };
 }
 

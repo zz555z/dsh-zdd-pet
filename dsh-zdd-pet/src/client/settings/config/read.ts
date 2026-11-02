@@ -9,6 +9,8 @@ import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
 import { DEFAULT_GREETING } from '../../../shared/greeting.ts';
 import { DEFAULT_MOOD } from '../../../shared/mood.ts';
+import { readIntimacyParams } from '../../../shared/intimacy.ts';
+import { readIdleEventsParams } from '../../../shared/idle-events.ts';
 import type {
   FontConfig,
   GreetingParams,
@@ -18,6 +20,8 @@ import type {
   PhysicsParams,
   PomodoroParams,
 } from '../../../shared/types.ts';
+import type { IntimacyParams } from '../../../shared/intimacy.ts';
+import type { IdleEventsParams } from '../../../shared/idle-events.ts';
 
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
@@ -43,6 +47,10 @@ export interface MainConfigPatch {
   greeting?: GreetingParams;
   /** 心情 / 亲密度（开关 + 五个数值）：同上，用内置默认补满。 */
   mood?: MoodParams;
+  /** 亲密度阶段（开关 + 四阶段）：同上，用内置默认补满。 */
+  intimacy?: IntimacyParams;
+  /** 随机小事件（开关 + 间隔 + 事件池）：同上，用内置默认补满。 */
+  idleEvents?: IdleEventsParams;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
   chatMemoryRounds?: number;
@@ -96,6 +104,12 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   }
   if (main.mood && typeof main.mood === 'object') {
     patch.mood = { ...DEFAULT_MOOD, ...(main.mood as MoodParams) };
+  }
+  if (main.intimacy !== undefined) {
+    patch.intimacy = readIntimacyParams(main.intimacy);
+  }
+  if (main.idleEvents !== undefined) {
+    patch.idleEvents = readIdleEventsParams(main.idleEvents);
   }
   const whisperModel = readModel(main.whisperModel);
   if (whisperModel) patch.whisperModel = whisperModel;

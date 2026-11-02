@@ -45,6 +45,8 @@ export interface CardRestInput {
 export interface CardRest {
     /** 记一次活动：刷新空闲计时；若在瞌睡则播醒来动画。 */
     poke: () => void;
+    /** 当前是否在打瞌睡（随机小事件等自播行为据此让位）。 */
+    isSleeping: () => boolean;
 }
 /**
  * 造作息驱动。

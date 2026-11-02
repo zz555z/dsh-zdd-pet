@@ -18,6 +18,7 @@ import { handleMenuRoutes } from './menu.ts';
 import { handleMotionRoutes } from './motion.ts';
 import { handlePlaybackRoutes } from './playback.ts';
 import { handlePomodoroRoutes } from './pomodoro.ts';
+import { handleIntimacyRoutes } from './intimacy.ts';
 import { handleStateRoutes } from './state.ts';
 import type { PetRouteDeps, RouteHandler } from './types.ts';
 
@@ -32,6 +33,7 @@ const HANDLERS: readonly RouteHandler[] = [
   handleMotionRoutes,
   handlePlaybackRoutes,
   handlePomodoroRoutes,
+  handleIntimacyRoutes,
   handleChatRoutes,
   handleAttachmentRoutes,
   handleAssetsRoutes,

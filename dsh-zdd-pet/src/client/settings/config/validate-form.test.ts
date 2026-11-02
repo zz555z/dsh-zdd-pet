@@ -15,6 +15,8 @@ import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_POMODORO } from '../../../shared/pomodoro.ts';
 import { DEFAULT_GREETING } from '../../../shared/greeting.ts';
 import { DEFAULT_MOOD } from '../../../shared/mood.ts';
+import { DEFAULT_INTIMACY } from '../../../shared/intimacy.ts';
+import { DEFAULT_IDLE_EVENTS } from '../../../shared/idle-events.ts';
 import type { Pet } from '../../../shared/types.ts';
 
 const pet = (extra: Record<string, unknown> = {}): Pet =>
@@ -38,6 +40,8 @@ const valid = (overrides: Partial<FormValues> = {}): FormValues => ({
   pomodoro: { ...DEFAULT_POMODORO },
   greeting: { ...DEFAULT_GREETING },
   mood: { ...DEFAULT_MOOD, texts: { ...DEFAULT_MOOD.texts } },
+  intimacy: { ...DEFAULT_INTIMACY, stages: { ...DEFAULT_INTIMACY.stages } },
+  idleEvents: { ...DEFAULT_IDLE_EVENTS, events: DEFAULT_IDLE_EVENTS.events.map((e) => ({ ...e })) },
   ...overrides,
 });
 

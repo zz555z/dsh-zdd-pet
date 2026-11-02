@@ -180,10 +180,15 @@ PetSprite.prototype.clearWhisper = function clearWhisper() {
 // ---- 点击台词 ----
 /** 点击台词：从条目级 clickTexts 随机说一句（只弹气泡、不额外换动画；点击动画由 onClick 播）。 */
 PetSprite.prototype.sayClickText = function sayClickText() {
-  // 优先按心情档位选台词池（mood.texts[档位]）；该档为空则回退 clickTexts。
+  // 台词优先级：亲密度阶段专属台词 → 心情档位台词（mood.texts[档位]）→ clickTexts。
   let arr = [];
+  const ip = this.intimacyParams ? this.intimacyParams() : null;
+  if (ip && ip.enabled) {
+    const pool = S.intimacyStageOf(ip, this.intimacyTier()).texts;
+    if (Array.isArray(pool) && pool.length) arr = pool;
+  }
   const p = this.moodParams ? this.moodParams() : null;
-  if (p && p.enabled) {
+  if (arr.length === 0 && p && p.enabled) {
     const pool = p.texts[this.moodTier()];
     if (Array.isArray(pool) && pool.length) arr = pool;
   }
@@ -564,4 +569,12 @@ function startLoops() {
     },
     5 * 60 * 1000,
   );
+
+  // 随机小事件：每 5s 检查一次各宠物是否到点该自己做个动作（伸懒腰/张望/打哈欠…）。
+  // 真正触发时刻由每个 sprite 的 _idleNextAt 决定（随机间隔），这里只做轮询。
+  setInterval(() => {
+    for (const s of sprites) {
+      if (s && s.checkIdleEvent) s.checkIdleEvent();
+    }
+  }, 5000);
 }
