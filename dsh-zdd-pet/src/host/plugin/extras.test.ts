@@ -8,10 +8,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { createExtras } from './extras.ts';
-import { CONFIRM_HOLD_MS } from '../confirm.ts';
+import { CONFIRM_HOLD_MS, COMPLETE_AUTO_CLEAR_MS } from '../confirm.ts';
 import { PollStateStore } from '../state.ts';
 
-function setup(workStatusEnabled: boolean, bubbleImageEnabled = true) {
+function setup(workStatusEnabled: boolean, bubbleImageEnabled = true, completion?: { enabled?: boolean }) {
   const root = mkdtempSync(join(tmpdir(), 'confirm-'));
   const memesDir = join(root, 'memes');
   mkdirSync(memesDir);
@@ -24,6 +24,7 @@ function setup(workStatusEnabled: boolean, bubbleImageEnabled = true) {
     JSON.stringify({
       bubbleImageEnabled,
       memes,
+      ...(completion ? { completion } : {}),
       pets: [
         {
           id: 'main',
@@ -77,5 +78,42 @@ describe('deliverConfirm / clearConfirm', () => {
     const { extras, say } = setup(true, false);
     assert.equal(extras.deliverConfirm('question', '选哪个？'), 1);
     assert.deepEqual(say(), { text: '选哪个？', hold: true, duration: CONFIRM_HOLD_MS });
+  });
+});
+
+describe('deliverComplete —— 投递与开关', () => {
+  test('给启用了工作状态联动的宠物投一条 holdKind=complete 的常驻气泡', () => {
+    const { extras, say } = setup(true, false);
+    assert.equal(
+      extras.deliverComplete('done', '搞定啦', () => 0),
+      1,
+    );
+    const d = say() as { text?: string; hold?: boolean; holdKind?: string } | undefined;
+    assert.equal(d?.text, '搞定啦');
+    assert.equal(d?.hold, true);
+    assert.equal(d?.holdKind, 'complete');
+  });
+
+  test('未启用工作状态联动 → 不投', () => {
+    const { extras } = setup(false, false);
+    assert.equal(extras.deliverComplete('done', '搞定啦'), 0);
+  });
+});
+
+describe('deliverComplete —— 配置开关', () => {
+  test('条目关闭 completion → 不投', () => {
+    const { extras } = setup(true, false, { enabled: false });
+    assert.equal(extras.deliverComplete('done', '搞定啦'), 0);
+  });
+});
+
+describe('deliverComplete —— 宿主侧自动清除', () => {
+  test('投递后到 COMPLETE_AUTO_CLEAR_MS 自动写 clear', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { extras, say } = setup(true, false);
+    assert.equal(extras.deliverComplete('done', '搞定啦'), 1);
+    assert.equal((say() as { holdKind?: string } | undefined)?.holdKind, 'complete');
+    t.mock.timers.tick(COMPLETE_AUTO_CLEAR_MS);
+    assert.deepEqual(say(), { clear: true });
   });
 });

@@ -73,6 +73,8 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
       mood: fields.mood,
       intimacy: fields.intimacy,
       idleEvents: fields.idleEvents,
+      proactive: fields.proactive,
+      completion: fields.completion,
     });
     if (invalid !== null) {
       setMsg({ kind: 'err', text: t(invalid) });

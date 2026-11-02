@@ -2861,6 +2861,96 @@ function idleEventsValid(value) {
 }
 
 //#endregion
+//#region src/shared/proactive.ts
+const DEFAULT_PROACTIVE = {
+	enabled: true,
+	cooldownHours: 6,
+	idleHours: 8,
+	lateNightFrom: 23,
+	lateNightTo: 5,
+	longMemory: true
+};
+/** 小时数合法上限（天）。 */
+const HOUR_MAX = 24 * 30;
+function readProactiveParams(raw) {
+	const d = DEFAULT_PROACTIVE;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...d };
+	const o = raw;
+	const num = (v, fb, min, max) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= min && n <= max ? n : fb;
+	};
+	const hour = (v, fb) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= 0 && n <= 23 ? Math.floor(n) : fb;
+	};
+	return {
+		enabled: o.enabled !== false,
+		cooldownHours: num(o.cooldownHours, d.cooldownHours, 1, HOUR_MAX),
+		idleHours: num(o.idleHours, d.idleHours, 1, HOUR_MAX),
+		lateNightFrom: hour(o.lateNightFrom, d.lateNightFrom),
+		lateNightTo: hour(o.lateNightTo, d.lateNightTo),
+		longMemory: o.longMemory !== false
+	};
+}
+function proactiveValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.longMemory !== void 0 && typeof o.longMemory !== "boolean") return false;
+	for (const key of ["cooldownHours", "idleHours"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isFinite(n) || n < 1 || n > HOUR_MAX) return false;
+	}
+	for (const key of ["lateNightFrom", "lateNightTo"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isInteger(n) || n < 0 || n > 23) return false;
+	}
+	return true;
+}
+function isLateNight(hour, from, to) {
+	if (!Number.isFinite(hour)) return false;
+	const h = (Math.floor(hour) % 24 + 24) % 24;
+	if (from <= to) return h >= from && h < to;
+	return h >= from || h < to;
+}
+function decideCare(input) {
+	const p = input.params;
+	if (!p.enabled) return null;
+	const cdMs = p.cooldownHours * 36e5;
+	if (input.lastCareAt > 0 && input.now - input.lastCareAt < cdMs) return null;
+	if (input.justFinishedFocus) return "after-focus";
+	if (isLateNight(input.hour, p.lateNightFrom, p.lateNightTo) && input.recentlyActive) return "late-night";
+	if (input.lastInteractionAt > 0 && input.now - input.lastInteractionAt >= p.idleHours * 36e5) return "idle";
+	return null;
+}
+const MEMORY_FACT_MAX = 40;
+
+//#endregion
+//#region src/shared/completion.ts
+const DEFAULT_COMPLETION = {
+	enabled: true,
+	holdUntilFocus: true
+};
+function readCompletionParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_COMPLETION };
+	const o = raw;
+	return {
+		enabled: o.enabled !== false,
+		holdUntilFocus: o.holdUntilFocus !== false
+	};
+}
+function completionValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.holdUntilFocus !== void 0 && typeof o.holdUntilFocus !== "boolean") return false;
+	return true;
+}
+
+//#endregion
 //#region src/shared/state.ts
 /** 叶子规范化：形状不对（非对象或 counter 非数字）→ null，不让脏数据进渲染层。 */
 function normLeaf(value) {
@@ -2991,7 +3081,9 @@ function readSay(leaf$1) {
 		url: typeof d.url === "string" ? d.url : void 0,
 		duration: typeof d.duration === "number" && Number.isFinite(d.duration) && d.duration >= 0 ? d.duration : void 0,
 		anim: typeof d.anim === "boolean" ? d.anim : void 0,
-		hold: typeof d.hold === "boolean" ? d.hold : void 0
+		hold: typeof d.hold === "boolean" ? d.hold : void 0,
+		holdKind: d.holdKind === "complete" || d.holdKind === "confirm" ? d.holdKind : void 0,
+		dismissOnHover: typeof d.dismissOnHover === "boolean" ? d.dismissOnHover : void 0
 	};
 }
 function readWorkStatus(leaf$1) {
@@ -3133,11 +3225,13 @@ exports.CUSTOM_LIMITS = CUSTOM_LIMITS
 exports.CUSTOM_STYLE_KEYS = CUSTOM_STYLE_KEYS
 exports.CUSTOM_TAGS = CUSTOM_TAGS
 exports.DEAD_ZONE_SPEED = DEAD_ZONE_SPEED
+exports.DEFAULT_COMPLETION = DEFAULT_COMPLETION
 exports.DEFAULT_FONT = DEFAULT_FONT
 exports.DEFAULT_IDLE_EVENTS = DEFAULT_IDLE_EVENTS
 exports.DEFAULT_INTIMACY = DEFAULT_INTIMACY
 exports.DEFAULT_MOOD = DEFAULT_MOOD
 exports.DEFAULT_PHYSICS = DEFAULT_PHYSICS
+exports.DEFAULT_PROACTIVE = DEFAULT_PROACTIVE
 exports.DEFAULT_ROLLING_LABEL = DEFAULT_ROLLING_LABEL
 exports.DEFAULT_THROW_POWER = DEFAULT_THROW_POWER
 exports.DRAG_THRESHOLD = DRAG_THRESHOLD
@@ -3160,6 +3254,7 @@ exports.MAX_THROW_SPEED = MAX_THROW_SPEED
 exports.MEME_BUBBLE_CLASS = MEME_BUBBLE_CLASS
 exports.MEME_BUBBLE_CSS = MEME_BUBBLE_CSS
 exports.MEME_IMG_CLASS = MEME_IMG_CLASS
+exports.MEMORY_FACT_MAX = MEMORY_FACT_MAX
 exports.MENU_CSS = MENU_CSS
 exports.MIN_SPAN_MS = MIN_SPAN_MS
 exports.MOOD_MAX = MOOD_MAX
@@ -3224,12 +3319,14 @@ exports.clampPointInRect = clampPointInRect
 exports.clampPointToRegion = clampPointToRegion
 exports.clickScore = clickScore
 exports.collidePet = collidePet
+exports.completionValid = completionValid
 exports.createMemeImage = createMemeImage
 exports.createMemeImageFromUrl = createMemeImageFromUrl
 exports.customClickable = customClickable
 exports.customViews = customViews
 exports.decayMood = decayMood
 exports.decideBalanceNotice = decideBalanceNotice
+exports.decideCare = decideCare
 exports.displayMenuBranch = displayMenuBranch
 exports.distToRectSq = distToRectSq
 exports.dragHasFiles = dragHasFiles
@@ -3253,6 +3350,7 @@ exports.isChatHotkey = isChatHotkey
 exports.isDesktopVisible = isDesktopVisible
 exports.isEventAnim = isEventAnim
 exports.isImageFile = isImageFile
+exports.isLateNight = isLateNight
 exports.isNoMirrorAnimation = isNoMirrorAnimation
 exports.isPromotion = isPromotion
 exports.isTypingTarget = isTypingTarget
@@ -3278,6 +3376,7 @@ exports.pointInRect = pointInRect
 exports.pomodoroMenuBranch = pomodoroMenuBranch
 exports.poolIncludes = poolIncludes
 exports.postAction = postAction
+exports.proactiveValid = proactiveValid
 exports.progressBar = progressBar
 exports.progressText = progressText
 exports.pullAngle = pullAngle
@@ -3286,12 +3385,14 @@ exports.randomBetween = randomBetween
 exports.randomIdleGapMs = randomIdleGapMs
 exports.readAnim = readAnim
 exports.readBalance = readBalance
+exports.readCompletionParams = readCompletionParams
 exports.readIdleEventsParams = readIdleEventsParams
 exports.readIntimacyParams = readIntimacyParams
 exports.readLock = readLock
 exports.readMenuItems = readMenuItems
 exports.readMoodParams = readMoodParams
 exports.readPosition = readPosition
+exports.readProactiveParams = readProactiveParams
 exports.readSay = readSay
 exports.readThrow = readThrow
 exports.readWorkStatus = readWorkStatus

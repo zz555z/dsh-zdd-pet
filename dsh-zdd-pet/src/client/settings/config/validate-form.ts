@@ -10,6 +10,8 @@ import { GREETING_POOL_MAX, GREETING_POOL_MIN } from '../../../shared/greeting.t
 import { moodValid } from '../../../shared/mood.ts';
 import { intimacyValid } from '../../../shared/intimacy.ts';
 import { idleEventsValid } from '../../../shared/idle-events.ts';
+import { proactiveValid } from '../../../shared/proactive.ts';
+import { completionValid } from '../../../shared/completion.ts';
 import type {
   FontConfig,
   GreetingParams,
@@ -21,6 +23,8 @@ import type {
 } from '../../../shared/types.ts';
 import type { IntimacyParams } from '../../../shared/intimacy.ts';
 import type { IdleEventsParams } from '../../../shared/idle-events.ts';
+import type { ProactiveParams } from '../../../shared/proactive.ts';
+import type { CompletionParams } from '../../../shared/completion.ts';
 
 /** 校验失败时返回的文案键。 */
 export type InvalidKey =
@@ -34,7 +38,9 @@ export type InvalidKey =
   | 'invalidGreeting'
   | 'invalidMood'
   | 'invalidIntimacy'
-  | 'invalidIdleEvents';
+  | 'invalidIdleEvents'
+  | 'invalidProactive'
+  | 'invalidCompletion';
 
 /** 保存前要校验的全部表单值。 */
 export interface FormValues {
@@ -50,6 +56,8 @@ export interface FormValues {
   mood: MoodParams;
   intimacy: IntimacyParams;
   idleEvents: IdleEventsParams;
+  proactive: ProactiveParams;
+  completion: CompletionParams;
 }
 
 /** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
@@ -113,5 +121,9 @@ export function validateForm(values: FormValues): InvalidKey | null {
   // 亲密度阶段 / 随机小事件：与宿主 intimacyValid / idleEventsValid 同一份规则。
   if (!intimacyValid(values.intimacy)) return 'invalidIntimacy';
   if (!idleEventsValid(values.idleEvents)) return 'invalidIdleEvents';
+  // 主动关心 + 长期记忆：与宿主 proactiveValid 同一份规则。
+  if (!proactiveValid(values.proactive)) return 'invalidProactive';
+  // 任务完成常驻提示：与宿主 completionValid 同一份规则。
+  if (!completionValid(values.completion)) return 'invalidCompletion';
   return null;
 }

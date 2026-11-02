@@ -81,6 +81,11 @@ export type SayCue = {
     duration?: number;
     anim?: boolean;
     hold?: boolean;
+    /** hold 的类别：confirm = 等待用户确认（一直挂到用户处理）；complete = 任务完成提示
+     *  （鼠标移入/点击收起，或宿主导时兜底）。缺省按 confirm 处理。 */
+    holdKind?: 'confirm' | 'complete';
+    /** complete 气泡是否「鼠标移入即收起」。缺省 true；false = 不自动收（一直挂着直到被覆盖）。 */
+    dismissOnHover?: boolean;
 } | {
     kind: 'clear';
 };

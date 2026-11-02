@@ -19,9 +19,10 @@ import {
   reduceNotifyFrame,
   sessionIdOf,
   shouldNotifySession,
+  turnEndNotifyKind,
   withSessionId,
 } from '../notify-events.ts';
-import { confirmText } from '../confirm.ts';
+import { completeText, confirmText } from '../confirm.ts';
 import type { SessionNotify, ToolCallKey, ToolCallLedger } from './session-notify.ts';
 import type { Extras } from './extras.ts';
 import type { WorkStatusBridge } from './work-status-bridge.ts';
@@ -32,7 +33,7 @@ import type { HostContext } from './context.ts';
 export type SessionWatchInput = {
   /** 宿主上下文（apply 收到的那一个）。 */
   ctx: HostContext;
-} & Pick<Extras, 'deliverEasterEgg' | 'deliverConfirm' | 'clearConfirm'> &
+} & Pick<Extras, 'deliverEasterEgg' | 'deliverConfirm' | 'clearConfirm' | 'deliverComplete'> &
   Pick<SessionNotify, 'cancelTerminalCleanup'> &
   Pick<SessionNotify, 'lastTodoText'> &
   Pick<SessionNotify, 'notifyActivityTimers'> &
@@ -150,6 +151,7 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
     ctx,
     cancelTerminalCleanup,
     clearConfirm,
+    deliverComplete,
     deliverConfirm,
     deliverEasterEgg,
     lastTodoText,
@@ -333,10 +335,22 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
         // 这一轮结束 ≠ 团队收工，成员还在跑时弹「对话完成」是误报。生成失败/输出截断、权限申请、
         // 用户选择不过这道门，直接放行（理由见 notify-events.ts 的 isCompletionTurnEnd）。
         if (isCompletionTurnEnd(event)) {
+          // 任务完成：给启用了工作状态联动的桌宠挂一条常驻完成气泡（切回界面后由客户端收起）。
+          deliverComplete('done', completeText('done'));
           scheduleCompletionNotify(sessionIdOf(session), event);
           return;
         }
         const frame = reduceNotifyFrame(event as Parameters<typeof reduceNotifyFrame>[0]);
+        // 出错 / 截断：同样挂一条常驻「完成气泡」（切回界面收起），文案带原因。
+        const errKind = turnEndNotifyKind(
+          (event as { type?: string; data?: { reason?: { kind?: string } } })?.type === 'turn/end'
+            ? (event as { data?: { reason?: { kind?: string } } }).data?.reason?.kind
+            : undefined,
+        );
+        if (errKind === 'error' || errKind === 'max-tokens') {
+          const msg = (event as { data?: { reason?: { error?: { message?: string } } } }).data?.reason?.error?.message;
+          deliverComplete('error', completeText('error', errKind === 'max-tokens' ? '输出被截断了' : msg));
+        }
         // 帧带上「这条通知是哪条会话发出的」：点击时网页据此跳到那条会话（见 withSessionId）
         if (frame) pushNotifyFrame(withSessionId(frame, sessionIdOf(session)));
       },

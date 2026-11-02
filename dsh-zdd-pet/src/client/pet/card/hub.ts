@@ -23,6 +23,7 @@ export type Speak = (
   duration?: number,
   anim?: boolean,
   hold?: boolean,
+  holdKind?: 'confirm' | 'complete',
 ) => void;
 
 /** 卡片运行时：跨关注点共享的那一份。 */

@@ -9,6 +9,8 @@
 export declare const BUBBLE_DURATION_MS: number;
 /** 工作状态（非终态）气泡单次展示时长（ms）：到时自动收起，新一轮/任务详情变化再点亮。 */
 export declare const WORK_BUBBLE_MS: number;
+/** 任务完成气泡（holdKind=complete）的自动收起时长：统一由宿主侧定时清除（见 host/confirm.ts 的
+ *  COMPLETE_AUTO_CLEAR_MS），两端不再各自计时，故此处不再定义常量。 */
 /** 说话气泡按时长展示时用的下界（ms）。 */
 export declare const SAY_BUBBLE_MIN_MS: number;
 /** 说话气泡按时长展示时用的上界（ms）：长回复也不无限停留。 */

@@ -22,6 +22,7 @@ import { createCardAnimation } from './animation.ts';
 import { createCardDrag } from './drag.ts';
 import { createCardMood, MOOD_EXCITE_ANIM, MOOD_EXCITE_SAFETY_MS } from './mood.ts';
 import { intimacyStageOf, readIntimacyParams } from '../../../shared/intimacy.ts';
+import { readCompletionParams } from '../../../shared/completion.ts';
 import type { IntimacyTier } from '../../../shared/intimacy.ts';
 import { createCardRest } from './rest.ts';
 import { createCardIdleEvents } from './idle-events.ts';
@@ -159,6 +160,28 @@ export function createCardRuntime(rt: PetRuntime) {
       workHasTask: hasTask(workStatus),
       workProgress: progressText(workStatus),
     });
+
+    // 「任务完成」常驻气泡：用户切回界面（页面重新可见/聚焦）时自动收起。
+    // 只收 complete 类——等待确认的 confirm 气泡必须留到用户真正处理，不能被聚焦顺手清掉。
+    // 通过 /bubble/clear 写回宿主，多端同步（不只收这一端）。
+    useEffect(() => {
+      if (typeof document === 'undefined') return;
+      const onActive = (): void => {
+        if (document.hidden) return; // 只是切换了隐藏，不算回到界面
+        if (bubbles.heldKind() !== 'complete') return;
+        // 配置了「不自动收起」就留着（一直挂到被下一次说话/手动清覆盖）。
+        if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
+        void postAction(ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id));
+      };
+      document.addEventListener('visibilitychange', onActive);
+      window.addEventListener('focus', onActive);
+      return () => {
+        document.removeEventListener('visibilitychange', onActive);
+        window.removeEventListener('focus', onActive);
+      };
+      // bubbles/cfg.id 稳定；heldKind 现取。
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const ownAnim = useCardAnimation({
       card,
@@ -299,6 +322,12 @@ export function createCardRuntime(rt: PetRuntime) {
       },
       onActivity: () => {
         markActivity();
+        // 任务完成气泡：点一下宠物就收起它（不再播点击台词），并同步宿主。
+        if (bubbles.heldKind() === 'complete') {
+          bubbles.clearWhisper();
+          void postAction(ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id));
+          return true;
+        }
         const touched = mood.touch();
         if (touched.hitMax) return triggerMoodExcite();
         if (touched.promoted && touched.promotedTo) triggerIntimacyPromote(touched.promotedTo);
@@ -334,6 +363,13 @@ export function createCardRuntime(rt: PetRuntime) {
       live: liveRef,
       menuItemsRef,
       motion,
+      onHoverEnter: () => {
+        // 鼠标移入宠物就收起任务完成气泡（与桌面端一致）；配置关掉自动收时不动。
+        if (bubbles.heldKind() !== 'complete') return;
+        if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
+        bubbles.clearWhisper();
+        void postAction(ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id));
+      },
       runMenuAction: (leaf, playbackId, keepFacing) => menuActionsRef.current?.run(leaf, playbackId, keepFacing),
       stage: () => stageRef.current,
       tipRef,

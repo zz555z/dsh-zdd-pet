@@ -154,6 +154,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
       duration?: number,
       anim?: boolean,
       hold?: boolean,
+      holdKind?: 'confirm' | 'complete',
     ): void => {
       const card = hub.card;
       let name: string | null = null;
@@ -173,7 +174,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
         card.actions.setOnce(true);
         card.actions.setAnim(name);
       }
-      hub.bubbles.showWhisper(text, { image, url }, duration, hold);
+      hub.bubbles.showWhisper(text, { image, url }, duration, hold, holdKind);
     };
 
     return { applyEndedCue, pickNext, resumeWorkStatusAnim, speak };

@@ -141,8 +141,17 @@ export interface BubbleSlots {
   /** 点余额气泡翻页，并重置停留计时。 */
   cycleBalance(): void;
   /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。
-   *  hold = true 表示常驻（等待用户确认），不吃 duration，且期间普通气泡一律不覆盖它。 */
-  showWhisper(text: string, parts: { image?: string; url?: string }, duration?: number, hold?: boolean): void;
+   *  hold = true 表示常驻，不吃 duration，且期间普通气泡一律不覆盖它。
+   *  holdKind 标明常驻类别（confirm 等待确认 / complete 任务完成），供「切回界面自动收起完成提示」判别。 */
+  showWhisper(
+    text: string,
+    parts: { image?: string; url?: string },
+    duration?: number,
+    hold?: boolean,
+    holdKind?: 'confirm' | 'complete',
+  ): void;
+  /** 当前常驻气泡的类别（没有常驻气泡时为 null）。 */
+  heldKind(): 'confirm' | 'complete' | null;
   /** 收起说话气泡；不碰动画与另两种气泡。 */
   clearWhisper(): void;
   /** 更新工作气泡文本，显隐不动。 */
@@ -183,6 +192,8 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     const whisperTimerRef = useRef<number | null>(null);
     // 常驻状态用 ref 判「要不要拒绝普通气泡」：同一拍里连续两次 showWhisper 时 state 还没刷新。
     const whisperHoldRef = useRef(false);
+    // 常驻类别（confirm / complete）：切回界面只自动收 complete，不动 confirm。
+    const whisperHoldKindRef = useRef<'confirm' | 'complete' | null>(null);
     // 工作状态气泡：显隐与文本。
     const [workOn, setWorkOn] = useState(false);
     const [workText, setWorkText] = useState<string | null>(null);
@@ -217,7 +228,13 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       armBalanceTimeout();
     };
 
-    const showWhisper = (text: string, parts: { image?: string; url?: string }, duration?: number, hold = false) => {
+    const showWhisper = (
+      text: string,
+      parts: { image?: string; url?: string },
+      duration?: number,
+      hold = false,
+      holdKind?: 'confirm' | 'complete',
+    ) => {
       if (duration === 0) return; // 只联动动画、不改气泡时走这里。
       // 等待用户确认的常驻气泡期间，普通气泡（点击台词 / 碎碎念 / 对话回复）一律不覆盖它。
       if (whisperHoldRef.current && !hold) return;
@@ -226,9 +243,11 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       setWhisperUrl(parts.url);
       setWhisperHold(hold);
       whisperHoldRef.current = hold;
+      whisperHoldKindRef.current = hold ? (holdKind ?? 'confirm') : null;
       setWhisperOn(true);
       if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
-      // hold = 常驻：不吃 duration，直到宿主写 clear；普通气泡按原时长收起。
+      // hold 的两种都由宿主侧清除：confirm = 用户处理完写 clear；complete = hover/点击即收 + 宿主按
+      // 配置定时兜底清。网页端不本地计时（本地 setTimeout 既与宿主重复，又不尊重 holdUntilFocus）。
       whisperTimerRef.current = hold
         ? null
         : window.setTimeout(() => setWhisperOn(false), duration ?? BUBBLE_DURATION_MS);
@@ -238,6 +257,7 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
       whisperTimerRef.current = null;
       whisperHoldRef.current = false;
+      whisperHoldKindRef.current = null;
       setWhisperHold(false);
       setWhisperOn(false);
       setWhisperText(null);
@@ -305,6 +325,7 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     return {
       clearWhisper,
       cycleBalance,
+      heldKind: () => whisperHoldKindRef.current,
       hideWork,
       lightWork,
       node,

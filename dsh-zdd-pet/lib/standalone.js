@@ -247,6 +247,8 @@ const GLOBAL_DEFAULT_KEYS = [
 	"mood",
 	"intimacy",
 	"idleEvents",
+	"proactive",
+	"completion",
 	"festival"
 ];
 /** 已告警过的 文件:字段（进程内去重：同一问题只告警一次，避免每请求刷屏；重启重置） */
@@ -516,6 +518,96 @@ function idleEventsValid(value) {
 }
 
 //#endregion
+//#region src/shared/proactive.ts
+const DEFAULT_PROACTIVE = {
+	enabled: true,
+	cooldownHours: 6,
+	idleHours: 8,
+	lateNightFrom: 23,
+	lateNightTo: 5,
+	longMemory: true
+};
+/** 小时数合法上限（天）。 */
+const HOUR_MAX = 24 * 30;
+function readProactiveParams(raw) {
+	const d = DEFAULT_PROACTIVE;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...d };
+	const o = raw;
+	const num$1 = (v, fb, min, max) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= min && n <= max ? n : fb;
+	};
+	const hour = (v, fb) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= 0 && n <= 23 ? Math.floor(n) : fb;
+	};
+	return {
+		enabled: o.enabled !== false,
+		cooldownHours: num$1(o.cooldownHours, d.cooldownHours, 1, HOUR_MAX),
+		idleHours: num$1(o.idleHours, d.idleHours, 1, HOUR_MAX),
+		lateNightFrom: hour(o.lateNightFrom, d.lateNightFrom),
+		lateNightTo: hour(o.lateNightTo, d.lateNightTo),
+		longMemory: o.longMemory !== false
+	};
+}
+function proactiveValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.longMemory !== void 0 && typeof o.longMemory !== "boolean") return false;
+	for (const key of ["cooldownHours", "idleHours"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isFinite(n) || n < 1 || n > HOUR_MAX) return false;
+	}
+	for (const key of ["lateNightFrom", "lateNightTo"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isInteger(n) || n < 0 || n > 23) return false;
+	}
+	return true;
+}
+function isLateNight(hour, from, to) {
+	if (!Number.isFinite(hour)) return false;
+	const h = (Math.floor(hour) % 24 + 24) % 24;
+	if (from <= to) return h >= from && h < to;
+	return h >= from || h < to;
+}
+function decideCare(input) {
+	const p = input.params;
+	if (!p.enabled) return null;
+	const cdMs = p.cooldownHours * 36e5;
+	if (input.lastCareAt > 0 && input.now - input.lastCareAt < cdMs) return null;
+	if (input.justFinishedFocus) return "after-focus";
+	if (isLateNight(input.hour, p.lateNightFrom, p.lateNightTo) && input.recentlyActive) return "late-night";
+	if (input.lastInteractionAt > 0 && input.now - input.lastInteractionAt >= p.idleHours * 36e5) return "idle";
+	return null;
+}
+const MEMORY_FACT_MAX = 40;
+
+//#endregion
+//#region src/shared/completion.ts
+const DEFAULT_COMPLETION = {
+	enabled: true,
+	holdUntilFocus: true
+};
+function readCompletionParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_COMPLETION };
+	const o = raw;
+	return {
+		enabled: o.enabled !== false,
+		holdUntilFocus: o.holdUntilFocus !== false
+	};
+}
+function completionValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.holdUntilFocus !== void 0 && typeof o.holdUntilFocus !== "boolean") return false;
+	return true;
+}
+
+//#endregion
 //#region src/shared/festival.ts
 const DEFAULT_FESTIVAL = {
 	enabled: true,
@@ -658,6 +750,8 @@ function topFieldValid(key, value) {
 		case "mood": return moodValid(value);
 		case "intimacy": return intimacyValid(value);
 		case "idleEvents": return idleEventsValid(value);
+		case "proactive": return proactiveValid(value);
+		case "completion": return completionValid(value);
 		case "festival": return festivalValid(value);
 		case "whisperModel":
 		case "chatModel": return modelSelectionValid(value);
@@ -948,6 +1042,10 @@ function saveUserConfig(raw, existing) {
 	if (it !== void 0 && !intimacyValid(it)) return null;
 	const ie = o.idleEvents;
 	if (ie !== void 0 && !idleEventsValid(ie)) return null;
+	const pv2 = o.proactive;
+	if (pv2 !== void 0 && !proactiveValid(pv2)) return null;
+	const co2 = o.completion;
+	if (co2 !== void 0 && !completionValid(co2)) return null;
 	const wm = o.whisperModel;
 	if (wm !== void 0 && !modelSelectionValid(wm)) return null;
 	const cm = o.chatModel;
@@ -1026,6 +1124,24 @@ function saveUserConfig(raw, existing) {
 			...ev.maxGapSec !== void 0 ? { maxGapSec: Number(ev.maxGapSec) } : {}
 		};
 	}
+	if (pv2 !== void 0) {
+		const pv = pv2;
+		outConfig.proactive = {
+			enabled: pv.enabled === true,
+			cooldownHours: Number(pv.cooldownHours),
+			idleHours: Number(pv.idleHours),
+			lateNightFrom: Number(pv.lateNightFrom),
+			lateNightTo: Number(pv.lateNightTo),
+			longMemory: pv.longMemory !== false
+		};
+	}
+	if (co2 !== void 0) {
+		const cv = co2;
+		outConfig.completion = {
+			enabled: cv.enabled === true,
+			holdUntilFocus: cv.holdUntilFocus !== false
+		};
+	}
 	if (wm !== void 0) outConfig.whisperModel = cleanModel(wm);
 	if (cm !== void 0) outConfig.chatModel = cleanModel(cm);
 	if (cmr !== void 0) outConfig.chatMemoryRounds = Number(cmr);
@@ -1045,6 +1161,8 @@ function saveUserConfig(raw, existing) {
 	if (mo !== void 0) bodyOwned.add("mood");
 	if (it !== void 0) bodyOwned.add("intimacy");
 	if (ie !== void 0) bodyOwned.add("idleEvents");
+	if (pv2 !== void 0) bodyOwned.add("proactive");
+	if (co2 !== void 0) bodyOwned.add("completion");
 	if (wm !== void 0) bodyOwned.add("whisperModel");
 	if (cm !== void 0) bodyOwned.add("chatModel");
 	if (cmr !== void 0) bodyOwned.add("chatMemoryRounds");
@@ -6349,6 +6467,20 @@ function confirmText(kind, detail) {
 	if (kind === "approval") return d ? clip$1("有个操作需要你确认：" + d, CONFIRM_TEXT_MAX) : "有个操作需要你确认一下～";
 	return d ? clip$1("有个问题想问你：" + d, CONFIRM_TEXT_MAX) : "有个问题想问你，等你选一下～";
 }
+const COMPLETE_HOLD_MS = 24 * 60 * 60 * 1e3;
+const COMPLETE_AUTO_CLEAR_MS = 20 * 1e3;
+const COMPLETE_PREFERRED_IMAGES = [
+	"得意",
+	"厉害了我的鲸",
+	"可爱",
+	"哦鲸鲸",
+	"鼓掌"
+];
+function completeText(kind, detail) {
+	const d = String(detail ?? "").trim();
+	if (kind === "error") return d ? clip$1("这轮出错了：" + d, CONFIRM_TEXT_MAX) : "这轮好像出了点问题…";
+	return d ? clip$1("搞定啦：" + d, CONFIRM_TEXT_MAX) : "任务完成啦，切回界面就收起提示～";
+}
 
 //#endregion
 //#region src/host/plugin/session-watch.ts
@@ -6423,7 +6555,7 @@ function trackToolEvent(ledger, sessionId, input) {
 	return void 0;
 }
 function registerSessionWatch(deps) {
-	const { ctx, cancelTerminalCleanup, clearConfirm, deliverConfirm, deliverEasterEgg, lastTodoText, log, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
+	const { ctx, cancelTerminalCleanup, clearConfirm, deliverComplete, deliverConfirm, deliverEasterEgg, lastTodoText, log, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
 	ctx.effect(() => {
 		/** 当前正在等待用户确认的会话集合：确认气泡是常驻的，收到结果后要按会话清掉。 */
 		const pendingConfirms = new Set();
@@ -6545,10 +6677,16 @@ function registerSessionWatch(deps) {
 			(session, event) => {
 				if (!shouldNotifySession(session)) return;
 				if (isCompletionTurnEnd(event)) {
+					deliverComplete("done", completeText("done"));
 					scheduleCompletionNotify(sessionIdOf(session), event);
 					return;
 				}
 				const frame = reduceNotifyFrame(event);
+				const errKind = turnEndNotifyKind(event?.type === "turn/end" ? event.data?.reason?.kind : void 0);
+				if (errKind === "error" || errKind === "max-tokens") {
+					const msg = event.data?.reason?.error?.message;
+					deliverComplete("error", completeText("error", errKind === "max-tokens" ? "输出被截断了" : msg));
+				}
 				if (frame) pushNotifyFrame(withSessionId(frame, sessionIdOf(session)));
 			}
 );
@@ -7791,6 +7929,10 @@ function pruneMemory(mem) {
 }
 function createChatMemory(deps) {
 	const { ctx, configPaths, log, memeDirsFor, state, userRoot } = deps;
+	const longMemoryEnabled = deps.longMemoryEnabled ?? (() => false);
+	const readFacts = deps.readFacts ?? (async () => []);
+	const factsPromptSection = deps.factsPromptSection ?? (() => "");
+	const extractFacts = deps.extractFacts ?? (async () => 0);
 	let activePetId = "";
 	const lastWhisperAt = new Map();
 	const memoryPath = join(userRoot, "memory.json");
@@ -7886,7 +8028,10 @@ function createChatMemory(deps) {
 			message: "没有这只桌宠：" + petId
 		};
 		const rounds = memoryRounds(found.conf);
-		const system = petSystemPrompt(found);
+		const baseSystem = petSystemPrompt(found);
+		const facts = longMemoryEnabled(found.conf) ? await readFacts(petId) : [];
+		const factsSection = factsPromptSection(facts);
+		const system = factsSection ? baseSystem + "\n" + factsSection : baseSystem;
 		const pool = found.conf.bubbleImageEnabled !== false ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit)) : [];
 		const mem = await readMemory();
 		const bucket = mem[found.entry] && typeof mem[found.entry] === "object" && !Array.isArray(mem[found.entry]) ? mem[found.entry] : mem[found.entry] = {};
@@ -7919,6 +8064,10 @@ function createChatMemory(deps) {
 			...generated.image ? { meme: generated.image } : {}
 		});
 		await writeMemory(mem);
+		if (longMemoryEnabled(found.conf)) {
+			const extractSystem = petSystemPrompt(found);
+			extractFacts(petId, extractSystem, text, generated.text, configuredModel(found.conf, "whisperModel")).catch(() => {});
+		}
 		state.writePet(petId, "say", generated.image ? {
 			text: generated.text,
 			image: generated.image
@@ -7991,6 +8140,213 @@ function createChatMemory(deps) {
 }
 
 //#endregion
+//#region src/host/plugin/memory-facts.ts
+/** 抽取事实的指令：要求每行一条、简短、只留长期有用的。 */
+const EXTRACT_PROMPT = "下面是一段用户和你的对话。请从中提炼「值得长期记住的用户事实」——比如用户的身份/职业、在做的项目、明确的偏好、反复提到的人或事。每条一行、20 字以内、只写事实本身（不要「用户说」这类前缀），只保留长期有用的；如果这段对话没有值得长期记住的事实，就只回复四个字：无。\n\n对话：\n";
+function parseFacts(text) {
+	const t = text.trim();
+	if (!t || /^无[。.!！]?$/.test(t)) return [];
+	return t.split(/\r?\n/).map((line) => line.replace(/^\s*[-*\d.、)\s]+/, "").trim()).filter((line) => line !== "" && line.length <= 60 && !/^无[。.!！]?$/.test(line));
+}
+function mergeFacts(old, fresh, now) {
+	const out = [...old];
+	let added = 0;
+	for (const text of fresh) {
+		const norm = text.trim();
+		if (!norm) continue;
+		const dup = out.some((f) => f.text === norm || f.text.includes(norm) || norm.includes(f.text));
+		if (dup) continue;
+		out.push({
+			text: norm,
+			ts: now
+		});
+		added += 1;
+	}
+	const facts = out.length > MEMORY_FACT_MAX ? out.slice(out.length - MEMORY_FACT_MAX) : out;
+	return {
+		facts,
+		added
+	};
+}
+function createMemoryFacts(deps) {
+	const { userRoot, ctx, log } = deps;
+	const path = join(userRoot, "facts.json");
+	let writeQueue = Promise.resolve();
+	const withWriteLock = (fn) => {
+		const run$1 = writeQueue.then(fn, fn);
+		writeQueue = run$1.then(() => void 0, () => void 0);
+		return run$1;
+	};
+	const readAll = async () => {
+		try {
+			const raw = await readFile(path, "utf8");
+			const parsed = JSON.parse(raw);
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+			return parsed;
+		} catch {
+			return {};
+		}
+	};
+	const writeAll = async (all) => {
+		await mkdir(userRoot, { recursive: true });
+		const tmp = path + ".tmp-" + process.pid + "-" + Date.now();
+		await writeFile(tmp, JSON.stringify(all, null, 2), "utf8");
+		await rename(tmp, path);
+	};
+	/** 取某宠物的事实列表（只读）。 */
+	const readFacts = async (petId) => {
+		const all = await readAll();
+		const list = all[petId];
+		return Array.isArray(list) ? list.filter((f) => f && typeof f.text === "string") : [];
+	};
+	/** 拼进 system 提示词的事实段：空列表 → 空串（不占位）。 */
+	const factsPromptSection = (facts) => {
+		if (facts.length === 0) return "";
+		return "你还记得关于主人的这些事：\n" + facts.map((f) => "- " + f.text).join("\n");
+	};
+	/**
+	* 从一轮对话里抽取事实并落盘（异步、失败静默）。返回新增的事实条数。
+	* @param petId - 宠物 id（分桶）。
+	* @param system - 该宠物的人设 system（给抽取一个身份背景）。
+	* @param userText - 用户这一轮说的话。
+	* @param reply - 宠物的回复。
+	* @param preferred - 抽取用的模型（跟随 whisperModel 配置；缺省用当前对话模型）。
+	*/
+	const extractFacts = async (petId, system, userText, reply, preferred) => {
+		try {
+			const dialog = "主人：" + userText + "\n你：" + reply;
+			const r = await generateWhisper(ctx, system, void 0, preferred, EXTRACT_PROMPT + dialog);
+			if (!r.ok) return 0;
+			const fresh = parseFacts(r.text);
+			if (fresh.length === 0) return 0;
+			return await withWriteLock(async () => {
+				const all = await readAll();
+				const old = Array.isArray(all[petId]) ? all[petId].filter((f) => f && typeof f.text === "string") : [];
+				const { facts: merged, added } = mergeFacts(old, fresh, Date.now());
+				if (added <= 0) return 0;
+				all[petId] = merged;
+				await writeAll(all);
+				log.info(`[dsh-zdd-pet] 长期记忆更新 pet=${petId}，新增 ${added} 条（共 ${merged.length}）`);
+				return added;
+			});
+		} catch (e) {
+			log.warn("[dsh-zdd-pet] 长期记忆抽取失败：" + (e instanceof Error ? e.message : String(e)));
+			return 0;
+		}
+	};
+	return {
+		readFacts,
+		factsPromptSection,
+		extractFacts,
+		path
+	};
+}
+
+//#endregion
+//#region src/host/plugin/proactive.ts
+/** 检查间隔（ms）：主动关心是低频事件，5 分钟一拍足够，开销可忽略。 */
+const TICK_MS = 5 * 60 * 1e3;
+/** 触发原因对应的生成指令。 */
+function promptFor(reason) {
+	switch (reason) {
+		case "idle": return "你注意到主人很久没来跟你说话了。主动说一句话，表达想念、问问他最近在忙什么，温柔俏皮、一句话、20 字以内，不要解释、不要提你是 AI。";
+		case "late-night": return "现在是深夜，主人还在忙。主动说一句话，关心他早点休息、别太熬夜，温柔俏皮、一句话、20 字以内，不要啰嗦、不要提你是 AI。";
+		case "after-focus": return "主人刚认真专注了一段时间，刚告一段落。主动说一句话，夸夸他、提醒他起身活动/喝口水，温柔俏皮、一句话、20 字以内，不要提你是 AI。";
+		default: return "主动说一句关心主人的话，一句话、20 字以内。";
+	}
+}
+function createProactive(deps) {
+	const { ctx, configPaths, state, log, memeDirsFor, configuredModel: configuredModel$1, recentlyActive } = deps;
+	/** 每只宠物上次「真实交互」时刻（对话 / 点击等）。0 = 未知。 */
+	const lastInteractionAt = new Map();
+	/** 每只宠物上次主动关心时刻。 */
+	const lastCareAt = new Map();
+	/** 刚做完专注的宠物（一次性信号，检查后消费）。 */
+	const justFinishedFocus = new Set();
+	const touchInteraction = (petId) => {
+		if (petId) lastInteractionAt.set(petId, Date.now());
+	};
+	const markFocusComplete = (petId) => {
+		if (petId) {
+			justFinishedFocus.add(petId);
+			lastInteractionAt.set(petId, Date.now());
+		}
+	};
+	/** 给一只宠物投一句主动关心；失败静默。 */
+	const care = async (petId, reason) => {
+		const cfg = readAllConfig(configPaths);
+		const found = findPetInstance(cfg, petId);
+		if (!found) return;
+		const system = composeSystemPrompt({
+			prompt: petPersona(found.conf, found.pet),
+			name: String(found.pet.name ?? ""),
+			id: petId,
+			now: new Date()
+		});
+		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
+		const r = await generateWhisper(ctx, system, meme, configuredModel$1(found.conf, "whisperModel"), promptFor(reason));
+		if (!r.ok) {
+			log.warn(`[dsh-zdd-pet] 主动关心生成失败 pet=${petId} reason=${r.reason}`);
+			return;
+		}
+		state.writePet(petId, "say", r.image ? {
+			text: r.text,
+			image: r.image
+		} : { text: r.text });
+		lastCareAt.set(petId, Date.now());
+		log.info(`[dsh-zdd-pet] 主动关心（${reason}）pet=${petId}：「${r.text}」`);
+	};
+	/** 起循环：每 TICK_MS 检查一次，逐宠物按 decideCare 判据决定要不要关心。 */
+	const start = () => {
+		ctx.effect(() => {
+			let disposed = false;
+			let timer = null;
+			const tick = () => {
+				if (disposed) return;
+				try {
+					const cfg = readAllConfig(configPaths);
+					const now = Date.now();
+					const hour = new Date(now).getHours();
+					for (const pet of flattenPetList(cfg)) {
+						const petId = String(pet.id ?? "");
+						if (!petId) continue;
+						const found = findPetInstance(cfg, petId);
+						if (!found) continue;
+						const finishedFocus = justFinishedFocus.has(petId);
+						justFinishedFocus.delete(petId);
+						const params = readProactiveParams(found.conf.proactive);
+						if (!params.enabled) continue;
+						const reason = decideCare({
+							params,
+							now,
+							lastInteractionAt: lastInteractionAt.get(petId) ?? 0,
+							lastCareAt: lastCareAt.get(petId) ?? 0,
+							hour,
+							recentlyActive: recentlyActive(),
+							justFinishedFocus: finishedFocus
+						});
+						if (reason) care(petId, reason).catch(() => {});
+					}
+				} catch (e) {
+					log.warn("[dsh-zdd-pet] 主动关心检查失败：" + (e instanceof Error ? e.message : String(e)));
+				}
+				timer = setTimeout(tick, TICK_MS);
+			};
+			timer = setTimeout(tick, TICK_MS);
+			return () => {
+				disposed = true;
+				if (timer !== null) clearTimeout(timer);
+			};
+		}, "dsh-zdd-pet: proactive care");
+	};
+	return {
+		start,
+		touchInteraction,
+		markFocusComplete
+	};
+}
+
+//#endregion
 //#region src/host/easter-egg.ts
 const EASTER_TEXT_MAX = 24;
 function parseEasterEggs(raw) {
@@ -8051,7 +8407,9 @@ function createExtras(deps) {
 			text,
 			...image ? { image } : {},
 			...cue.duration !== void 0 ? { duration: cue.duration } : {},
-			...cue.hold ? { hold: true } : {}
+			...cue.hold ? { hold: true } : {},
+			...cue.hold && cue.holdKind ? { holdKind: cue.holdKind } : {},
+			...cue.hold && cue.holdKind === "complete" && cue.dismissOnHover !== void 0 ? { dismissOnHover: cue.dismissOnHover } : {}
 		});
 		return true;
 	};
@@ -8172,6 +8530,66 @@ function createExtras(deps) {
 		}
 		return cleared;
 	};
+	/**
+	* 任务完成提示：给所有启用工作状态联动的宠物各投一条常驻气泡（holdKind='complete'）。
+	*
+	* 与确认气泡同一套 hold 机制（不自动收起），区别是客户端会在用户切回界面时把 complete 类收起。
+	* 表情包从该宠物池里挑「完成感」的（优先名单），池里没有就随机一张；配图总开关关时只文字。
+	*
+	* @param _kind - 完成 / 出错（当前投递不分两者；文案已由 completeText 按此生成，保留此参数以备将来区分表现）。
+	* @param text - 气泡文案（由 completeText 生成）。
+	* @param rand - 随机源。
+	* @returns 投出的宠物数。
+	*/
+	const deliverComplete = (_kind, text, rand = Math.random) => {
+		let cfg;
+		try {
+			cfg = readAllConfig(configPaths);
+		} catch {
+			return 0;
+		}
+		let delivered = 0;
+		for (const [entry, conf] of Object.entries(cfg)) {
+			const completionParams = readCompletionParams(conf?.completion);
+			if (completionParams.enabled === false) continue;
+			const autoDismiss = completionParams.holdUntilFocus !== false;
+			const pets = Array.isArray(conf?.pets) ? conf.pets : [];
+			const canImage = conf?.bubbleImageEnabled !== false;
+			const pool = canImage ? readMemePool(conf?.memes, memeDirsFor(entry)) : [];
+			const preferredPool = pool.filter((m) => COMPLETE_PREFERRED_IMAGES.includes(m.name));
+			const image = canImage ? (preferredPool.length > 0 ? preferredPool[Math.floor(rand() * preferredPool.length)] : pickMeme(pool, rand))?.name : void 0;
+			for (const pet of pets) {
+				const petId = String(pet.id ?? "");
+				if (!petId || pet.workStatusEnabled !== true) continue;
+				if (deliverCue(petId, {
+					text,
+					...image ? { image } : {},
+					hold: true,
+					holdKind: "complete",
+					dismissOnHover: autoDismiss,
+					duration: COMPLETE_HOLD_MS
+				})) {
+					delivered += 1;
+					if (autoDismiss) scheduleCompleteAutoClear(petId, text);
+				}
+			}
+		}
+		return delivered;
+	};
+	const completeTimers = new Map();
+	const scheduleCompleteAutoClear = (petId, text) => {
+		const prev = completeTimers.get(petId);
+		if (prev !== void 0) clearTimeout(prev);
+		const t = setTimeout(() => {
+			completeTimers.delete(petId);
+			try {
+				const say = state.read().pets[petId]?.say?.data;
+				if (say && say.holdKind === "complete" && say.text === text) state.writePet(petId, "say", { clear: true });
+			} catch {}
+		}, COMPLETE_AUTO_CLEAR_MS);
+		if (typeof t.unref === "function") t.unref();
+		completeTimers.set(petId, t);
+	};
 	return {
 		deliverCue,
 		pickPetMeme,
@@ -8179,7 +8597,8 @@ function createExtras(deps) {
 		deliverEasterEgg,
 		memeValid,
 		deliverConfirm,
-		clearConfirm
+		clearConfirm,
+		deliverComplete
 	};
 }
 
@@ -8297,6 +8716,8 @@ async function maybeGreeting(deps) {
 function createPomodoroEngine(deps) {
 	const { configPaths, log, pickPetMeme, deliverCue, state } = deps;
 	let phase = "idle";
+	/** 发起本轮番茄钟的宠物（主动关心「刚做完长专注」用它定位）。 */
+	let focusPetId = "";
 	let endsAt = 0;
 	/** 暂停时的剩余秒数。 */
 	let remainingSec = 0;
@@ -8434,6 +8855,9 @@ function createPomodoroEngine(deps) {
 		}
 		if (phase === "focus") {
 			completedFocus += 1;
+			if (focusPetId && deps.onFocusComplete) try {
+				deps.onFocusComplete(focusPetId);
+			} catch {}
 			const long = pomo.roundsBeforeLongBreak > 0 && completedFocus % pomo.roundsBeforeLongBreak === 0;
 			startBreak(pomo, long);
 			return;
@@ -8467,6 +8891,7 @@ function createPomodoroEngine(deps) {
 					return { ok: true };
 				}
 				completedFocus = 0;
+				focusPetId = petId;
 				startFocus(pomo);
 				return { ok: true };
 			case "pause":
@@ -9101,22 +9526,48 @@ function apply(ctx) {
 		workStatus
 	});
 	const { pushNotifyFrame, turnFlags, terminalTimers, lastTodoText, toolsInFlight, cancelTerminalCleanup, scheduleTerminalCleanup, notifyActivityTimers, scheduleCompletionNotify } = sessionNotify;
+	const memoryFacts = createMemoryFacts({
+		userRoot,
+		ctx,
+		log
+	});
 	const chatMemory = createChatMemory({
 		ctx,
 		configPaths,
 		log,
 		memeDirsFor,
 		state,
-		userRoot
+		userRoot,
+		readFacts: memoryFacts.readFacts,
+		factsPromptSection: memoryFacts.factsPromptSection,
+		extractFacts: memoryFacts.extractFacts,
+		longMemoryEnabled: (conf) => readProactiveParams(conf.proactive).longMemory
 	});
 	const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
+	const proactive = createProactive({
+		ctx,
+		configPaths,
+		state,
+		log,
+		memeDirsFor,
+		configuredModel,
+		recentlyActive: () => {
+			const ts = workStatus.snapshot().ts;
+			return ts > 0 && Date.now() - ts < 10 * 60 * 1e3;
+		}
+	});
+	const chatWithPetTracked = (petId, text, image) => {
+		proactive.touchInteraction(petId);
+		return chatWithPet(petId, text, image);
+	};
 	const pomodoro = createPomodoroEngine({
 		configPaths,
 		state,
 		log,
 		memeDirsFor,
 		deliverCue: extras.deliverCue,
-		pickPetMeme: extras.pickPetMeme
+		pickPetMeme: extras.pickPetMeme,
+		onFocusComplete: (petId) => proactive.markFocusComplete(petId)
 	});
 	ctx.effect(() => () => pomodoro.dispose(), "dsh-zdd-pet: pomodoro engine");
 	const balancePoll = createBalancePoll({
@@ -9148,7 +9599,8 @@ function apply(ctx) {
 		...balancePoll,
 		...desktopHelper,
 		...sessionNotify,
-		ctx
+		ctx,
+		chatWithPet: chatWithPetTracked
 	};
 	const httpRoute = createHttpRoute(deps);
 	registerHttpRoute(ctx, httpRoute.handlePetRoute);
@@ -9156,6 +9608,7 @@ function apply(ctx) {
 		ctx,
 		cancelTerminalCleanup,
 		clearConfirm: extras.clearConfirm,
+		deliverComplete: extras.deliverComplete,
 		deliverConfirm: extras.deliverConfirm,
 		deliverEasterEgg: extras.deliverEasterEgg,
 		lastTodoText,
@@ -9188,6 +9641,7 @@ function apply(ctx) {
 		standaloneAiPolicy,
 		whisperPeriodSec
 	});
+	proactive.start();
 	registerPetCommand({
 		ctx,
 		effectivePetList,
@@ -9197,7 +9651,7 @@ function apply(ctx) {
 	});
 	registerChatCommand({
 		ctx,
-		chatWithPet,
+		chatWithPet: chatWithPetTracked,
 		log,
 		publishWhisper,
 		resolveActivePetId

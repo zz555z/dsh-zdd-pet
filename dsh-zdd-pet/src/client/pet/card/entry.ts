@@ -54,6 +54,8 @@ export interface CardEntryInput {
   tipRef: ReactNS.MutableRefObject<HTMLDivElement | null>;
   /** 舞台节点：对话弹窗贴命中区右上角。 */
   stage: () => HTMLDivElement | null;
+  /** 指针进入身体时回调：用于「鼠标移入即收起任务完成气泡」等。可选。 */
+  onHoverEnter?: () => void;
 }
 
 /** 浮层入口对外的读写面。 */
@@ -204,6 +206,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
         hoverRef.current = true;
         placeTip(e.clientX, e.clientY); // 先摆位再显示，否则会先在兜底坐标闪一帧。
         card.actions.setTipOn(true);
+        input.onHoverEnter?.();
       },
       onPointerLeave: () => {
         hoverRef.current = false;

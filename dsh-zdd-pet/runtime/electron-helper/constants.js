@@ -141,6 +141,7 @@ const POSE_REPORT_URL = BASE + '/pose/report';
 // （到点读当前值推一次），否则第三方读到的永远是走位中途的位置，且没有任何报错。
 const POSE_THROTTLE_MS = 400;
 const BUBBLE_DURATION_MS = 10 * 1000; // 余额/碎碎念气泡展示时长（与浏览器一致：定时消失，与动画解耦）
+// 任务完成气泡的收起时机（hover 即收 + 20s 兜底）由客户端 hover 逻辑与宿主侧定时清除负责，桌面端不再本地计时。
 // 工作状态（非终态）气泡单次展示时长与说话气泡时长策略都在 shared/timings.ts，
 // 运行时通过 shared-core 的 S.WORK_BUBBLE_MS / S.sayBubbleDurationMs 取用，避免两端各写一份。
 // 余额气泡换内容前的等待（ms）：与 .pet-bubble 的 opacity 过渡同为 .25s，淡出走完再换，

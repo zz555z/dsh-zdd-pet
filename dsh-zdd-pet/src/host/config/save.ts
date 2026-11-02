@@ -16,6 +16,8 @@ import { greetingValid } from '../../shared/greeting.ts';
 import { DEFAULT_MOOD, moodValid } from '../../shared/mood.ts';
 import { intimacyValid } from '../../shared/intimacy.ts';
 import { idleEventsValid } from '../../shared/idle-events.ts';
+import { proactiveValid } from '../../shared/proactive.ts';
+import { completionValid } from '../../shared/completion.ts';
 
 /**
  * 保存用户层（PUT /config）：接受 pets + 全局开关 + physics / font / 两个模型 / 对话参数。
@@ -133,6 +135,12 @@ export function saveUserConfig(
   if (it !== undefined && !intimacyValid(it)) return null;
   const ie = o.idleEvents;
   if (ie !== undefined && !idleEventsValid(ie)) return null;
+  // proactive（主动关心 + 长期记忆）：传了就校验后进白名单，没传则透传保留。
+  const pv2 = o.proactive;
+  if (pv2 !== undefined && !proactiveValid(pv2)) return null;
+  // completion（任务完成常驻提示）：传了就校验后进白名单，没传则透传保留。
+  const co2 = o.completion;
+  if (co2 !== undefined && !completionValid(co2)) return null;
   // whisperModel / chatModel（碎碎念 / 对话各自的服务商 + 模型；设置页两个下拉框写的就是它们）：
   // 与 physics 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
   // 落盘时归一化成 { provider, model } 两个 trim 过的字符串（请求体多带的键不写进用户层）。
@@ -233,6 +241,23 @@ export function saveUserConfig(
       ...(ev.maxGapSec !== undefined ? { maxGapSec: Number(ev.maxGapSec) } : {}),
     };
   }
+  if (pv2 !== undefined) {
+    // proactive 落盘：整段都是设置页可编辑的字段，直接写（数值归一化）。
+    const pv = pv2 as Record<string, unknown>;
+    outConfig.proactive = {
+      enabled: pv.enabled === true,
+      cooldownHours: Number(pv.cooldownHours),
+      idleHours: Number(pv.idleHours),
+      lateNightFrom: Number(pv.lateNightFrom),
+      lateNightTo: Number(pv.lateNightTo),
+      longMemory: pv.longMemory !== false,
+    };
+  }
+  if (co2 !== undefined) {
+    // completion 落盘：两个布尔，直接写。
+    const cv = co2 as Record<string, unknown>;
+    outConfig.completion = { enabled: cv.enabled === true, holdUntilFocus: cv.holdUntilFocus !== false };
+  }
   if (wm !== undefined) outConfig.whisperModel = cleanModel(wm as Record<string, unknown>);
   if (cm !== undefined) outConfig.chatModel = cleanModel(cm as Record<string, unknown>);
   // 数值归一化落盘：请求体传 "9" 也存成 9（与读取侧 topFieldValid 的 Number() 口径一致）
@@ -257,6 +282,8 @@ export function saveUserConfig(
   if (mo !== undefined) bodyOwned.add('mood');
   if (it !== undefined) bodyOwned.add('intimacy');
   if (ie !== undefined) bodyOwned.add('idleEvents');
+  if (pv2 !== undefined) bodyOwned.add('proactive');
+  if (co2 !== undefined) bodyOwned.add('completion');
   if (wm !== undefined) bodyOwned.add('whisperModel');
   if (cm !== undefined) bodyOwned.add('chatModel');
   if (cmr !== undefined) bodyOwned.add('chatMemoryRounds');

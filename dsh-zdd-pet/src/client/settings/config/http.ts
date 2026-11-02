@@ -16,6 +16,8 @@ import type {
 } from '../../../shared/types.ts';
 import type { IntimacyParams } from '../../../shared/intimacy.ts';
 import type { IdleEventsParams } from '../../../shared/idle-events.ts';
+import type { ProactiveParams } from '../../../shared/proactive.ts';
+import type { CompletionParams } from '../../../shared/completion.ts';
 import type { ModelCatalogGroup } from '../picker/index.ts';
 import type { MergedConfig } from './read.ts';
 
@@ -53,6 +55,8 @@ export interface SaveFields {
   mood: MoodParams;
   intimacy: IntimacyParams;
   idleEvents: IdleEventsParams;
+  proactive: ProactiveParams;
+  completion: CompletionParams;
 }
 
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
@@ -87,6 +91,8 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     mood: fields.mood,
     intimacy: fields.intimacy,
     idleEvents: fields.idleEvents,
+    proactive: fields.proactive,
+    completion: fields.completion,
   };
 }
 

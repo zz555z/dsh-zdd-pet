@@ -1,12 +1,18 @@
 import { type ChatMemoryMessage } from '../chat.ts';
 import type { PetImageRef } from '../image-attachment.ts';
+import type { MemoryFacts } from './memory-facts.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 /** 对话与记忆的输入：装配期对象与更早的工厂。 */
 export type ChatMemoryInput = {
     /** 宿主上下文（apply 收到的那一个）。 */
     ctx: HostContext;
-} & Pick<HostSetup, 'configPaths'> & Pick<HostSetup, 'log'> & Pick<HostSetup, 'memeDirsFor'> & Pick<HostSetup, 'state'> & Pick<HostSetup, 'userRoot'>;
+} & Pick<HostSetup, 'configPaths'> & Pick<HostSetup, 'log'> & Pick<HostSetup, 'memeDirsFor'> & Pick<HostSetup, 'state'> & Pick<HostSetup, 'userRoot'> & 
+/** 长期记忆（事实）：对话前拼进 system、对话后抽取。可选——独立/测试用法可省略（等同关闭）。 */
+Partial<Pick<MemoryFacts, 'readFacts' | 'factsPromptSection' | 'extractFacts'>> & {
+    /** 是否启用长期记忆（proactive.longMemory），按该宠物所属条目判。缺省 = 关闭。 */
+    longMemoryEnabled?: (conf: Record<string, unknown>) => boolean;
+};
 /**
  * 创建对话与记忆。
  */

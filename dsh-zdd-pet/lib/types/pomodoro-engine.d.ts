@@ -14,7 +14,10 @@ export interface PomodoroEngine {
     dispose(): void;
 }
 /** 引擎依赖：配置 / 状态 / 日志 / 表情包投递。 */
-export type PomodoroEngineInput = Pick<HostSetup, 'configPaths' | 'state' | 'log' | 'memeDirsFor'> & Pick<Extras, 'deliverCue' | 'pickPetMeme'>;
+export type PomodoroEngineInput = Pick<HostSetup, 'configPaths' | 'state' | 'log' | 'memeDirsFor'> & Pick<Extras, 'deliverCue' | 'pickPetMeme'> & {
+    /** 一段专注自然走完（非 skip）时回调：供主动关心「刚做完长专注」判据使用。 */
+    onFocusComplete?: (petId: string) => void;
+};
 /**
  * 创建番茄钟引擎。
  *

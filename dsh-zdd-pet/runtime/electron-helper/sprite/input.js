@@ -364,6 +364,14 @@ Object.assign(PetSprite.prototype, {
     // 快捷键与拖拽都只在"光标在身体上"时生效，与提示/穿透同源，避免另一套判定
     const wasHoverBody = this.hoverBody;
     this.hoverBody = inBody;
+    // 任务完成气泡：鼠标移入宠物身体就收起它（不用点）。这就是用户要的「移过去就消失」。
+    // 只认 complete 类——等待确认（confirm）是真常驻，不能被 hover 顺手清掉。
+    if (inBody && !wasHoverBody && this.whisperHoldKind === 'complete' && this.whisperDismissOnHover) {
+      this.clearWhisper();
+      S.postAction(BASE + '/bubble/clear?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop', {
+        ok: true,
+      }).catch(() => {});
+    }
     // 心情悬浮气泡：进入身体时气泡显示当前心情，离开时收起（mood.enabled 才管，别误清正常碎碎念）
     const moodOn = (() => {
       const p = this.moodParams ? this.moodParams() : null;
@@ -402,6 +410,18 @@ Object.assign(PetSprite.prototype, {
     // stopThrow/stopMove ——彩蛋刚用 celebrate() 起了冲刺抛掷，这里一停就把它当场掐灭
     // （表现为「点到 100 却什么都不发生」）。所以这个判断必须放在所有 stop* 之前。
     if (excited) return;
+    // 任务完成气泡：鼠标轻触（点一下宠物）就收起它，不再播点击台词/动画。
+    // 这是「用户看到并确认」的最自然动作；20s 自动清除作为兜底（在宿主侧）。
+    if (this.whisperHoldKind === 'complete' && this.whisperDismissOnHover) {
+      this.stopThrow();
+      this.stopMove();
+      this.clearWhisper();
+      // 同步宿主，把这条完成气泡也清掉（避免下一拍再从 /state 写回来）。
+      S.postAction(BASE + '/bubble/clear?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop', {
+        ok: true,
+      }).catch(() => {});
+      return;
+    }
     // 积分判定已在 onPointerDown（按下即触发）完成：已触发过就只收手停住，不再播普通点击动画
     if (this.pressScoreFired) {
       this.pressScoreFired = false;

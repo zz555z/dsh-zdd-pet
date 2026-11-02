@@ -12,6 +12,10 @@ import { DEFAULT_GREETING } from '../shared/greeting.ts';
 import { DEFAULT_MOOD } from '../shared/mood.ts';
 import { DEFAULT_INTIMACY } from '../shared/intimacy.ts';
 import { DEFAULT_IDLE_EVENTS } from '../shared/idle-events.ts';
+import { DEFAULT_PROACTIVE } from '../shared/proactive.ts';
+import type { ProactiveParams } from '../shared/proactive.ts';
+import { DEFAULT_COMPLETION } from '../shared/completion.ts';
+import type { CompletionParams } from '../shared/completion.ts';
 import type {
   FontConfig,
   GreetingParams,
@@ -46,6 +50,8 @@ import { makeGreetingCard } from './settings/greeting-card.ts';
 import { makeMoodCard } from './settings/mood-card.ts';
 import { makeIntimacyCard } from './settings/intimacy-card.ts';
 import { makeIdleEventsCard } from './settings/idle-events-card.ts';
+import { makeProactiveCard } from './settings/proactive-card.ts';
+import { makeCompletionCard } from './settings/completion-card.ts';
 import type { SettingsRuntime } from './settings/runtime.ts';
 import { useConfigLoad } from './settings/config/index.ts';
 import { usePetList } from './settings/use-pet-list.ts';
@@ -87,6 +93,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
   const MoodCard = makeMoodCard(rt);
   const IntimacyCard = makeIntimacyCard(rt);
   const IdleEventsCard = makeIdleEventsCard(rt);
+  const ProactiveCard = makeProactiveCard(rt);
+  const CompletionCard = makeCompletionCard(rt);
   const Actions = makeActions(rt);
   const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
   const SettingsDialog = makeDialog(rt);
@@ -152,6 +160,10 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
       ...DEFAULT_IDLE_EVENTS,
       events: DEFAULT_IDLE_EVENTS.events.map((e) => ({ ...e })),
     });
+    // 主动关心 + 长期记忆（全局默认）：初值用内置默认，成品加载后覆盖。
+    const [proactive, setProactive] = useState<ProactiveParams>({ ...DEFAULT_PROACTIVE });
+    // 任务完成常驻提示（全局默认）：初值用内置默认，成品加载后覆盖。
+    const [completion, setCompletion] = useState<CompletionParams>({ ...DEFAULT_COMPLETION });
     // 字体（全局默认）：与 physics 同一套语义；初值仅占位，成品加载成功后才允许编辑与保存。
     const [font, setFont] = useState<FontConfig>({ ...DEFAULT_FONT });
     // AI 模型（条目级）：碎碎念 / 对话各自的服务商与模型，两者都留空 = 跟随当前对话；随「保存」整包写入。
@@ -181,6 +193,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         if (patch.mood !== undefined) setMood(patch.mood);
         if (patch.intimacy !== undefined) setIntimacy(patch.intimacy);
         if (patch.idleEvents !== undefined) setIdleEvents(patch.idleEvents);
+        if (patch.proactive !== undefined) setProactive(patch.proactive);
+        if (patch.completion !== undefined) setCompletion(patch.completion);
         if (patch.font !== undefined) setFont(patch.font);
         if (patch.whisperModel !== undefined) setWhisperModel(patch.whisperModel);
         if (patch.chatModel !== undefined) setChatModel(patch.chatModel);
@@ -240,6 +254,10 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
       setIntimacy((current) => ({ ...current, ...patch }));
     const patchIdleEvents = (patch: Partial<IdleEventsParams>): void =>
       setIdleEvents((current) => ({ ...current, ...patch }));
+    const patchProactive = (patch: Partial<ProactiveParams>): void =>
+      setProactive((current) => ({ ...current, ...patch }));
+    const patchCompletion = (patch: Partial<CompletionParams>): void =>
+      setCompletion((current) => ({ ...current, ...patch }));
 
     /** 两个模型字段各有一份状态，卡片只回传键名。 */
     const setModel = (key: ModelFieldKey, value: ModelSelection): void => {
@@ -264,6 +282,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         mood,
         intimacy,
         idleEvents,
+        proactive,
+        completion,
         whisperModel,
         chatModel,
         chatMemoryRounds: chatMemory,
@@ -352,6 +372,8 @@ export function makePetConfigSection(rt: SettingsRuntime): FunctionComponent<{ c
         h(MoodCard, { busy, mood, onChange: patchMood }),
         h(IntimacyCard, { busy, intimacy, onChange: patchIntimacy }),
         h(IdleEventsCard, { busy, idleEvents, onChange: patchIdleEvents }),
+        h(ProactiveCard, { busy, proactive, onChange: patchProactive }),
+        h(CompletionCard, { busy, completion, onChange: patchCompletion }),
         h(Actions, {
           busy,
           msg,

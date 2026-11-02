@@ -4,7 +4,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CONFIRM_TEXT_MAX, confirmText } from './confirm.ts';
+import { CONFIRM_TEXT_MAX, completeText, confirmText } from './confirm.ts';
 
 describe('confirmText —— 确认气泡文案', () => {
   test('无细节：按场景给通用说法', () => {
@@ -19,5 +19,14 @@ describe('confirmText —— 确认气泡文案', () => {
     const out = confirmText('question', long);
     assert.ok(Array.from(out).length <= CONFIRM_TEXT_MAX + 1, '超长要截断（含省略号）');
     assert.ok(out.endsWith('…'));
+  });
+});
+
+describe('completeText —— 完成气泡文案', () => {
+  test('正常完成 / 出错 各有说法，带 detail 时拼接并截断', () => {
+    assert.ok(completeText('done').includes('完成'));
+    assert.ok(completeText('error').includes('出'));
+    assert.ok(completeText('error', 'boom').includes('boom'));
+    assert.ok(Array.from(completeText('done', 'x'.repeat(100))).length <= CONFIRM_TEXT_MAX + 1);
   });
 });

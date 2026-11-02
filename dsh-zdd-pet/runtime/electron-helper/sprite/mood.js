@@ -198,6 +198,9 @@ Object.assign(PetSprite.prototype, {
   showMoodOnHover() {
     const p = this.moodParams();
     if (!p.enabled) return;
+    // 有常驻气泡（任务完成 / 等待确认）时不要用心情悬浮气泡把它顶掉——否则鼠标一碰
+    // 完成气泡就被心情气泡覆盖（表现为「碰到就消失」）。
+    if (this.whisperHold) return;
     const v = S.clampMood(this.mood ?? p.initial);
     const tier = this.moodTier();
     const ip = this.intimacyParams ? this.intimacyParams() : null;

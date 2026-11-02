@@ -66,6 +66,8 @@ export const GLOBAL_DEFAULT_KEYS = [
   'mood',
   'intimacy',
   'idleEvents',
+  'proactive',
+  'completion',
   'festival',
 ] as const;
 

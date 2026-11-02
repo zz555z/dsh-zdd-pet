@@ -83,6 +83,10 @@ Object.assign(PetSprite.prototype, {
     this.whisperTimer = null;
     // 常驻气泡（等待用户确认）：true = 不自动收起、优先级最高，直到宿主写 clear。
     this.whisperHold = false;
+    // 常驻类别：'confirm'（等待确认，真常驻）/ 'complete'（任务完成，hover/点击或定时收起）/ null。
+    this.whisperHoldKind = null;
+    // complete 气泡是否「鼠标移入即收」。
+    this.whisperDismissOnHover = false;
     // 撞墙回调（满格碰撞彩蛋期间临时挂上，打粒子用；平时 null）。
     this._bounceHandler = null;
     this.whisperView = null;

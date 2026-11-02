@@ -45,3 +45,29 @@ export function confirmText(kind: ConfirmKind, detail?: string): string {
   if (kind === 'approval') return d ? clip('有个操作需要你确认：' + d, CONFIRM_TEXT_MAX) : '有个操作需要你确认一下～';
   return d ? clip('有个问题想问你：' + d, CONFIRM_TEXT_MAX) : '有个问题想问你，等你选一下～';
 }
+
+// ===== 任务完成提示（与确认气泡同一套常驻机制，但切回界面后自动收起） =====
+
+/** 完成气泡的安全停留上限（24 小时）：正常由用户切回界面时 clear，长时间不管也不至于永远挂着。 */
+export const COMPLETE_HOLD_MS = 24 * 60 * 60 * 1000;
+
+/** 完成气泡在宿主侧的自动清除时长（ms）：投递后到点自动收起。宿主 node 定时器不受渲染节流，
+ *  解决「桌面宠物窗口离焦时 setTimeout 被 Chromium 节流、切回 app 也不消失」的问题。 */
+export const COMPLETE_AUTO_CLEAR_MS = 20 * 1000;
+
+/** 完成气泡按场景偏好的表情包名（优先从宠物自己的池里挑；池里没有则回退随机一张）。 */
+export const COMPLETE_PREFERRED_IMAGES: readonly string[] = ['得意', '厉害了我的鲸', '可爱', '哦鲸鲸', '鼓掌'];
+
+/** 完成场景：正常完成 / 出错。 */
+export type CompleteKind = 'done' | 'error';
+
+/**
+ * 生成任务完成气泡文案。
+ * @param kind - 正常完成 / 出错。
+ * @param detail - 可选细节（如出错信息或任务名）。
+ */
+export function completeText(kind: CompleteKind, detail?: string): string {
+  const d = String(detail ?? '').trim();
+  if (kind === 'error') return d ? clip('这轮出错了：' + d, CONFIRM_TEXT_MAX) : '这轮好像出了点问题…';
+  return d ? clip('搞定啦：' + d, CONFIRM_TEXT_MAX) : '任务完成啦，切回界面就收起提示～';
+}

@@ -25,7 +25,10 @@ export interface PomodoroEngine {
 
 /** 引擎依赖：配置 / 状态 / 日志 / 表情包投递。 */
 export type PomodoroEngineInput = Pick<HostSetup, 'configPaths' | 'state' | 'log' | 'memeDirsFor'> &
-  Pick<Extras, 'deliverCue' | 'pickPetMeme'>;
+  Pick<Extras, 'deliverCue' | 'pickPetMeme'> & {
+    /** 一段专注自然走完（非 skip）时回调：供主动关心「刚做完长专注」判据使用。 */
+    onFocusComplete?: (petId: string) => void;
+  };
 
 type Phase = 'idle' | 'focus' | 'break' | 'long-break';
 
@@ -38,6 +41,8 @@ type Phase = 'idle' | 'focus' | 'break' | 'long-break';
 export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine {
   const { configPaths, log, pickPetMeme, deliverCue, state } = deps;
   let phase: Phase = 'idle';
+  /** 发起本轮番茄钟的宠物（主动关心「刚做完长专注」用它定位）。 */
+  let focusPetId = '';
   let endsAt = 0;
   /** 暂停时的剩余秒数。 */
   let remainingSec = 0;
@@ -181,6 +186,14 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
     }
     if (phase === 'focus') {
       completedFocus += 1;
+      // 一段专注自然走完（非手动 skip）：通知主动关心「刚做完长专注」，可来一句夸夸/关心。
+      if (focusPetId && deps.onFocusComplete) {
+        try {
+          deps.onFocusComplete(focusPetId);
+        } catch {
+          /* 关心回调失败不影响番茄钟 */
+        }
+      }
       const long = pomo.roundsBeforeLongBreak > 0 && completedFocus % pomo.roundsBeforeLongBreak === 0;
       startBreak(pomo, long);
       return;
@@ -208,6 +221,7 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
           return { ok: true };
         }
         completedFocus = 0;
+        focusPetId = petId;
         startFocus(pomo);
         return { ok: true };
       case 'pause':

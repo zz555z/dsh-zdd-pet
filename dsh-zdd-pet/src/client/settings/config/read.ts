@@ -11,6 +11,8 @@ import { DEFAULT_GREETING } from '../../../shared/greeting.ts';
 import { DEFAULT_MOOD } from '../../../shared/mood.ts';
 import { readIntimacyParams } from '../../../shared/intimacy.ts';
 import { readIdleEventsParams } from '../../../shared/idle-events.ts';
+import { readProactiveParams } from '../../../shared/proactive.ts';
+import { readCompletionParams } from '../../../shared/completion.ts';
 import type {
   FontConfig,
   GreetingParams,
@@ -22,6 +24,8 @@ import type {
 } from '../../../shared/types.ts';
 import type { IntimacyParams } from '../../../shared/intimacy.ts';
 import type { IdleEventsParams } from '../../../shared/idle-events.ts';
+import type { ProactiveParams } from '../../../shared/proactive.ts';
+import type { CompletionParams } from '../../../shared/completion.ts';
 
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
@@ -51,6 +55,10 @@ export interface MainConfigPatch {
   intimacy?: IntimacyParams;
   /** 随机小事件（开关 + 间隔 + 事件池）：同上，用内置默认补满。 */
   idleEvents?: IdleEventsParams;
+  /** 主动关心 + 长期记忆：同上，用内置默认补满。 */
+  proactive?: ProactiveParams;
+  /** 任务完成常驻提示：同上，用内置默认补满。 */
+  completion?: CompletionParams;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
   chatMemoryRounds?: number;
@@ -110,6 +118,12 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   }
   if (main.idleEvents !== undefined) {
     patch.idleEvents = readIdleEventsParams(main.idleEvents);
+  }
+  if (main.proactive !== undefined) {
+    patch.proactive = readProactiveParams(main.proactive);
+  }
+  if (main.completion !== undefined) {
+    patch.completion = readCompletionParams(main.completion);
   }
   const whisperModel = readModel(main.whisperModel);
   if (whisperModel) patch.whisperModel = whisperModel;

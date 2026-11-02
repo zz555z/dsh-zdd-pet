@@ -239,6 +239,8 @@ describe('buildSaveBody —— 请求体字段', () => {
       mood: { enabled: true, initial: 60, touchGain: 4, decayPerHour: 4, low: 30, high: 70, texts: {} },
       intimacy: { enabled: true, stages: {} },
       idleEvents: { enabled: true, minGapSec: 90, maxGapSec: 300, events: [] },
+      proactive: { enabled: true, cooldownHours: 6, idleHours: 8, lateNightFrom: 23, lateNightTo: 5, longMemory: true },
+      completion: { enabled: true, holdUntilFocus: true },
     } as unknown as SaveFields;
     assert.deepEqual(Object.keys(buildSaveBody(fields)).sort(), [
       'bubbleImageEnabled',
@@ -246,6 +248,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       'chatMemoryRounds',
       'chatModel',
       'clickSoundEnabled',
+      'completion',
       'confineToScreen',
       'font',
       'greeting',
@@ -256,6 +259,7 @@ describe('buildSaveBody —— 请求体字段', () => {
       'pets',
       'physics',
       'pomodoro',
+      'proactive',
       'trayEnabled',
       'whisperModel',
     ]);

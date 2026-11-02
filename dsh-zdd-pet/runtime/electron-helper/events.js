@@ -166,6 +166,8 @@ PetSprite.prototype.clearWhisper = function clearWhisper() {
   this.whisperTimer = null;
   this.whisperOn = false;
   this.whisperHold = false;
+  this.whisperHoldKind = null;
+  this.whisperDismissOnHover = false;
   this.whisperView = null;
   this.whisperImage = '';
   this.whisperUrl = '';
@@ -275,9 +277,21 @@ PetSprite.prototype.checkRest = function checkRest() {
   console.log('[dsh-zdd-pet] ' + new Date().toTimeString().slice(0, 8) + ' 打瞌睡 pet=' + this.pet.id);
 };
 
-PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duration, anim, hold) {
+PetSprite.prototype.showWhisper = function showWhisper(
+  text,
+  image,
+  url,
+  duration,
+  anim,
+  hold,
+  holdKind,
+  dismissOnHover,
+) {
   this.rememberActivity();
-  // 等待用户确认的常驻气泡期间，普通气泡（点击台词/碎碎念/对话回复）一律不覆盖它。
+  // 「任务完成」类（holdKind=complete）：鼠标移入/点击收起（dismissOnHover），或宿主导时兜底。
+  const isComplete = hold === true && holdKind === 'complete';
+  // 常驻气泡（等待确认 confirm / 任务完成 complete）显示期间，新的普通气泡（点击台词/碎碎念/
+  // 对话回复）一律不覆盖它——否则完成提示会被随手冒出的碎碎念顶掉。
   if (this.whisperHold && !hold) return;
   let name = null;
   if (anim !== false) {
@@ -308,13 +322,20 @@ PetSprite.prototype.showWhisper = function showWhisper(text, image, url, duratio
   if (duration === 0) return;
   this.whisperOn = true;
   this.whisperHold = !!hold;
+  this.whisperHoldKind = isComplete ? 'complete' : hold ? 'confirm' : null;
+  // complete 气泡是否「鼠标移入即收」：缺省 true（老宿主/未传都按可收）。
+  this.whisperDismissOnHover = isComplete ? dismissOnHover !== false : false;
   this.whisperView = S.whisperBubbleView({ ok: true, text, ts: 0 });
   this.whisperImage = typeof image === 'string' ? image : '';
   this.whisperUrl = typeof url === 'string' ? url : '';
   this.renderBubble();
-  // 常驻气泡（等待用户确认）不设定时器：用户不确认就一直显示，直到宿主写 clear。
   if (this.whisperTimer !== null) window.clearTimeout(this.whisperTimer);
   this.whisperTimer = null;
+  // 任务完成气泡：不在这里设定时器——收起时机（hover 即收 + 20s 兜底）由「客户端 hover 逻辑」和
+  // 「宿主侧定时清除」负责；宿主会自动写 clear 收掉它。桌面端自己不再计时，避免与配置
+  // （completion.holdUntilFocus 关掉自动收时）打架。
+  if (isComplete) return;
+  // 真常驻（等待确认）不设定时器：用户不确认就一直显示，直到宿主写 clear。
   if (this.whisperHold) return;
   // 普通气泡定时消失（与动画解耦，与余额同一语义；重复触发先清旧定时器）
   this.whisperTimer = window.setTimeout(() => {
@@ -429,7 +450,17 @@ function applySayLeaf(petId, leaf) {
   for (const s of sprites) {
     if (s.pet.id !== petId) continue;
     if (said.kind === 'clear') s.clearWhisper();
-    else s.showWhisper(said.text, said.image, said.url, duration, said.anim, said.hold);
+    else
+      s.showWhisper(
+        said.text,
+        said.image,
+        said.url,
+        duration,
+        said.anim,
+        said.hold,
+        said.holdKind,
+        said.dismissOnHover,
+      );
   }
 }
 

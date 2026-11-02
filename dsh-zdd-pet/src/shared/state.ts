@@ -186,6 +186,11 @@ export type SayCue =
       duration?: number;
       anim?: boolean;
       hold?: boolean;
+      /** hold 的类别：confirm = 等待用户确认（一直挂到用户处理）；complete = 任务完成提示
+       *  （鼠标移入/点击收起，或宿主导时兜底）。缺省按 confirm 处理。 */
+      holdKind?: 'confirm' | 'complete';
+      /** complete 气泡是否「鼠标移入即收起」。缺省 true；false = 不自动收（一直挂着直到被覆盖）。 */
+      dismissOnHover?: boolean;
     }
   | { kind: 'clear' };
 
@@ -201,6 +206,8 @@ export function readSay(leaf: StateLeaf): SayCue | null {
     duration?: unknown;
     anim?: unknown;
     hold?: unknown;
+    holdKind?: unknown;
+    dismissOnHover?: unknown;
     clear?: unknown;
   };
   // 清空指令优先：它不带 text，所以必须排在文本校验前面
@@ -217,6 +224,8 @@ export function readSay(leaf: StateLeaf): SayCue | null {
     duration: typeof d.duration === 'number' && Number.isFinite(d.duration) && d.duration >= 0 ? d.duration : undefined,
     anim: typeof d.anim === 'boolean' ? d.anim : undefined,
     hold: typeof d.hold === 'boolean' ? d.hold : undefined,
+    holdKind: d.holdKind === 'complete' || d.holdKind === 'confirm' ? d.holdKind : undefined,
+    dismissOnHover: typeof d.dismissOnHover === 'boolean' ? d.dismissOnHover : undefined,
   };
 }
 

@@ -116,11 +116,14 @@ export interface BubbleSlots {
     /** 点余额气泡翻页，并重置停留计时。 */
     cycleBalance(): void;
     /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。
-     *  hold = true 表示常驻（等待用户确认），不吃 duration，且期间普通气泡一律不覆盖它。 */
+     *  hold = true 表示常驻，不吃 duration，且期间普通气泡一律不覆盖它。
+     *  holdKind 标明常驻类别（confirm 等待确认 / complete 任务完成），供「切回界面自动收起完成提示」判别。 */
     showWhisper(text: string, parts: {
         image?: string;
         url?: string;
-    }, duration?: number, hold?: boolean): void;
+    }, duration?: number, hold?: boolean, holdKind?: 'confirm' | 'complete'): void;
+    /** 当前常驻气泡的类别（没有常驻气泡时为 null）。 */
+    heldKind(): 'confirm' | 'complete' | null;
     /** 收起说话气泡；不碰动画与另两种气泡。 */
     clearWhisper(): void;
     /** 更新工作气泡文本，显隐不动。 */

@@ -26,6 +26,8 @@ export * from './work-status.ts';
 export * from './mood.ts';
 export * from './intimacy.ts';
 export * from './idle-events.ts';
+export * from './proactive.ts';
+export * from './completion.ts';
 export * from './state.ts';
 export * from './timings.ts';
 export * from './tooltip.ts';

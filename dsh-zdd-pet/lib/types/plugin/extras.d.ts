@@ -1,4 +1,4 @@
-import { type ConfirmKind } from '../confirm.ts';
+import { type CompleteKind, type ConfirmKind } from '../confirm.ts';
 import type { HostSetup } from './setup.ts';
 /** 投递所需的宿主能力。 */
 export type ExtrasInput = Pick<HostSetup, 'configPaths'> & Pick<HostSetup, 'memeDirsFor'> & Pick<HostSetup, 'state'>;
@@ -8,6 +8,10 @@ export interface CueContent {
     image?: string;
     /** 常驻气泡（等待用户确认）：不自动收起，直到宿主 clear。 */
     hold?: boolean;
+    /** 常驻类别：confirm（等待确认）/ complete（任务完成，hover/点击或定时收起）。 */
+    holdKind?: 'confirm' | 'complete';
+    /** complete 气泡是否「鼠标移入即收起」。缺省 true；false = 不自动收。 */
+    dismissOnHover?: boolean;
     /** 显式停留时长（毫秒）；hold 时通常不再需要。 */
     duration?: number;
 }
@@ -25,6 +29,7 @@ export declare function createExtras(deps: ExtrasInput): {
     memeValid: (petId: string, name: string) => boolean;
     deliverConfirm: (kind: ConfirmKind, text: string, rand?: () => number) => number;
     clearConfirm: () => number;
+    deliverComplete: (_kind: CompleteKind, text: string, rand?: () => number) => number;
 };
 /** 附加玩法投递器。 */
 export type Extras = ReturnType<typeof createExtras>;

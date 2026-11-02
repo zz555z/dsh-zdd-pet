@@ -11,6 +11,8 @@ import { greetingValid } from '../../shared/greeting.ts';
 import { moodValid } from '../../shared/mood.ts';
 import { intimacyValid } from '../../shared/intimacy.ts';
 import { idleEventsValid } from '../../shared/idle-events.ts';
+import { proactiveValid } from '../../shared/proactive.ts';
+import { completionValid } from '../../shared/completion.ts';
 import { festivalValid } from '../../shared/festival.ts';
 import { FONT_FAMILY_SET } from './constants.ts';
 
@@ -176,6 +178,10 @@ export function topFieldValid(key: string, value: unknown): boolean {
       return intimacyValid(value);
     case 'idleEvents':
       return idleEventsValid(value);
+    case 'proactive':
+      return proactiveValid(value);
+    case 'completion':
+      return completionValid(value);
     case 'festival':
       return festivalValid(value);
     case 'whisperModel':

@@ -14,6 +14,7 @@ import type { PetImageRef } from '../image-attachment.ts';
 import { limitPool, pickMeme, readMemePool } from '../memes.ts';
 import { generateWhisper } from '../whisper.ts';
 import { createMemoryOrphans } from './memory-orphans.ts';
+import type { MemoryFacts } from './memory-facts.ts';
 import { configuredModel } from '../model-selection.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
@@ -43,13 +44,23 @@ export type ChatMemoryInput = {
   Pick<HostSetup, 'log'> &
   Pick<HostSetup, 'memeDirsFor'> &
   Pick<HostSetup, 'state'> &
-  Pick<HostSetup, 'userRoot'>;
+  Pick<HostSetup, 'userRoot'> &
+  /** 长期记忆（事实）：对话前拼进 system、对话后抽取。可选——独立/测试用法可省略（等同关闭）。 */
+  Partial<Pick<MemoryFacts, 'readFacts' | 'factsPromptSection' | 'extractFacts'>> & {
+    /** 是否启用长期记忆（proactive.longMemory），按该宠物所属条目判。缺省 = 关闭。 */
+    longMemoryEnabled?: (conf: Record<string, unknown>) => boolean;
+  };
 
 /**
  * 创建对话与记忆。
  */
 export function createChatMemory(deps: ChatMemoryInput) {
   const { ctx, configPaths, log, memeDirsFor, state, userRoot } = deps;
+  // 长期记忆依赖可选（独立/测试用法省略 = 关闭）：缺省时用空实现兜底，避免每次调用都判空。
+  const longMemoryEnabled = deps.longMemoryEnabled ?? (() => false);
+  const readFacts = deps.readFacts ?? (async () => []);
+  const factsPromptSection = deps.factsPromptSection ?? (() => '');
+  const extractFacts = deps.extractFacts ?? (async () => 0);
   // 命令「当前桌宠」（/pet 选择、/chat 使用）：全局单值不分会话；进程内内存，重启回默认第一只
   let activePetId = '';
 
@@ -190,7 +201,11 @@ export function createChatMemory(deps: ChatMemoryInput) {
       if (!found) return { ok: false, reason: 'unknown-pet', message: '没有这只桌宠：' + petId };
       const rounds = memoryRounds(found.conf);
       // 人设：实例级 whisperPrompt 优先，没写回落所属条目（与碎碎念同一拼装）
-      const system = petSystemPrompt(found);
+      const baseSystem = petSystemPrompt(found);
+      // 长期记忆：开启时把该宠物已记住的事实拼进 system（人设之后），让模型接得上话。
+      const facts = longMemoryEnabled(found.conf) ? await readFacts(petId) : [];
+      const factsSection = factsPromptSection(facts);
+      const system = factsSection ? baseSystem + '\n' + factsSection : baseSystem;
       // 配图：开关关闭 → 空池（指令与解析都不介入）；目录链按所属条目取。
       // 张数上限（chatImageLimit，0 = 不限制）：整张清单每条消息都要附，截断后费用上限可控。
       const pool =
@@ -240,6 +255,17 @@ export function createChatMemory(deps: ChatMemoryInput) {
         ...(generated.image ? { meme: generated.image } : {}),
       });
       await writeMemory(mem);
+      // 长期记忆抽取：不阻塞本轮回复（失败静默，不影响对话体验），用 whisperModel/当前对话模型。
+      if (longMemoryEnabled(found.conf)) {
+        const extractSystem = petSystemPrompt(found);
+        void extractFacts(
+          petId,
+          extractSystem,
+          text,
+          generated.text,
+          configuredModel(found.conf, 'whisperModel'),
+        ).catch(() => {});
+      }
       // 回复写进 S（与碎碎念同一个叶子：前端本来就是同一条展示链路）
       state.writePet(
         petId,

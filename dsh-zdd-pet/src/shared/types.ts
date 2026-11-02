@@ -6,6 +6,8 @@
  */
 import type { IntimacyParams } from './intimacy.ts';
 import type { IdleEventsParams } from './idle-events.ts';
+import type { ProactiveParams } from './proactive.ts';
+import type { CompletionParams } from './completion.ts';
 
 /** 支持的角落。 */
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -127,9 +129,12 @@ export interface Pet {
   intimacy?: IntimacyParams;
   /** 条目级：随机小事件（空闲时自己跑出来做件事）。 */
   idleEvents?: IdleEventsParams;
+  /** 全局默认：主动关心 + 长期记忆（久未搭理/深夜/专注后主动搭话；从对话抽取事实长期记住）。 */
+  proactive?: ProactiveParams;
+  /** 全局默认：任务完成常驻提示（完成/出错时挂常驻气泡；可配切回界面是否自动收起）。 */
+  completion?: CompletionParams;
   /** 全局默认：番茄钟 / 久坐提醒（设置页可开/关并选提醒间隔；文案池不在设置页暴露，手改 config 可自定义） */
-  pomodoro?: PomodoroParams;
-  /** 全局默认：启动吉祥话（每次 DSH 启动让宠物说一句吉利话） */
+  pomodoro?: PomodoroParams; /** 全局默认：启动吉祥话（每次 DSH 启动让宠物说一句吉利话） */
   greeting?: GreetingParams;
 }
 
@@ -137,7 +142,10 @@ export interface Pet {
 export type { IntimacyParams, IntimacyStage, IntimacyTier } from './intimacy.ts';
 /** 随机小事件（config.jsonc 的 idleEvents 段）：形状与校验见 shared/idle-events.ts。 */
 export type { IdleEvent, IdleEventsParams } from './idle-events.ts';
-
+/** 主动关心 + 长期记忆（config.jsonc 的 proactive 段）：形状与校验见 shared/proactive.ts。 */
+export type { ProactiveParams, CareReason, MemoryFact } from './proactive.ts';
+/** 任务完成常驻提示（config.jsonc 的 completion 段）：形状与校验见 shared/completion.ts。 */
+export type { CompletionParams } from './completion.ts';
 /** config.jsonc 的 greeting 段：启动吉祥话。
  *  默认值见 shared/greeting.ts 的 DEFAULT_GREETING，与内置 config.jsonc 保持一致。 */
 export interface GreetingParams {

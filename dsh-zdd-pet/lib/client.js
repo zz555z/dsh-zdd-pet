@@ -1680,7 +1680,9 @@ function readSay(leaf$1) {
 		url: typeof d.url === "string" ? d.url : void 0,
 		duration: typeof d.duration === "number" && Number.isFinite(d.duration) && d.duration >= 0 ? d.duration : void 0,
 		anim: typeof d.anim === "boolean" ? d.anim : void 0,
-		hold: typeof d.hold === "boolean" ? d.hold : void 0
+		hold: typeof d.hold === "boolean" ? d.hold : void 0,
+		holdKind: d.holdKind === "complete" || d.holdKind === "confirm" ? d.holdKind : void 0,
+		dismissOnHover: typeof d.dismissOnHover === "boolean" ? d.dismissOnHover : void 0
 	};
 }
 function readWorkStatus(leaf$1) {
@@ -2577,6 +2579,79 @@ function idleEventsValid(value) {
 }
 
 //#endregion
+//#region src/shared/proactive.ts
+const DEFAULT_PROACTIVE = {
+	enabled: true,
+	cooldownHours: 6,
+	idleHours: 8,
+	lateNightFrom: 23,
+	lateNightTo: 5,
+	longMemory: true
+};
+/** 小时数合法上限（天）。 */
+const HOUR_MAX = 24 * 30;
+function readProactiveParams(raw) {
+	const d = DEFAULT_PROACTIVE;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...d };
+	const o = raw;
+	const num = (v, fb, min, max) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= min && n <= max ? n : fb;
+	};
+	const hour = (v, fb) => {
+		const n = Number(v);
+		return Number.isFinite(n) && n >= 0 && n <= 23 ? Math.floor(n) : fb;
+	};
+	return {
+		enabled: o.enabled !== false,
+		cooldownHours: num(o.cooldownHours, d.cooldownHours, 1, HOUR_MAX),
+		idleHours: num(o.idleHours, d.idleHours, 1, HOUR_MAX),
+		lateNightFrom: hour(o.lateNightFrom, d.lateNightFrom),
+		lateNightTo: hour(o.lateNightTo, d.lateNightTo),
+		longMemory: o.longMemory !== false
+	};
+}
+function proactiveValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.longMemory !== void 0 && typeof o.longMemory !== "boolean") return false;
+	for (const key of ["cooldownHours", "idleHours"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isFinite(n) || n < 1 || n > HOUR_MAX) return false;
+	}
+	for (const key of ["lateNightFrom", "lateNightTo"]) {
+		if (o[key] === void 0) continue;
+		const n = Number(o[key]);
+		if (!Number.isInteger(n) || n < 0 || n > 23) return false;
+	}
+	return true;
+}
+
+//#endregion
+//#region src/shared/completion.ts
+const DEFAULT_COMPLETION = {
+	enabled: true,
+	holdUntilFocus: true
+};
+function readCompletionParams(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_COMPLETION };
+	const o = raw;
+	return {
+		enabled: o.enabled !== false,
+		holdUntilFocus: o.holdUntilFocus !== false
+	};
+}
+function completionValid(value) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const o = value;
+	if (typeof o.enabled !== "boolean") return false;
+	if (o.holdUntilFocus !== void 0 && typeof o.holdUntilFocus !== "boolean") return false;
+	return true;
+}
+
+//#endregion
 //#region src/shared/notify.ts
 const NOTIFY_ICONS$1 = {
 	done: "notify-done",
@@ -3041,6 +3116,8 @@ function readMainConfig(merged) {
 	};
 	if (main.intimacy !== void 0) patch.intimacy = readIntimacyParams(main.intimacy);
 	if (main.idleEvents !== void 0) patch.idleEvents = readIdleEventsParams(main.idleEvents);
+	if (main.proactive !== void 0) patch.proactive = readProactiveParams(main.proactive);
+	if (main.completion !== void 0) patch.completion = readCompletionParams(main.completion);
 	const whisperModel = readModel(main.whisperModel);
 	if (whisperModel) patch.whisperModel = whisperModel;
 	const chatModel = readModel(main.chatModel);
@@ -3091,7 +3168,9 @@ function buildSaveBody(fields) {
 		greeting: fields.greeting,
 		mood: fields.mood,
 		intimacy: fields.intimacy,
-		idleEvents: fields.idleEvents
+		idleEvents: fields.idleEvents,
+		proactive: fields.proactive,
+		completion: fields.completion
 	};
 }
 async function loadConfig(signal) {
@@ -3280,6 +3359,8 @@ function validateForm(values) {
 	if (!moodValid(values.mood)) return "invalidMood";
 	if (!intimacyValid(values.intimacy)) return "invalidIntimacy";
 	if (!idleEventsValid(values.idleEvents)) return "invalidIdleEvents";
+	if (!proactiveValid(values.proactive)) return "invalidProactive";
+	if (!completionValid(values.completion)) return "invalidCompletion";
 	return null;
 }
 
@@ -3302,7 +3383,9 @@ function createWriteFlow(deps) {
 			greeting: fields.greeting,
 			mood: fields.mood,
 			intimacy: fields.intimacy,
-			idleEvents: fields.idleEvents
+			idleEvents: fields.idleEvents,
+			proactive: fields.proactive,
+			completion: fields.completion
 		});
 		if (invalid !== null) {
 			setMsg({
@@ -4682,6 +4765,82 @@ function makeIdleEventsCard(rt) {
 }
 
 //#endregion
+//#region src/client/settings/proactive-card.ts
+function makeProactiveCard(rt) {
+	const { h, t } = rt;
+	const { cardHead, field, toggleCell } = makeUiKit({
+		h,
+		t
+	});
+	return function ProactiveCard(props) {
+		const { busy, proactive } = props;
+		const num = (key, value, min, max) => h("input", {
+			type: "number",
+			className: INPUT_CLASS,
+			step: "1",
+			min: String(min),
+			max: String(max),
+			value: String(value),
+			disabled: busy,
+			onChange: (e) => {
+				const n = Number(e.target.value);
+				if (Number.isFinite(n)) props.onChange({ [key]: n });
+			}
+		});
+		const hour = (key, value) => h("input", {
+			type: "number",
+			className: INPUT_CLASS,
+			step: "1",
+			min: "0",
+			max: "23",
+			value: String(value),
+			disabled: busy,
+			onChange: (e) => {
+				const n = Number(e.target.value);
+				if (Number.isFinite(n)) props.onChange({ [key]: Math.trunc(n) });
+			}
+		});
+		return h("div", {
+			className: "dsh-zdd-pet-cfg__card",
+			children: [
+				cardHead(t("proactiveTitle"), t("proactiveHint")),
+				toggleCell("proactiveEnabled", proactive.enabled, busy, (v) => props.onChange({ enabled: v })),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid3",
+					children: [field(t("proactiveCooldown"), num("cooldownHours", proactive.cooldownHours, 1, 720), t("proactiveCooldownHint")), field(t("proactiveIdle"), num("idleHours", proactive.idleHours, 1, 720), t("proactiveIdleHint"))]
+				}),
+				h("div", {
+					className: "dsh-zdd-pet-cfg__grid3",
+					children: [field(t("proactiveLateFrom"), hour("lateNightFrom", proactive.lateNightFrom), t("proactiveLateHint")), field(t("proactiveLateTo"), hour("lateNightTo", proactive.lateNightTo))]
+				}),
+				toggleCell("proactiveLongMemory", proactive.longMemory, busy, (v) => props.onChange({ longMemory: v }))
+			]
+		});
+	};
+}
+
+//#endregion
+//#region src/client/settings/completion-card.ts
+function makeCompletionCard(rt) {
+	const { h, t } = rt;
+	const { cardHead, toggleCell } = makeUiKit({
+		h,
+		t
+	});
+	return function CompletionCard(props) {
+		const { busy, completion } = props;
+		return h("div", {
+			className: "dsh-zdd-pet-cfg__card",
+			children: [
+				cardHead(t("completionTitle"), t("completionHint")),
+				toggleCell("completionEnabled", completion.enabled, busy, (v) => props.onChange({ enabled: v })),
+				toggleCell("completionHoldUntilFocus", completion.holdUntilFocus, busy, (v) => props.onChange({ holdUntilFocus: v }))
+			]
+		});
+	};
+}
+
+//#endregion
 //#region src/client/settings/pet-draft.ts
 function nextPetId(list, kind = "main") {
 	const prefix = kind === "main" ? "pet" : kind;
@@ -5029,6 +5188,26 @@ const zh = {
 	idleEventsMaxHint: "两次小事件之间的最长间隔（20~86400）。",
 	invalidIntimacy: "请检查亲密度设置：格式不正确。",
 	invalidIdleEvents: "请检查随机小事件设置：间隔需在 20~86400 秒之间。",
+	proactiveTitle: "主动关心 / 长期记忆",
+	proactiveHint: "宠物在久未搭理、深夜还在忙、刚做完一段专注时，会主动冒一句关心话（会调用模型）。长期记忆会从对话里提炼「用户事实」（身份/在做的项目/偏好）长期记住，下次聊天能接上话。",
+	proactiveEnabled: "启用主动关心",
+	proactiveEnabledHint: "关闭后宠物只在你找它时才说话，不再主动搭话。",
+	proactiveCooldown: "两次间隔（小时）",
+	proactiveCooldownHint: "同一只宠物两次主动关心的最小间隔（1~720）。",
+	proactiveIdle: "多久算久未搭理（小时）",
+	proactiveIdleHint: "超过这么多小时没交互，就可能触发一次关心（1~720）。",
+	proactiveLateFrom: "深夜起始（0~23 点）",
+	proactiveLateHint: "深夜时段起点，可跨午夜（如 23 点）。深夜且最近在工作就会提醒休息。",
+	proactiveLateTo: "深夜结束（0~23 点）",
+	proactiveLongMemory: "启用长期记忆",
+	invalidProactive: "请检查主动关心设置：间隔需在 1~720 小时，深夜时段需是 0~23 的整数。",
+	completionTitle: "任务完成提示",
+	completionHint: "一轮任务完成或出错时，桌宠弹一条带表情的气泡显示结果。默认把鼠标移到宠物身上就会收起（另有约 20 秒兜底自动消失）；也可以关掉自动收起，让它一直挂着直到下一次说话把它覆盖。",
+	completionEnabled: "启用任务完成提示",
+	completionEnabledHint: "关闭后不再在完成/出错时挂气泡（系统通知与彩蛋不受影响）。",
+	completionHoldUntilFocus: "鼠标移过去就收起",
+	completionHoldUntilFocusHint: "开启：鼠标移到宠物身上即收起，且约 20 秒后自动消失；关闭：不自动收，一直挂着直到下一次说话或手动清除。",
+	invalidCompletion: "请检查任务完成提示设置：格式不正确。",
 	"font.candy": "软糖体（内置）",
 	"font.yahei": "微软雅黑 / 苹方",
 	"font.youyuan": "幼圆",
@@ -5254,6 +5433,26 @@ const en = {
 	idleEventsMaxHint: "Longest gap between two mini-events (20–86400).",
 	invalidIntimacy: "Check the intimacy setting: the format is invalid.",
 	invalidIdleEvents: "Check the idle mini-events setting: gaps must be between 20 and 86400 seconds.",
+	proactiveTitle: "Proactive care / long memory",
+	proactiveHint: "The pet speaks up on its own when you have been away a while, when it is late and you are still busy, or right after a focus session (this calls the model). Long-term memory distills user facts (identity, projects, preferences) from chats and remembers them so the pet can pick up the thread next time.",
+	proactiveEnabled: "Enable proactive care",
+	proactiveEnabledHint: "When off, the pet only talks when you talk to it.",
+	proactiveCooldown: "Min gap (hours)",
+	proactiveCooldownHint: "Minimum gap between two proactive messages for the same pet (1–720).",
+	proactiveIdle: "Idle threshold (hours)",
+	proactiveIdleHint: "After this many hours without interaction, a care message may trigger (1–720).",
+	proactiveLateFrom: "Late night from (0–23)",
+	proactiveLateHint: "Start of the late-night window; may cross midnight (e.g. 23).",
+	proactiveLateTo: "Late night to (0–23)",
+	proactiveLongMemory: "Enable long-term memory",
+	invalidProactive: "Check the proactive setting: gaps must be 1–720 hours and late-night hours must be integers 0–23.",
+	completionTitle: "Task completion notice",
+	completionHint: "When a task finishes or errors, the pet shows a bubble with the result. By default, moving the mouse onto the pet dismisses it (plus a ~20s auto-dismiss fallback); or turn that off to keep it until the next message overwrites it.",
+	completionEnabled: "Enable task completion notice",
+	completionEnabledHint: "When off, no bubble on completion/error (system notifications and easter eggs are unaffected).",
+	completionHoldUntilFocus: "Dismiss on mouse hover",
+	completionHoldUntilFocusHint: "On: moving the mouse onto the pet dismisses it, and it also auto-dismisses after ~20s. Off: it stays until the next message or manual clear.",
+	invalidCompletion: "Check the task completion notice setting: the format is invalid.",
 	"font.candy": "Candy (bundled)",
 	"font.yahei": "Microsoft YaHei / PingFang",
 	"font.youyuan": "YouYuan",
@@ -5339,6 +5538,8 @@ function makePetConfigSection(rt) {
 	const MoodCard = makeMoodCard(rt);
 	const IntimacyCard = makeIntimacyCard(rt);
 	const IdleEventsCard = makeIdleEventsCard(rt);
+	const ProactiveCard = makeProactiveCard(rt);
+	const CompletionCard = makeCompletionCard(rt);
 	const Actions = makeActions(rt);
 	const { ConfigMetaCard, StorageCard } = makePathsCards(rt);
 	const SettingsDialog = makeDialog(rt);
@@ -5380,6 +5581,8 @@ function makePetConfigSection(rt) {
 			...DEFAULT_IDLE_EVENTS,
 			events: DEFAULT_IDLE_EVENTS.events.map((e) => ({ ...e }))
 		});
+		const [proactive, setProactive] = useState({ ...DEFAULT_PROACTIVE });
+		const [completion, setCompletion] = useState({ ...DEFAULT_COMPLETION });
 		const [font, setFont] = useState({ ...DEFAULT_FONT });
 		const [whisperModel, setWhisperModel] = useState({
 			provider: "",
@@ -5407,6 +5610,8 @@ function makePetConfigSection(rt) {
 			if (patch.mood !== void 0) setMood(patch.mood);
 			if (patch.intimacy !== void 0) setIntimacy(patch.intimacy);
 			if (patch.idleEvents !== void 0) setIdleEvents(patch.idleEvents);
+			if (patch.proactive !== void 0) setProactive(patch.proactive);
+			if (patch.completion !== void 0) setCompletion(patch.completion);
 			if (patch.font !== void 0) setFont(patch.font);
 			if (patch.whisperModel !== void 0) setWhisperModel(patch.whisperModel);
 			if (patch.chatModel !== void 0) setChatModel(patch.chatModel);
@@ -5469,6 +5674,14 @@ function makePetConfigSection(rt) {
 			...current,
 			...patch
 		}));
+		const patchProactive = (patch) => setProactive((current) => ({
+			...current,
+			...patch
+		}));
+		const patchCompletion = (patch) => setCompletion((current) => ({
+			...current,
+			...patch
+		}));
 		/** 两个模型字段各有一份状态，卡片只回传键名。 */
 		const setModel = (key, value) => {
 			if (key === "whisperModel") setWhisperModel(value);
@@ -5488,6 +5701,8 @@ function makePetConfigSection(rt) {
 				mood,
 				intimacy,
 				idleEvents,
+				proactive,
+				completion,
 				whisperModel,
 				chatModel,
 				chatMemoryRounds: chatMemory,
@@ -5607,6 +5822,16 @@ function makePetConfigSection(rt) {
 					busy,
 					idleEvents,
 					onChange: patchIdleEvents
+				}),
+				h(ProactiveCard, {
+					busy,
+					proactive,
+					onChange: patchProactive
+				}),
+				h(CompletionCard, {
+					busy,
+					completion,
+					onChange: patchCompletion
 				}),
 				h(Actions, {
 					busy,
@@ -5902,7 +6127,7 @@ function createAnimationFlow(rt) {
 			pickNext();
 		};
 		/** 说一句：抽碎碎念动画并弹气泡，两者独立。 */
-		const speak = (text, image, url, duration, anim, hold) => {
+		const speak = (text, image, url, duration, anim, hold, holdKind) => {
 			const card = hub.card;
 			let name = null;
 			if (anim !== false) {
@@ -5922,7 +6147,7 @@ function createAnimationFlow(rt) {
 			hub.bubbles.showWhisper(text, {
 				image,
 				url
-			}, duration, hold);
+			}, duration, hold, holdKind);
 		};
 		return {
 			applyEndedCue,
@@ -5982,6 +6207,7 @@ function createBubbleSlots(rt, components) {
 		const [whisperHold, setWhisperHold] = useState(false);
 		const whisperTimerRef = useRef(null);
 		const whisperHoldRef = useRef(false);
+		const whisperHoldKindRef = useRef(null);
 		const [workOn, setWorkOn] = useState(false);
 		const [workText, setWorkText] = useState(null);
 		const workTimerRef = useRef(null);
@@ -6005,7 +6231,7 @@ function createBubbleSlots(rt, components) {
 			setBalancePage((page) => (page + 1) % pages);
 			armBalanceTimeout();
 		};
-		const showWhisper = (text, parts, duration, hold = false) => {
+		const showWhisper = (text, parts, duration, hold = false, holdKind) => {
 			if (duration === 0) return;
 			if (whisperHoldRef.current && !hold) return;
 			setWhisperText(text);
@@ -6013,6 +6239,7 @@ function createBubbleSlots(rt, components) {
 			setWhisperUrl(parts.url);
 			setWhisperHold(hold);
 			whisperHoldRef.current = hold;
+			whisperHoldKindRef.current = hold ? holdKind ?? "confirm" : null;
 			setWhisperOn(true);
 			if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
 			whisperTimerRef.current = hold ? null : window.setTimeout(() => setWhisperOn(false), duration ?? BUBBLE_DURATION_MS);
@@ -6021,6 +6248,7 @@ function createBubbleSlots(rt, components) {
 			if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
 			whisperTimerRef.current = null;
 			whisperHoldRef.current = false;
+			whisperHoldKindRef.current = null;
 			setWhisperHold(false);
 			setWhisperOn(false);
 			setWhisperText(null);
@@ -6078,6 +6306,7 @@ function createBubbleSlots(rt, components) {
 		return {
 			clearWhisper,
 			cycleBalance,
+			heldKind: () => whisperHoldKindRef.current,
 			hideWork,
 			lightWork,
 			node,
@@ -8055,6 +8284,7 @@ function createCardEntry(rt) {
 				hoverRef.current = true;
 				placeTip(e.clientX, e.clientY);
 				card.actions.setTipOn(true);
+				input.onHoverEnter?.();
 			},
 			onPointerLeave: () => {
 				hoverRef.current = false;
@@ -8984,7 +9214,7 @@ function createCueEffects(rt) {
 				return;
 			}
 			const duration = say.duration === void 0 ? sayBubbleDurationMs(say.text) : say.duration;
-			hub.speak(say.text, say.image, say.url, duration, say.anim, say.hold);
+			hub.speak(say.text, say.image, say.url, duration, say.anim, say.hold, say.holdKind);
 		};
 		/** 点播动画：url 插播一段，名称走菜单同一套动作。 */
 		const consumeAnimCue = () => {
@@ -9231,6 +9461,21 @@ function createCardRuntime(rt) {
 			workHasTask: hasTask(workStatus),
 			workProgress: progressText(workStatus)
 		});
+		useEffect(() => {
+			if (typeof document === "undefined") return;
+			const onActive = () => {
+				if (document.hidden) return;
+				if (bubbles.heldKind() !== "complete") return;
+				if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
+				postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id));
+			};
+			document.addEventListener("visibilitychange", onActive);
+			window.addEventListener("focus", onActive);
+			return () => {
+				document.removeEventListener("visibilitychange", onActive);
+				window.removeEventListener("focus", onActive);
+			};
+		}, []);
 		const ownAnim = useCardAnimation({
 			card,
 			cfgRef,
@@ -9349,6 +9594,11 @@ function createCardRuntime(rt) {
 			},
 			onActivity: () => {
 				markActivity();
+				if (bubbles.heldKind() === "complete") {
+					bubbles.clearWhisper();
+					postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id));
+					return true;
+				}
 				const touched = mood.touch();
 				if (touched.hitMax) return triggerMoodExcite();
 				if (touched.promoted && touched.promotedTo) triggerIntimacyPromote(touched.promotedTo);
@@ -9375,6 +9625,12 @@ function createCardRuntime(rt) {
 			live: liveRef,
 			menuItemsRef,
 			motion,
+			onHoverEnter: () => {
+				if (bubbles.heldKind() !== "complete") return;
+				if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
+				bubbles.clearWhisper();
+				postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id));
+			},
 			runMenuAction: (leaf$1, playbackId, keepFacing) => menuActionsRef.current?.run(leaf$1, playbackId, keepFacing),
 			stage: () => stageRef.current,
 			tipRef

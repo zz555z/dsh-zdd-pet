@@ -9,7 +9,16 @@
 import { findPetInstance, readAllConfig } from '../config.ts';
 import { parseEasterEggs, pickEasterEgg } from '../easter-egg.ts';
 import { matchMeme, pickMeme, readMemePool } from '../memes.ts';
-import { CONFIRM_HOLD_MS, CONFIRM_PREFERRED_IMAGES, type ConfirmKind } from '../confirm.ts';
+import {
+  CONFIRM_HOLD_MS,
+  CONFIRM_PREFERRED_IMAGES,
+  COMPLETE_HOLD_MS,
+  COMPLETE_AUTO_CLEAR_MS,
+  COMPLETE_PREFERRED_IMAGES,
+  type CompleteKind,
+  type ConfirmKind,
+} from '../confirm.ts';
+import { readCompletionParams } from '../../shared/completion.ts';
 import type { HostSetup } from './setup.ts';
 
 /** 投递所需的宿主能力。 */
@@ -21,6 +30,10 @@ export interface CueContent {
   image?: string;
   /** 常驻气泡（等待用户确认）：不自动收起，直到宿主 clear。 */
   hold?: boolean;
+  /** 常驻类别：confirm（等待确认）/ complete（任务完成，hover/点击或定时收起）。 */
+  holdKind?: 'confirm' | 'complete';
+  /** complete 气泡是否「鼠标移入即收起」。缺省 true；false = 不自动收。 */
+  dismissOnHover?: boolean;
   /** 显式停留时长（毫秒）；hold 时通常不再需要。 */
   duration?: number;
 }
@@ -44,6 +57,10 @@ export function createExtras(deps: ExtrasInput) {
       ...(image ? { image } : {}),
       ...(cue.duration !== undefined ? { duration: cue.duration } : {}),
       ...(cue.hold ? { hold: true } : {}),
+      ...(cue.hold && cue.holdKind ? { holdKind: cue.holdKind } : {}),
+      ...(cue.hold && cue.holdKind === 'complete' && cue.dismissOnHover !== undefined
+        ? { dismissOnHover: cue.dismissOnHover }
+        : {}),
     });
     return true;
   };
@@ -180,7 +197,98 @@ export function createExtras(deps: ExtrasInput) {
     return cleared;
   };
 
-  return { deliverCue, pickPetMeme, petConf, deliverEasterEgg, memeValid, deliverConfirm, clearConfirm };
+  /**
+   * 任务完成提示：给所有启用工作状态联动的宠物各投一条常驻气泡（holdKind='complete'）。
+   *
+   * 与确认气泡同一套 hold 机制（不自动收起），区别是客户端会在用户切回界面时把 complete 类收起。
+   * 表情包从该宠物池里挑「完成感」的（优先名单），池里没有就随机一张；配图总开关关时只文字。
+   *
+   * @param _kind - 完成 / 出错（当前投递不分两者；文案已由 completeText 按此生成，保留此参数以备将来区分表现）。
+   * @param text - 气泡文案（由 completeText 生成）。
+   * @param rand - 随机源。
+   * @returns 投出的宠物数。
+   */
+  const deliverComplete = (_kind: CompleteKind, text: string, rand: () => number = Math.random): number => {
+    let cfg: Record<string, Record<string, unknown>>;
+    try {
+      cfg = readAllConfig(configPaths);
+    } catch {
+      return 0;
+    }
+    let delivered = 0;
+    for (const [entry, conf] of Object.entries(cfg)) {
+      // 条目关闭了完成提示 → 该条目下所有宠物都不挂。
+      const completionParams = readCompletionParams(conf?.completion);
+      if (completionParams.enabled === false) continue;
+      // holdUntilFocus = 「自动收起」开关：true 才起 20s 兜底定时（hover 收起由客户端负责）；
+      // false = 不自动收，一直挂着直到被覆盖。
+      const autoDismiss = completionParams.holdUntilFocus !== false;
+      const pets = Array.isArray(conf?.pets) ? (conf.pets as Record<string, unknown>[]) : [];
+      const canImage = conf?.bubbleImageEnabled !== false;
+      const pool = canImage ? readMemePool(conf?.memes, memeDirsFor(entry)) : [];
+      const preferredPool = pool.filter((m) => COMPLETE_PREFERRED_IMAGES.includes(m.name));
+      const image = canImage
+        ? (preferredPool.length > 0 ? preferredPool[Math.floor(rand() * preferredPool.length)] : pickMeme(pool, rand))
+            ?.name
+        : undefined;
+      for (const pet of pets) {
+        const petId = String(pet.id ?? '');
+        if (!petId || pet.workStatusEnabled !== true) continue;
+        if (
+          deliverCue(petId, {
+            text,
+            ...(image ? { image } : {}),
+            hold: true,
+            holdKind: 'complete',
+            dismissOnHover: autoDismiss,
+            duration: COMPLETE_HOLD_MS,
+          })
+        ) {
+          delivered += 1;
+          if (autoDismiss) scheduleCompleteAutoClear(petId, text);
+        }
+      }
+    }
+    return delivered;
+  };
+
+  // 完成气泡的自动清除由**宿主侧**负责（渲染进程的 setTimeout 在宠物窗口离焦时会被 Chromium
+  // 节流，导致「切回 app 也不消失」）。宿主是 node 进程，定时器不被节流，还能多端同步清。
+  // 到点只在 say 仍是这条完成气泡（文本一致 + holdKind=complete）时才清，避免误清新气泡。
+  const completeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const scheduleCompleteAutoClear = (petId: string, text: string): void => {
+    const prev = completeTimers.get(petId);
+    if (prev !== undefined) clearTimeout(prev);
+    const t = setTimeout(() => {
+      completeTimers.delete(petId);
+      try {
+        const say = state.read().pets[petId]?.say?.data as { text?: unknown; holdKind?: unknown } | undefined;
+        if (say && say.holdKind === 'complete' && say.text === text) {
+          state.writePet(petId, 'say', { clear: true });
+        }
+      } catch {
+        /* 清失败不影响 */
+      }
+    }, COMPLETE_AUTO_CLEAR_MS);
+    // 不阻止进程退出（插件卸载 / 宿主关闭时 timer 不该卡住事件循环）。
+    if (typeof (t as { unref?: () => void }).unref === 'function') (t as { unref: () => void }).unref();
+    completeTimers.set(petId, t);
+  };
+
+  // 说明：不导出「收起完成气泡」。客户端 clear 是整槽清空，若被误用会连同正在等待确认的
+  // confirm 气泡一起清掉；完成气泡的收起由客户端在「确认当前是 complete 类」时经 /bubble/clear 触发，
+  // 宿主侧不需要也不应提供毛坯的 clearComplete。
+
+  return {
+    deliverCue,
+    pickPetMeme,
+    petConf,
+    deliverEasterEgg,
+    memeValid,
+    deliverConfirm,
+    clearConfirm,
+    deliverComplete,
+  };
 }
 /** 附加玩法投递器。 */
 export type Extras = ReturnType<typeof createExtras>;

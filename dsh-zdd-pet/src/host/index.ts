@@ -14,6 +14,9 @@ import { registerSessionWatch } from './plugin/session-watch.ts';
 import { createDesktopHelper } from './plugin/desktop-helper.ts';
 import { createBalancePoll } from './plugin/balance-poll.ts';
 import { createChatMemory } from './plugin/chat-memory.ts';
+import { createMemoryFacts } from './plugin/memory-facts.ts';
+import { createProactive } from './plugin/proactive.ts';
+import { configuredModel } from './model-selection.ts';
 import { createExtras } from './plugin/extras.ts';
 import { maybeGreeting } from './greeting.ts';
 import { maybeFestival, maybeIntimacyAnniversary } from './festival.ts';
@@ -23,6 +26,7 @@ import { createPetLookup } from './plugin/pet-lookup.ts';
 import { createDownloadReport } from './plugin/download-report.ts';
 import { createWorkStatusBridge } from './plugin/work-status-bridge.ts';
 import type { PetRouteDeps } from './routes/types.ts';
+import { readProactiveParams } from '../shared/proactive.ts';
 
 /** 插件行 id（与 cordis.patch.yml 一致） */
 export const name = 'pet';
@@ -72,8 +76,40 @@ export function apply(ctx: any): void {
     notifyActivityTimers,
     scheduleCompletionNotify,
   } = sessionNotify;
-  const chatMemory = createChatMemory({ ctx, configPaths, log, memeDirsFor, state, userRoot });
+  const memoryFacts = createMemoryFacts({ userRoot, ctx, log });
+  const chatMemory = createChatMemory({
+    ctx,
+    configPaths,
+    log,
+    memeDirsFor,
+    state,
+    userRoot,
+    readFacts: memoryFacts.readFacts,
+    factsPromptSection: memoryFacts.factsPromptSection,
+    extractFacts: memoryFacts.extractFacts,
+    longMemoryEnabled: (conf) => readProactiveParams(conf.proactive).longMemory,
+  });
   const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
+
+  // 主动关心：久未搭理 / 深夜还在忙 / 刚做完专注时自己冒一句关心。
+  const proactive = createProactive({
+    ctx,
+    configPaths,
+    state,
+    log,
+    memeDirsFor,
+    configuredModel,
+    // 「最近在工作活动」：工作状态快照最近一次变化在 10 分钟内即算在忙（深夜提醒用）。
+    recentlyActive: () => {
+      const ts = workStatus.snapshot().ts;
+      return ts > 0 && Date.now() - ts < 10 * 60 * 1000;
+    },
+  });
+  // 对话 = 真实交互，刷新「上次交互」时刻（主动关心据此判久未搭理）。
+  const chatWithPetTracked: typeof chatWithPet = (petId, text, image) => {
+    proactive.touchInteraction(petId);
+    return chatWithPet(petId, text, image);
+  };
 
   const pomodoro = createPomodoroEngine({
     configPaths,
@@ -82,6 +118,7 @@ export function apply(ctx: any): void {
     memeDirsFor,
     deliverCue: extras.deliverCue,
     pickPetMeme: extras.pickPetMeme,
+    onFocusComplete: (petId) => proactive.markFocusComplete(petId),
   });
   ctx.effect(() => () => pomodoro.dispose(), 'dsh-zdd-pet: pomodoro engine');
 
@@ -119,6 +156,8 @@ export function apply(ctx: any): void {
     ...desktopHelper,
     ...sessionNotify,
     ctx,
+    // 用带「主动关心交互追踪」的对话入口覆盖 chatMemory 里那份。
+    chatWithPet: chatWithPetTracked,
   };
   const httpRoute = createHttpRoute(deps);
   registerHttpRoute(ctx, httpRoute.handlePetRoute);
@@ -127,6 +166,7 @@ export function apply(ctx: any): void {
     ctx,
     cancelTerminalCleanup,
     clearConfirm: extras.clearConfirm,
+    deliverComplete: extras.deliverComplete,
     deliverConfirm: extras.deliverConfirm,
     deliverEasterEgg: extras.deliverEasterEgg,
     lastTodoText,
@@ -159,8 +199,11 @@ export function apply(ctx: any): void {
     whisperPeriodSec,
   });
 
+  // 主动关心循环：低频检查久未搭理 / 深夜还在忙 / 刚做完专注，触发时自己冒一句关心。
+  proactive.start();
+
   registerPetCommand({ ctx, effectivePetList, petDisplayName, resolveActivePetId, setActivePetId });
-  registerChatCommand({ ctx, chatWithPet, log, publishWhisper, resolveActivePetId });
+  registerChatCommand({ ctx, chatWithPet: chatWithPetTracked, log, publishWhisper, resolveActivePetId });
 
   registerLifecycle({
     ctx,
