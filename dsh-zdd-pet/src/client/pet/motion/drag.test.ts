@@ -101,7 +101,7 @@ function harness(extra: Partial<DragCard> = {}) {
     clickAnims: ['click1'],
     clickTexts: [],
     sayText: () => {},
-    onActivity: () => {},
+    onActivity: () => false,
     idleAnims: ['idle1'],
     currentAnim: 'idle1',
     setOnce: () => {},
