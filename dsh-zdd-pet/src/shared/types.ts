@@ -125,7 +125,7 @@ export interface Pet {
   celebrate?: PetCelebrate;
   /** 条目级：心情/亲密度系统。 */
   mood?: MoodParams;
-  /** 条目级：亲密度阶段（在 mood 数值上加成长故事线；复用 MoodParams 的数值）。 */
+  /** 条目级：亲密度阶段（独立持久化长期成长值，不随心情衰减）。 */
   intimacy?: IntimacyParams;
   /** 条目级：随机小事件（空闲时自己跑出来做件事）。 */
   idleEvents?: IdleEventsParams;

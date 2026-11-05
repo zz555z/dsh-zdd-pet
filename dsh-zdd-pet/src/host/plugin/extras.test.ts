@@ -59,6 +59,9 @@ describe('deliverConfirm / clearConfirm', () => {
       1,
     );
     assert.deepEqual(say(), {
+      messageId: (say() as { messageId: string }).messageId,
+      source: 'confirm',
+      priority: 100,
       text: '有个操作需要你确认',
       image: '压力一只大肥鱼',
       hold: true,
@@ -77,7 +80,14 @@ describe('deliverConfirm / clearConfirm', () => {
   test('关闭气泡配图总开关 → 只投文字', () => {
     const { extras, say } = setup(true, false);
     assert.equal(extras.deliverConfirm('question', '选哪个？'), 1);
-    assert.deepEqual(say(), { text: '选哪个？', hold: true, duration: CONFIRM_HOLD_MS });
+    assert.deepEqual(say(), {
+      text: '选哪个？',
+      hold: true,
+      duration: CONFIRM_HOLD_MS,
+      source: 'confirm',
+      priority: 100,
+      messageId: (say() as { messageId: string }).messageId,
+    });
   });
 });
 
@@ -109,7 +119,7 @@ describe('deliverComplete —— 配置开关', () => {
 
 describe('deliverComplete —— 宿主侧自动清除', () => {
   test('投递后到 COMPLETE_AUTO_CLEAR_MS 自动写 clear', (t) => {
-    t.mock.timers.enable({ apis: ['setTimeout'] });
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     const { extras, say } = setup(true, false);
     assert.equal(extras.deliverComplete('done', '搞定啦'), 1);
     assert.equal((say() as { holdKind?: string } | undefined)?.holdKind, 'complete');

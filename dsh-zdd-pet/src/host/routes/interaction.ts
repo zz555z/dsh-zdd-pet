@@ -129,7 +129,7 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
       // 实际生效的时长与联动开关，调用方不用自己猜缺省是多少。
       // 配图两种形态二选一（判定层保证）：url 形态写 url，名称形态写池内规范名，都没有则纯文本。
       const pic = d.url !== undefined ? { url: d.url } : d.image !== undefined ? { image: d.image } : {};
-      state.writePet(d.petId, 'say', { text: d.text, ...pic, duration: d.duration, anim: d.anim });
+      state.publishSay(d.petId, { text: d.text, ...pic, duration: d.duration, anim: d.anim }, { source: 'broadcast' });
       return okResult({ ok: true });
     } catch (e) {
       // 配置读取失败等（安装损坏）→ 显式失败，不静默
@@ -154,7 +154,14 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
       if (noSurface) return noSurface;
       const blocked = lockBlocked(d.petId, url.searchParams);
       if (blocked) return blocked;
-      state.writePet(d.petId, 'say', { clear: true });
+      const messageId = url.searchParams.get('messageId') ?? undefined;
+      const counterRaw = url.searchParams.get('expectedCounter');
+      if (counterRaw !== null && !/^\d+$/.test(counterRaw))
+        return failResult('bad-request', 'expectedCounter 必须是非负整数');
+      state.clearSay(d.petId, {
+        ...(messageId ? { messageId } : {}),
+        ...(counterRaw === null ? {} : { expectedCounter: Number(counterRaw) }),
+      });
       return okResult({ ok: true });
     } catch (e) {
       return failResult('generate-error', e instanceof Error ? e.message : String(e));

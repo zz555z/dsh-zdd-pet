@@ -12,8 +12,10 @@ export declare const MOOD_MIN = 0;
 export declare const MOOD_MAX = 100;
 /** 内置默认心情参数（与 assets/config.jsonc 的 mood 段保持一致，改一处须同步另一处）。 */
 export declare const DEFAULT_MOOD: MoodParams;
-/** 把心情夹到 0~100 的整数。 */
+/** 把心情夹到 0~100，保留内部计算的小数。 */
 export declare function clampMood(v: number): number;
+/** 把内部心情转为展示用整数。 */
+export declare function displayMood(value: number): number;
 /** 心情档位。 */
 export type MoodTier = 'low' | 'normal' | 'high';
 /** 由数值与阈值判档位：< low 低落、> high 开心、其余平常。 */

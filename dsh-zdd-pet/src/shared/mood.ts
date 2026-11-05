@@ -29,10 +29,15 @@ export const DEFAULT_MOOD: MoodParams = {
   },
 };
 
-/** 把心情夹到 0~100 的整数。 */
+/** 把心情夹到 0~100，保留内部计算的小数。 */
 export function clampMood(v: number): number {
   if (!Number.isFinite(v)) return MOOD_MIN;
-  return Math.max(MOOD_MIN, Math.min(MOOD_MAX, Math.round(v)));
+  return Math.max(MOOD_MIN, Math.min(MOOD_MAX, v));
+}
+
+/** 把内部心情转为展示用整数。 */
+export function displayMood(value: number): number {
+  return Math.round(clampMood(value));
 }
 
 /** 心情档位。 */

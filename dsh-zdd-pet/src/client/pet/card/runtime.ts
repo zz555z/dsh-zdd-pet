@@ -109,6 +109,12 @@ export function createCardRuntime(rt: PetRuntime) {
     const pendingSquashRef = useRef(false);
 
     // 成品配置与工作状态的最新值：回调晚于状态更新，只能读 ref。
+    const sayRef = useRef(props.say);
+    sayRef.current = props.say;
+    const dismissMessageQuery = (): string => {
+      const cue = sayRef.current;
+      return cue?.kind === 'say' && cue.messageId ? '&messageId=' + encodeURIComponent(cue.messageId) : '';
+    };
     const cfgRef = useRef(cfg);
     cfgRef.current = cfg;
     const workStatusRef = useRef(workStatus);
@@ -171,7 +177,9 @@ export function createCardRuntime(rt: PetRuntime) {
         if (bubbles.heldKind() !== 'complete') return;
         // 配置了「不自动收起」就留着（一直挂到被下一次说话/手动清覆盖）。
         if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
-        void postAction(ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id));
+        void postAction(
+          ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id) + dismissMessageQuery(),
+        );
       };
       document.addEventListener('visibilitychange', onActive);
       window.addEventListener('focus', onActive);
@@ -325,7 +333,9 @@ export function createCardRuntime(rt: PetRuntime) {
         // 任务完成气泡：点一下宠物就收起它（不再播点击台词），并同步宿主。
         if (bubbles.heldKind() === 'complete') {
           bubbles.clearWhisper();
-          void postAction(ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id));
+          void postAction(
+            ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id) + dismissMessageQuery(),
+          );
           return true;
         }
         const touched = mood.touch();
@@ -368,7 +378,9 @@ export function createCardRuntime(rt: PetRuntime) {
         if (bubbles.heldKind() !== 'complete') return;
         if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
         bubbles.clearWhisper();
-        void postAction(ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id));
+        void postAction(
+          ROUTE_PATH + '/bubble/clear?surface=web&pet=' + encodeURIComponent(cfg.id) + dismissMessageQuery(),
+        );
       },
       runMenuAction: (leaf, playbackId, keepFacing) => menuActionsRef.current?.run(leaf, playbackId, keepFacing),
       stage: () => stageRef.current,
@@ -436,7 +448,8 @@ export function createCardRuntime(rt: PetRuntime) {
       ownAnim,
       playByName: (anim, playbackId, keepFacing) => menuActions.run({ anim, label: anim }, playbackId, keepFacing),
       posFollow: motion.posFollow,
-      speak: (text, image, url, duration, anim) => liveRef.current.flow?.speak(text, image, url, duration, anim),
+      speak: (text, image, url, duration, anim, hold, holdKind, messageId) =>
+        liveRef.current.flow?.speak(text, image, url, duration, anim, hold, holdKind, messageId),
       pokeRest: markActivity,
       stopMotion: motion.stopMove,
       tryWalk: motion.walk.tryMove,

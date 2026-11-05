@@ -213,11 +213,15 @@ export function maybeFestival(deps: FestivalDeps, now: Date = new Date()): numbe
         ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)))
         : undefined;
     // say 显式 anim=false：节日动画另走 anim 叶子，避免被 events.whisper 的随机动画顶掉。
-    state.writePet(petId, 'say', {
-      text: cue.text,
-      ...(meme ? { image: meme.name } : {}),
-      anim: false,
-    });
+    state.publishSay(
+      petId,
+      {
+        text: cue.text,
+        ...(meme ? { image: meme.name } : {}),
+        anim: false,
+      },
+      { source: 'festival' },
+    );
     if (cue.anim && animExists(found.conf.animations, cue.anim)) {
       state.writePet(petId, 'anim', { name: cue.anim });
     }
@@ -327,7 +331,7 @@ export function maybeIntimacyAnniversary(deps: FestivalDeps, now: Date = new Dat
         found.conf.bubbleImageEnabled !== false
           ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)))
           : undefined;
-      state.writePet(petId, 'say', { text, ...(meme ? { image: meme.name } : {}), anim: false });
+      state.publishSay(petId, { text, ...(meme ? { image: meme.name } : {}), anim: false }, { source: 'festival' });
       log.info(`[dsh-zdd-pet] 亲密度纪念日 pet=${petId}（${stage.festival}）：「${text}」`);
       delivered += 1;
       break; // 一只宠物一次只演一个纪念日

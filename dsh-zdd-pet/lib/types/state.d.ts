@@ -9,6 +9,7 @@
  *
  * @module dsh-zdd-pet/src/host/state
  */
+import { type SayPayload, type SayOptions, type SayClear } from './say-scheduler.ts';
 /** 一个叶子：计数器 + 载荷（data 为 null 表示还没有数据）。 */
 export interface StateLeaf {
     counter: number;
@@ -70,6 +71,7 @@ export declare class PollStateStore {
     /** 挂起的等待者。全局集合：任意叶子被写过都唤醒他们——一次写入唤醒所有人是有意的，
      *  换的是实现的简单（桌面一窗一宠，会按窗口数放大）。 */
     private readonly waiters;
+    private readonly sayScheduler;
     constructor();
     /** 下一个 counter。 */
     private next;
@@ -78,8 +80,16 @@ export declare class PollStateStore {
      * 整体替换叶子对象而不是原地改字段：`read()` 拿到的引用因此不会半新半旧。
      */
     writeSection(name: SectionName, data: unknown): void;
-    /** 写一只宠物的叶子（宠物条目不存在则自动建立，所有槽位一起建好，形状恒定）。 */
+    /** 旧写入 API 保留原始载荷；宿主说话功能统一使用 publishSay / clearSay。 */
     writePet(petId: string, leaf: PetLeafName, data: unknown): void;
+    /** 把候选登记到单槽调度器，返回客户端可回传的消息 id 与当前叶子 counter。 */
+    publishSay(petId: string, payload: SayPayload, options: SayOptions): {
+        messageId: string;
+        counter: number;
+    } | undefined;
+    /** 只移除 source 或 messageId 匹配的候选；expectedCounter 防止旧请求清掉新一轮消息。 */
+    clearSay(petId: string, match?: SayClear): boolean;
+    private writePetLeaf;
     /**
      * 当前 S（GET /state 的响应体）。
      * sections 是浅拷贝、pets 是新建对象——叶子对象本身共享，但写入永远整体替换，

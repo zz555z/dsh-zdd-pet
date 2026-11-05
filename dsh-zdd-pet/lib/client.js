@@ -1675,6 +1675,7 @@ function readSay(leaf$1) {
 	if (typeof d.text !== "string" || !d.text) return null;
 	return {
 		kind: "say",
+		...typeof d.messageId === "string" && d.messageId ? { messageId: d.messageId } : {},
 		text: d.text,
 		image: typeof d.image === "string" ? d.image : void 0,
 		url: typeof d.url === "string" ? d.url : void 0,
@@ -2303,7 +2304,10 @@ const DEFAULT_MOOD = {
 };
 function clampMood(v) {
 	if (!Number.isFinite(v)) return MOOD_MIN;
-	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, Math.round(v)));
+	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, v));
+}
+function displayMood(value) {
+	return Math.round(clampMood(value));
 }
 function moodTier(value, low, high) {
 	const v = clampMood(value);
@@ -4173,8 +4177,8 @@ function makePathsCards(rt) {
 	}
 	function StorageCard(props) {
 		const { paths } = props;
-		const storage = paths.storage ?? [];
-		if (storage.length === 0) return null;
+		const storage$1 = paths.storage ?? [];
+		if (storage$1.length === 0) return null;
 		const profileName = paths.profile || "<profile>";
 		const pluginName = "dsh-zdd-pet";
 		const profileDir = paths.user.includes("/") ? paths.user.slice(0, paths.user.lastIndexOf("/")) : "<profile 目录>";
@@ -4183,7 +4187,7 @@ function makePathsCards(rt) {
 			className: "dsh-zdd-pet-cfg__card",
 			children: [
 				cardHead(t("storageTitle"), t("storageHint")),
-				...storage.map((entry) => h("div", {
+				...storage$1.map((entry) => h("div", {
 					key: entry.key,
 					className: "dsh-zdd-pet-cfg__path",
 					children: [h("b", {
@@ -6127,7 +6131,7 @@ function createAnimationFlow(rt) {
 			pickNext();
 		};
 		/** 说一句：抽碎碎念动画并弹气泡，两者独立。 */
-		const speak = (text, image, url, duration, anim, hold, holdKind) => {
+		const speak = (text, image, url, duration, anim, hold, holdKind, messageId) => {
 			const card = hub.card;
 			let name = null;
 			if (anim !== false) {
@@ -6146,7 +6150,8 @@ function createAnimationFlow(rt) {
 			}
 			hub.bubbles.showWhisper(text, {
 				image,
-				url
+				url,
+				messageId
 			}, duration, hold, holdKind);
 		};
 		return {
@@ -6233,7 +6238,7 @@ function createBubbleSlots(rt, components) {
 		};
 		const showWhisper = (text, parts, duration, hold = false, holdKind) => {
 			if (duration === 0) return;
-			if (whisperHoldRef.current && !hold) return;
+			if (whisperHoldRef.current && !hold && !parts.messageId) return;
 			setWhisperText(text);
 			setWhisperImage(parts.image);
 			setWhisperUrl(parts.url);
@@ -7255,44 +7260,87 @@ function createCardDrag(rt) {
 }
 
 //#endregion
+//#region src/shared/affection-state.ts
+const AFFECTION_KEY_PREFIX = "dsh-zdd-pet-affection-v1-";
+function restoreAffection(input) {
+	const stored = asRecord(input.stored);
+	if (stored?.stateVersion === 1 && isFiniteNumber(stored.mood) && isFiniteNumber(stored.intimacy)) return {
+		stateVersion: 1,
+		mood: clampMood(stored.mood),
+		intimacy: clampMood(stored.intimacy),
+		savedAt: isFiniteNumber(stored.savedAt) ? Math.min(stored.savedAt, input.now) : input.now
+	};
+	const legacy = asRecord(input.legacy);
+	const value = clampMood(isFiniteNumber(legacy?.v) ? legacy.v : input.initial);
+	return {
+		stateVersion: 1,
+		mood: value,
+		intimacy: value,
+		savedAt: isFiniteNumber(legacy?.t) ? Math.min(legacy.t, input.now) : input.now
+	};
+}
+function decayAffection(state, now, rate) {
+	const savedAt = Math.max(state.savedAt, now);
+	return {
+		...state,
+		mood: decayMood(state.mood, savedAt - state.savedAt, rate),
+		savedAt
+	};
+}
+function touchAffection(state, gain) {
+	const amount = Number.isFinite(gain) ? gain : 0;
+	return {
+		...state,
+		mood: clampMood(state.mood + amount),
+		intimacy: clampMood(state.intimacy + Math.max(0, amount))
+	};
+}
+function asRecord(value) {
+	return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function isFiniteNumber(value) {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+//#endregion
+//#region src/shared/affection-storage.ts
+function loadAffection(storage$1, petId, initial, now) {
+	const state = restoreAffection({
+		stored: readJson(storage$1, AFFECTION_KEY_PREFIX + petId),
+		legacy: readJson(storage$1, "dsh-zdd-pet-mood-" + petId),
+		initial,
+		now
+	});
+	saveAffection(storage$1, petId, state);
+	return state;
+}
+function saveAffection(storage$1, petId, state) {
+	try {
+		storage$1?.setItem(AFFECTION_KEY_PREFIX + petId, JSON.stringify(state));
+	} catch {}
+}
+function readJson(storage$1, key) {
+	try {
+		const raw = storage$1?.getItem(key);
+		return raw ? JSON.parse(raw) : void 0;
+	} catch {
+		return void 0;
+	}
+}
+
+//#endregion
 //#region src/client/pet/card/mood.ts
-/** localStorage 键前缀：与桌面端 sprite/mood.js 保持一致（同一只宠物同一把键）。 */
-const MOOD_KEY_PREFIX = "dsh-zdd-pet-mood-";
 /** 定时衰减检查间隔（ms）：1 分钟足够，heartbeat 开销可忽略。 */
 const DECAY_TICK_MS = 6e4;
 const MOOD_EXCITE_ANIM = "原地冲刺跑";
 const MOOD_EXCITE_SAFETY_MS = 9e3;
-/** 从 localStorage 读一次；坏数据 / 无存储 → 初始值。 */
-function readStored(petId, params) {
-	const fallback = {
-		value: clampMood(params.initial),
-		savedAt: Date.now()
-	};
-	if (typeof window === "undefined") return fallback;
+/** 存储访问可能被浏览器策略拒绝，此时保留会话内状态。 */
+function storage() {
 	try {
-		const raw = window.localStorage.getItem(MOOD_KEY_PREFIX + petId);
-		if (!raw) return fallback;
-		const o = JSON.parse(raw);
-		const value = Number(o.v);
-		const savedAt = Number(o.t);
-		if (!Number.isFinite(value)) return fallback;
-		return {
-			value: clampMood(value),
-			savedAt: Number.isFinite(savedAt) ? savedAt : Date.now()
-		};
+		return typeof window === "undefined" ? void 0 : window.localStorage;
 	} catch {
-		return fallback;
+		return void 0;
 	}
-}
-/** 写回 localStorage；存不了就只在本会话内生效（与桌面端同一处理）。 */
-function writeStored(petId, value, savedAt) {
-	if (typeof window === "undefined") return;
-	try {
-		window.localStorage.setItem(MOOD_KEY_PREFIX + petId, JSON.stringify({
-			v: clampMood(value),
-			t: savedAt
-		}));
-	} catch {}
 }
 function createCardMood(rt) {
 	const { useState, useEffect, useRef } = rt;
@@ -7300,31 +7348,33 @@ function createCardMood(rt) {
 		const petId = input.cfgRef.current.id;
 		const params = () => readMoodParams(input.cfgRef.current.mood);
 		const intimacyParams = () => readIntimacyParams(input.cfgRef.current.intimacy);
-		const initialValue = (() => {
-			const p = params();
-			if (!p.enabled) return clampMood(p.initial);
-			const stored = readStored(petId, p);
-			return decayMood(stored.value, Date.now() - stored.savedAt, p.decayPerHour);
-		})();
-		const [value, setValue] = useState(initialValue);
-		const valueRef = useRef(value);
-		valueRef.current = value;
-		const savedAtRef = useRef(Date.now());
+		const stateRef = useRef(null);
+		if (!stateRef.current) {
+			const current = params();
+			const now = Date.now();
+			const stored = loadAffection(storage(), petId, current.initial, now);
+			stateRef.current = current.enabled ? decayAffection(stored, now, current.decayPerHour) : {
+				...stored,
+				savedAt: now
+			};
+			saveAffection(storage(), petId, stateRef.current);
+		}
+		const [, setValue] = useState(stateRef.current.mood);
+		const valueRef = useRef(stateRef.current.mood);
 		const excitedRef = useRef(false);
 		const timerRef = useRef(null);
 		const commit = (next) => {
-			const v = clampMood(next);
-			valueRef.current = v;
-			savedAtRef.current = Date.now();
-			setValue(v);
-			writeStored(petId, v, savedAtRef.current);
+			stateRef.current = next;
+			valueRef.current = next.mood;
+			setValue(next.mood);
+			saveAffection(storage(), petId, next);
 		};
 		useEffect(() => {
 			const id = window.setInterval(() => {
 				const p = params();
 				if (!p.enabled) return;
 				const now = Date.now();
-				commit(decayMood(valueRef.current, now - savedAtRef.current, p.decayPerHour));
+				commit(decayAffection(stateRef.current, now, p.decayPerHour));
 			}, DECAY_TICK_MS);
 			return () => {
 				window.clearInterval(id);
@@ -7347,16 +7397,17 @@ function createCardMood(rt) {
 				promoted: false
 			};
 			const ip = intimacyParams();
-			const prevTier = intimacyTierOf(valueRef.current);
+			const prevTier = intimacyTierOf(stateRef.current.intimacy);
 			const g = Number.isFinite(gain) ? gain : p.touchGain;
-			const next = clampMood(valueRef.current + g);
-			commit(next);
+			const touched = touchAffection(decayAffection(stateRef.current, Date.now(), p.decayPerHour), g);
+			const next = touched.mood;
+			commit(touched);
 			const hitMax = next >= 100 && !excitedRef.current;
 			if (hitMax) excitedRef.current = true;
 			let promoted = false;
 			let promotedTo;
 			if (ip.enabled) {
-				const nextTier = intimacyTierOf(next);
+				const nextTier = intimacyTierOf(touched.intimacy);
 				if (intimacyRank(nextTier) > intimacyRank(prevTier)) {
 					promoted = true;
 					promotedTo = nextTier;
@@ -7376,7 +7427,11 @@ function createCardMood(rt) {
 		const finishExcite = () => {
 			if (!excitedRef.current) return valueRef.current;
 			excitedRef.current = false;
-			commit(61 + Math.floor(Math.random() * 39));
+			commit({
+				...stateRef.current,
+				mood: clampMood(61 + Math.floor(Math.random() * 39)),
+				savedAt: Date.now()
+			});
 			return valueRef.current;
 		};
 		return {
@@ -7385,7 +7440,7 @@ function createCardMood(rt) {
 			value: () => valueRef.current,
 			tier,
 			label: () => {
-				const v = clampMood(valueRef.current);
+				const v = displayMood(valueRef.current);
 				return "心情 " + v + "/100（" + moodLabel(tier()) + "）";
 			},
 			texts: (fallback) => {
@@ -7393,14 +7448,14 @@ function createCardMood(rt) {
 				return moodTextPool(p, moodTier(valueRef.current, p.low, p.high), fallback);
 			},
 			intimacyEnabled: () => intimacyParams().enabled,
-			intimacyTier: () => intimacyTierOf(valueRef.current),
+			intimacyTier: () => intimacyTierOf(stateRef.current.intimacy),
 			intimacyLabel: () => {
 				const ip = intimacyParams();
-				return intimacyStageOf(ip, intimacyTierOf(valueRef.current)).label;
+				return intimacyStageOf(ip, intimacyTierOf(stateRef.current.intimacy)).label;
 			},
 			intimacyTexts: (fallback) => {
 				const ip = intimacyParams();
-				return intimacyTextPool(ip, intimacyTierOf(valueRef.current), fallback);
+				return intimacyTextPool(ip, intimacyTierOf(stateRef.current.intimacy), fallback);
 			},
 			touch,
 			finishExcite
@@ -9214,7 +9269,7 @@ function createCueEffects(rt) {
 				return;
 			}
 			const duration = say.duration === void 0 ? sayBubbleDurationMs(say.text) : say.duration;
-			hub.speak(say.text, say.image, say.url, duration, say.anim, say.hold, say.holdKind);
+			hub.speak(say.text, say.image, say.url, duration, say.anim, say.hold, say.holdKind, say.messageId);
 		};
 		/** 点播动画：url 插播一段，名称走菜单同一套动作。 */
 		const consumeAnimCue = () => {
@@ -9421,6 +9476,12 @@ function createCardRuntime(rt) {
 		const menuActionsRef = useRef(null);
 		const entryRef = useRef(null);
 		const pendingSquashRef = useRef(false);
+		const sayRef = useRef(props.say);
+		sayRef.current = props.say;
+		const dismissMessageQuery = () => {
+			const cue = sayRef.current;
+			return cue?.kind === "say" && cue.messageId ? "&messageId=" + encodeURIComponent(cue.messageId) : "";
+		};
 		const cfgRef = useRef(cfg);
 		cfgRef.current = cfg;
 		const workStatusRef = useRef(workStatus);
@@ -9467,7 +9528,7 @@ function createCardRuntime(rt) {
 				if (document.hidden) return;
 				if (bubbles.heldKind() !== "complete") return;
 				if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
-				postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id));
+				postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id) + dismissMessageQuery());
 			};
 			document.addEventListener("visibilitychange", onActive);
 			window.addEventListener("focus", onActive);
@@ -9596,7 +9657,7 @@ function createCardRuntime(rt) {
 				markActivity();
 				if (bubbles.heldKind() === "complete") {
 					bubbles.clearWhisper();
-					postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id));
+					postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id) + dismissMessageQuery());
 					return true;
 				}
 				const touched = mood.touch();
@@ -9629,7 +9690,7 @@ function createCardRuntime(rt) {
 				if (bubbles.heldKind() !== "complete") return;
 				if (!readCompletionParams(cfgRef.current.completion).holdUntilFocus) return;
 				bubbles.clearWhisper();
-				postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id));
+				postAction(ROUTE_PATH + "/bubble/clear?surface=web&pet=" + encodeURIComponent(cfg.id) + dismissMessageQuery());
 			},
 			runMenuAction: (leaf$1, playbackId, keepFacing) => menuActionsRef.current?.run(leaf$1, playbackId, keepFacing),
 			stage: () => stageRef.current,
@@ -9690,7 +9751,7 @@ function createCardRuntime(rt) {
 				label: anim
 			}, playbackId, keepFacing),
 			posFollow: motion.posFollow,
-			speak: (text, image, url, duration, anim) => liveRef.current.flow?.speak(text, image, url, duration, anim),
+			speak: (text, image, url, duration, anim, hold, holdKind, messageId) => liveRef.current.flow?.speak(text, image, url, duration, anim, hold, holdKind, messageId),
 			pokeRest: markActivity,
 			stopMotion: motion.stopMove,
 			tryWalk: motion.walk.tryMove

@@ -121,6 +121,7 @@ export interface BubbleSlots {
     showWhisper(text: string, parts: {
         image?: string;
         url?: string;
+        messageId?: string;
     }, duration?: number, hold?: boolean, holdKind?: 'confirm' | 'complete'): void;
     /** 当前常驻气泡的类别（没有常驻气泡时为 null）。 */
     heldKind(): 'confirm' | 'complete' | null;

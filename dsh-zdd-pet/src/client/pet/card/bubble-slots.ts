@@ -145,7 +145,7 @@ export interface BubbleSlots {
    *  holdKind 标明常驻类别（confirm 等待确认 / complete 任务完成），供「切回界面自动收起完成提示」判别。 */
   showWhisper(
     text: string,
-    parts: { image?: string; url?: string },
+    parts: { image?: string; url?: string; messageId?: string },
     duration?: number,
     hold?: boolean,
     holdKind?: 'confirm' | 'complete',
@@ -230,14 +230,14 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
 
     const showWhisper = (
       text: string,
-      parts: { image?: string; url?: string },
+      parts: { image?: string; url?: string; messageId?: string },
       duration?: number,
       hold = false,
       holdKind?: 'confirm' | 'complete',
     ) => {
       if (duration === 0) return; // 只联动动画、不改气泡时走这里。
       // 等待用户确认的常驻气泡期间，普通气泡（点击台词 / 碎碎念 / 对话回复）一律不覆盖它。
-      if (whisperHoldRef.current && !hold) return;
+      if (whisperHoldRef.current && !hold && !parts.messageId) return;
       setWhisperText(text);
       setWhisperImage(parts.image);
       setWhisperUrl(parts.url);

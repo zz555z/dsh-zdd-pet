@@ -180,6 +180,8 @@ export function readBalance(leaf: StateLeaf): { state: BalanceState; manual: boo
 export type SayCue =
   | {
       kind: 'say';
+      /** 宿主调度消息编号：用于精确收起，避免旧请求清掉新消息。 */
+      messageId?: string;
       text: string;
       image?: string;
       url?: string;
@@ -209,12 +211,14 @@ export function readSay(leaf: StateLeaf): SayCue | null {
     holdKind?: unknown;
     dismissOnHover?: unknown;
     clear?: unknown;
+    messageId?: unknown;
   };
   // 清空指令优先：它不带 text，所以必须排在文本校验前面
   if (d.clear === true) return { kind: 'clear' };
   if (typeof d.text !== 'string' || !d.text) return null;
   return {
     kind: 'say',
+    ...(typeof d.messageId === 'string' && d.messageId ? { messageId: d.messageId } : {}),
     text: d.text,
     image: typeof d.image === 'string' ? d.image : undefined,
     // 第三方给的配图地址（完整 URL，scheme 已由宿主卡在 http/https）。与 image 并列、互斥，

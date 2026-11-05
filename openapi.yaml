@@ -514,6 +514,10 @@ paths:
         **幂等**：当前没有气泡时同样返回 `{ "ok": true }`——"让气泡消失"这个意图在空状态下已经成立，
         所以本端点**没有"气泡不存在"这种失败**。
 
+        **可选 `messageId`**：说话载荷会带一个宿主生成的消息编号。带上 `?messageId=` 时只收起编号
+        匹配的那条消息，迟到的旧收起请求不会清掉其后出现的新提示。**未带编号时只收起普通气泡，
+        不会收起等待确认（confirm）或任务完成（complete）**，这两类必须由宿主按其来源清除。
+
         **占用门禁**（issue #122 第 4 项）：当前有占用时，只有持锁者（带对的 `?lock=`）能清——
         否则第三方一调就把别人的气泡抹了。**没有占用时这一步恒放行**，行为与改造前逐字一致。
 
@@ -522,6 +526,12 @@ paths:
         - $ref: "#/components/parameters/PetIdQuery"
         - $ref: "#/components/parameters/LockQuery"
         - $ref: "#/components/parameters/SurfaceQuery"
+        - name: messageId
+          in: query
+          required: false
+          description: 只收起这条消息编号对应的气泡；缺省时只清理普通气泡，不动等待确认/任务完成提示。
+          schema:
+            type: string
       responses:
         "200":
           description: |

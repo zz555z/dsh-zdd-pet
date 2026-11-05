@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   clampMood,
   decayMood,
+  displayMood,
   DEFAULT_MOOD,
   moodLabel,
   moodTextPool,
@@ -15,11 +16,12 @@ import {
   readMoodParams,
 } from './mood.ts';
 
-describe('clampMood —— 夹到 0~100 整数', () => {
+describe('clampMood —— 夹到 0~100 并保留计算精度', () => {
   test('越界/非法/小数', () => {
     assert.equal(clampMood(-5), 0);
     assert.equal(clampMood(150), 100);
-    assert.equal(clampMood(60.7), 61);
+    assert.equal(clampMood(60.7), 60.7);
+    assert.equal(displayMood(60.7), 61);
     assert.equal(clampMood(Number.NaN), 0);
   });
 });

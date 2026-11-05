@@ -52,6 +52,8 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
   /** 每个宠物的番茄钟气泡配图缓存：倒计时刷新时不换图。 */
   const bubbleImages = new Map<string, string | undefined>();
+  /** 已投递常驻倒计时的宠物；配置关闭后仍保留清理归属。 */
+  const countdownPetIds = new Set<string>();
   let disposed = false;
 
   const clearTimer = (): void => {
@@ -84,29 +86,29 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
           bubbleImages.set(petId, conf.bubbleImageEnabled !== false ? pickPetMeme(petId) : undefined);
         }
         const image = bubbleImages.get(petId);
-        deliverCue(petId, { text, ...(image ? { image } : {}), ...(hold ? { hold: true } : {}) });
+        const payload = { text, ...(image ? { image } : {}), ...(hold ? { hold: true, anim: false } : {}) };
+        if (hold) {
+          countdownPetIds.add(petId);
+          state.publishSay(petId, payload, { source: 'pomodoro-countdown', id: 'pomodoro-countdown' });
+        } else {
+          deliverCue(petId, payload);
+        }
       }
     }
   };
 
   /** 收起所有番茄钟宠物身上的常驻倒计时气泡。 */
   const clearBubbles = (): void => {
-    const { cfg } = readCfg();
-    for (const conf of Object.values(cfg)) {
-      if (!parsePomodoro(conf?.pomodoro)) continue;
-      const pets = Array.isArray(conf?.pets) ? (conf.pets as Record<string, unknown>[]) : [];
-      for (const pet of pets) {
-        const petId = String(pet.id ?? '');
-        if (petId) state.writePet(petId, 'say', { clear: true });
-      }
-    }
+    for (const petId of countdownPetIds) state.clearSay(petId, { source: 'pomodoro-countdown' });
+    countdownPetIds.clear();
+    bubbleImages.clear();
   };
 
   /** 只投给发起动作的宠物（关闭 / 出错提示用）。 */
   const sayTo = (petId: string, text: string): void => {
     if (!petId) return;
     const image = pickPetMeme(petId);
-    deliverCue(petId, image ? { text, image } : { text });
+    state.publishSay(petId, image ? { text, image } : { text }, { source: 'pomodoro' });
   };
 
   const remainNow = (): number =>
@@ -133,14 +135,29 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
     }
   };
 
-  /** 启动常驻倒计时气泡：立即显示一次，之后每 5 秒刷新剩余时间。 */
+  const stop = (): void => {
+    clearTimer();
+    stopCountdown();
+    phase = 'idle';
+    endsAt = 0;
+    remainingSec = 0;
+    paused = false;
+    focusPetId = '';
+    clearBubbles();
+  };
+
+  /** 启动倒计时与配置检查；暂停期间只检查配置。 */
   const startCountdown = (): void => {
     stopCountdown();
     if (disposed) return;
     broadcast(countdownText(), true);
     countdownTimer = setInterval(() => {
-      if (disposed || phase === 'idle' || paused) return;
-      broadcast(countdownText(), true);
+      if (disposed || phase === 'idle') return;
+      if (!readCfg().pomo) {
+        stop();
+        return;
+      }
+      if (!paused) broadcast(countdownText(), true);
     }, 5000);
   };
 
@@ -167,12 +184,9 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
     remainingSec = Math.round(minutes * 60);
     paused = !pomo.autoStartBreak;
     endsAt = paused ? 0 : Date.now() + remainingSec * 1000;
-    if (!paused) {
-      arm();
-      startCountdown();
-    } else {
-      broadcast('休息 ' + minutes + ' 分钟，右键点「继续」开始休息～', true);
-    }
+    if (!paused) arm();
+    startCountdown();
+    if (paused) broadcast('休息 ' + minutes + ' 分钟，右键点「继续」开始休息～', true);
     log.info(`[dsh-zdd-pet] 番茄钟进入${long ? '长' : '短'}休息 ${minutes} 分钟，auto=${!paused}`);
   };
 
@@ -181,7 +195,7 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
     if (disposed) return;
     const { pomo } = readCfg();
     if (!pomo) {
-      phase = 'idle';
+      stop();
       return;
     }
     if (phase === 'focus') {
@@ -209,8 +223,15 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
 
   const control = (action: PomodoroAction, petId: string): { ok: boolean; reason?: string; message?: string } => {
     if (disposed) return { ok: false, reason: 'disposed', message: '插件已卸载' };
+    if (action === 'stop' || action === 'reset') {
+      stop();
+      if (action === 'reset') completedFocus = 0;
+      log.info(action === 'reset' ? '[dsh-zdd-pet] 番茄钟已重置' : '[dsh-zdd-pet] 番茄钟已结束');
+      return { ok: true };
+    }
     const { pomo } = readCfg();
     if (!pomo) {
+      stop();
       sayTo(petId, '番茄钟还没启用，去设置页开启一下吧～');
       return { ok: false, reason: 'disabled', message: '番茄钟未启用' };
     }
@@ -232,7 +253,6 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
         remainingSec = remainNow();
         paused = true;
         clearTimer();
-        stopCountdown();
         broadcast('已暂停 · 剩余 ' + formatPomodoroClock(remainingSec) + '（右键可继续）', true);
         return { ok: true };
       case 'resume':
@@ -244,25 +264,6 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
         endsAt = Date.now() + remainingSec * 1000;
         arm();
         startCountdown();
-        return { ok: true };
-      case 'stop':
-        clearTimer();
-        stopCountdown();
-        phase = 'idle';
-        remainingSec = 0;
-        paused = false;
-        clearBubbles();
-        log.info('[dsh-zdd-pet] 番茄钟已结束');
-        return { ok: true };
-      case 'reset':
-        clearTimer();
-        stopCountdown();
-        phase = 'idle';
-        remainingSec = 0;
-        paused = false;
-        completedFocus = 0;
-        clearBubbles();
-        log.info('[dsh-zdd-pet] 番茄钟已重置');
         return { ok: true };
       case 'skip':
         if (phase === 'idle') {
@@ -294,8 +295,7 @@ export function createPomodoroEngine(deps: PomodoroEngineInput): PomodoroEngine 
     control,
     dispose() {
       disposed = true;
-      clearTimer();
-      stopCountdown();
+      stop();
     },
   };
 }

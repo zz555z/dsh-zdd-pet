@@ -367,8 +367,9 @@ Object.assign(PetSprite.prototype, {
     // 任务完成气泡：鼠标移入宠物身体就收起它（不用点）。这就是用户要的「移过去就消失」。
     // 只认 complete 类——等待确认（confirm）是真常驻，不能被 hover 顺手清掉。
     if (inBody && !wasHoverBody && this.whisperHoldKind === 'complete' && this.whisperDismissOnHover) {
+      const messageQuery = this.whisperMessageId ? '&messageId=' + encodeURIComponent(this.whisperMessageId) : '';
       this.clearWhisper();
-      S.postAction(BASE + '/bubble/clear?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop', {
+      S.postAction(BASE + '/bubble/clear?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop' + messageQuery, {
         ok: true,
       }).catch(() => {});
     }
@@ -415,9 +416,10 @@ Object.assign(PetSprite.prototype, {
     if (this.whisperHoldKind === 'complete' && this.whisperDismissOnHover) {
       this.stopThrow();
       this.stopMove();
+      const messageQuery = this.whisperMessageId ? '&messageId=' + encodeURIComponent(this.whisperMessageId) : '';
       this.clearWhisper();
-      // 同步宿主，把这条完成气泡也清掉（避免下一拍再从 /state 写回来）。
-      S.postAction(BASE + '/bubble/clear?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop', {
+      // 同步宿主，消息编号确保旧的收起请求不会清掉新提醒。
+      S.postAction(BASE + '/bubble/clear?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop' + messageQuery, {
         ok: true,
       }).catch(() => {});
       return;

@@ -14,7 +14,7 @@ import type { RuntimePet } from '../types.ts';
 /** 依据名点播：与右键菜单同一套语义（文字类强制朝左、移动类会走位）。 */
 export type PlayByName = (anim: string, playbackId?: string, keepFacing?: boolean) => void;
 /** 说一句：文本与配图二选一，时长缺省用气泡默认值；hold = 常驻（等待用户确认）。 */
-export type Speak = (text: string, image?: string, url?: string, duration?: number, anim?: boolean, hold?: boolean, holdKind?: 'confirm' | 'complete') => void;
+export type Speak = (text: string, image?: string, url?: string, duration?: number, anim?: boolean, hold?: boolean, holdKind?: 'confirm' | 'complete', messageId?: string) => void;
 /** 卡片运行时：跨关注点共享的那一份。 */
 export interface CardHub {
     /** 成品配置的最新值。 */

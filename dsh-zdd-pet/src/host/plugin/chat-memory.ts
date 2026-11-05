@@ -172,7 +172,9 @@ export function createChatMemory(deps: ChatMemoryInput) {
       // provider-missing 就会在边界被吞掉（API.md 描述的降级 reason 正是它）。
       return result;
     }
-    state.writePet(petId, 'say', result.image ? { text: result.text, image: result.image } : { text: result.text });
+    state.publishSay(petId, result.image ? { text: result.text, image: result.image } : { text: result.text }, {
+      source: 'whisper',
+    });
     // 成功也留一行：否则 logs.txt 里「没触发」与「触发了并且成功」无法区分。
     log.info(
       `[dsh-zdd-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` +
@@ -267,10 +269,10 @@ export function createChatMemory(deps: ChatMemoryInput) {
         ).catch(() => {});
       }
       // 回复写进 S（与碎碎念同一个叶子：前端本来就是同一条展示链路）
-      state.writePet(
+      state.publishSay(
         petId,
-        'say',
         generated.image ? { text: generated.text, image: generated.image } : { text: generated.text },
+        { source: 'chat' },
       );
       // 同一份文本随返回值带出（叶子照写，不是二选一）
       return { ok: true as const, text: generated.text, ...(generated.image ? { image: generated.image } : {}) };

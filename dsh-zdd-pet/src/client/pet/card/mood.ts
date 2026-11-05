@@ -6,7 +6,7 @@
  * 心情值按宠物实例（petId）单独存；两端各自用 localStorage，互不覆盖。
  * @module dsh-zdd-pet/src/client/pet/card/mood
  */
-import { clampMood, decayMood, moodLabel, moodTextPool, moodTier, readMoodParams } from '../../../shared/mood.ts';
+import { clampMood, displayMood, moodLabel, moodTextPool, moodTier, readMoodParams } from '../../../shared/mood.ts';
 import {
   intimacyRank,
   intimacyStageOf,
@@ -17,11 +17,12 @@ import {
 import type { IntimacyParams, IntimacyTier } from '../../../shared/intimacy.ts';
 import type { MoodParams } from '../../../shared/types.ts';
 import type { MoodTier } from '../../../shared/mood.ts';
+import { decayAffection, touchAffection } from '../../../shared/affection-state.ts';
+import type { AffectionState } from '../../../shared/affection-state.ts';
+import { loadAffection, saveAffection } from '../../../shared/affection-storage.ts';
+import type { AffectionStorage } from '../../../shared/affection-storage.ts';
 import type { RuntimePet } from '../types.ts';
 import type * as ReactNS from 'react';
-
-/** localStorage 键前缀：与桌面端 sprite/mood.js 保持一致（同一只宠物同一把键）。 */
-const MOOD_KEY_PREFIX = 'dsh-zdd-pet-mood-';
 
 /** 定时衰减检查间隔（ms）：1 分钟足够，heartbeat 开销可忽略。 */
 const DECAY_TICK_MS = 60_000;
@@ -89,30 +90,12 @@ export interface CardMood {
   finishExcite(): number;
 }
 
-/** 从 localStorage 读一次；坏数据 / 无存储 → 初始值。 */
-function readStored(petId: string, params: MoodParams): { value: number; savedAt: number } {
-  const fallback = { value: clampMood(params.initial), savedAt: Date.now() };
-  if (typeof window === 'undefined') return fallback;
+/** 存储访问可能被浏览器策略拒绝，此时保留会话内状态。 */
+function storage(): AffectionStorage | undefined {
   try {
-    const raw = window.localStorage.getItem(MOOD_KEY_PREFIX + petId);
-    if (!raw) return fallback;
-    const o = JSON.parse(raw) as { v?: unknown; t?: unknown };
-    const value = Number(o.v);
-    const savedAt = Number(o.t);
-    if (!Number.isFinite(value)) return fallback;
-    return { value: clampMood(value), savedAt: Number.isFinite(savedAt) ? savedAt : Date.now() };
+    return typeof window === 'undefined' ? undefined : window.localStorage;
   } catch {
-    return fallback;
-  }
-}
-
-/** 写回 localStorage；存不了就只在本会话内生效（与桌面端同一处理）。 */
-function writeStored(petId: string, value: number, savedAt: number): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(MOOD_KEY_PREFIX + petId, JSON.stringify({ v: clampMood(value), t: savedAt }));
-  } catch {
-    /* 存不了就算了，本会话内仍有效 */
+    return undefined;
   }
 }
 
@@ -130,28 +113,26 @@ export function createCardMood(rt: CardMoodRuntime) {
     const params = (): MoodParams => readMoodParams(input.cfgRef.current.mood);
     const intimacyParams = (): IntimacyParams => readIntimacyParams(input.cfgRef.current.intimacy);
 
-    // 初始值同步从 localStorage 读，避免首帧先显示初始值再跳。
-    // 注入的 useState 只接受值、不支持惰性初始化函数，所以先算再传（只在本卡首次渲染执行有意义）。
-    const initialValue = ((): number => {
-      const p = params();
-      if (!p.enabled) return clampMood(p.initial);
-      const stored = readStored(petId, p);
-      // 启动时按距上次保存的时长补算衰减（跨重启也生效）。
-      return decayMood(stored.value, Date.now() - stored.savedAt, p.decayPerHour);
-    })();
-    const [value, setValue] = useState<number>(initialValue);
-    const valueRef = useRef(value);
-    valueRef.current = value;
-    const savedAtRef = useRef(Date.now());
+    const stateRef = useRef<AffectionState | null>(null);
+    if (!stateRef.current) {
+      const current = params();
+      const now = Date.now();
+      const stored = loadAffection(storage(), petId, current.initial, now);
+      stateRef.current = current.enabled
+        ? decayAffection(stored, now, current.decayPerHour)
+        : { ...stored, savedAt: now };
+      saveAffection(storage(), petId, stateRef.current);
+    }
+    const [, setValue] = useState<number>(stateRef.current.mood);
+    const valueRef = useRef(stateRef.current.mood);
     const excitedRef = useRef(false);
     const timerRef = useRef<number | null>(null);
 
-    const commit = (next: number): void => {
-      const v = clampMood(next);
-      valueRef.current = v;
-      savedAtRef.current = Date.now();
-      setValue(v);
-      writeStored(petId, v, savedAtRef.current);
+    const commit = (next: AffectionState): void => {
+      stateRef.current = next;
+      valueRef.current = next.mood;
+      setValue(next.mood);
+      saveAffection(storage(), petId, next);
     };
 
     // 定时衰减：按「距上次保存」的时长补算，避免 interval 抖动累积误差。
@@ -160,7 +141,7 @@ export function createCardMood(rt: CardMoodRuntime) {
         const p = params();
         if (!p.enabled) return;
         const now = Date.now();
-        commit(decayMood(valueRef.current, now - savedAtRef.current, p.decayPerHour));
+        commit(decayAffection(stateRef.current!, now, p.decayPerHour));
       }, DECAY_TICK_MS);
       return () => {
         window.clearInterval(id);
@@ -182,17 +163,18 @@ export function createCardMood(rt: CardMoodRuntime) {
       const p = params();
       if (!p.enabled) return { value: valueRef.current, tier: 'normal', hitMax: false, promoted: false };
       const ip = intimacyParams();
-      const prevTier = intimacyTierOf(valueRef.current);
+      const prevTier = intimacyTierOf(stateRef.current!.intimacy);
       const g = Number.isFinite(gain) ? (gain as number) : p.touchGain;
-      const next = clampMood(valueRef.current + g);
-      commit(next);
+      const touched = touchAffection(decayAffection(stateRef.current!, Date.now(), p.decayPerHour), g);
+      const next = touched.mood;
+      commit(touched);
       const hitMax = next >= 100 && !excitedRef.current;
       if (hitMax) excitedRef.current = true;
       // 亲密度阶段是否升级（仅启用时检查；stranger 为起始态不会触发）。
       let promoted = false;
       let promotedTo: IntimacyTier | undefined;
       if (ip.enabled) {
-        const nextTier = intimacyTierOf(next);
+        const nextTier = intimacyTierOf(touched.intimacy);
         if (intimacyRank(nextTier) > intimacyRank(prevTier)) {
           promoted = true;
           promotedTo = nextTier;
@@ -211,7 +193,7 @@ export function createCardMood(rt: CardMoodRuntime) {
       if (!excitedRef.current) return valueRef.current;
       excitedRef.current = false;
       // 从满值掉 1~39 点 → 61~99，恒大于 60（与桌面端一致）。
-      commit(61 + Math.floor(Math.random() * 39));
+      commit({ ...stateRef.current!, mood: clampMood(61 + Math.floor(Math.random() * 39)), savedAt: Date.now() });
       return valueRef.current;
     };
 
@@ -221,7 +203,7 @@ export function createCardMood(rt: CardMoodRuntime) {
       value: () => valueRef.current,
       tier,
       label: () => {
-        const v = clampMood(valueRef.current);
+        const v = displayMood(valueRef.current);
         return '心情 ' + v + '/100（' + moodLabel(tier()) + '）';
       },
       texts: (fallback) => {
@@ -229,14 +211,14 @@ export function createCardMood(rt: CardMoodRuntime) {
         return moodTextPool(p, moodTier(valueRef.current, p.low, p.high), fallback);
       },
       intimacyEnabled: () => intimacyParams().enabled,
-      intimacyTier: () => intimacyTierOf(valueRef.current),
+      intimacyTier: () => intimacyTierOf(stateRef.current!.intimacy),
       intimacyLabel: () => {
         const ip = intimacyParams();
-        return intimacyStageOf(ip, intimacyTierOf(valueRef.current)).label;
+        return intimacyStageOf(ip, intimacyTierOf(stateRef.current!.intimacy)).label;
       },
       intimacyTexts: (fallback) => {
         const ip = intimacyParams();
-        return intimacyTextPool(ip, intimacyTierOf(valueRef.current), fallback);
+        return intimacyTextPool(ip, intimacyTierOf(stateRef.current!.intimacy), fallback);
       },
       touch,
       finishExcite,

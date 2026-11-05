@@ -98,7 +98,7 @@ export function createProactive(deps: ProactiveInput) {
       log.warn(`[dsh-zdd-pet] 主动关心生成失败 pet=${petId} reason=${r.reason}`);
       return;
     }
-    state.writePet(petId, 'say', r.image ? { text: r.text, image: r.image } : { text: r.text });
+    state.publishSay(petId, r.image ? { text: r.text, image: r.image } : { text: r.text }, { source: 'proactive' });
     lastCareAt.set(petId, Date.now());
     log.info(`[dsh-zdd-pet] 主动关心（${reason}）pet=${petId}：「${r.text}」`);
   };

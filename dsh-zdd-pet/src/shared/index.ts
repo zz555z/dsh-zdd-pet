@@ -24,6 +24,8 @@ export * from './score.ts';
 export * from './score-popup.ts';
 export * from './work-status.ts';
 export * from './mood.ts';
+export { decayAffection, touchAffection } from './affection-state.ts';
+export { loadAffection, saveAffection } from './affection-storage.ts';
 export * from './intimacy.ts';
 export * from './idle-events.ts';
 export * from './proactive.ts';

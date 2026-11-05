@@ -2191,6 +2191,117 @@ function readBody(req) {
 }
 
 //#endregion
+//#region src/shared/timings.ts
+const BUBBLE_DURATION_MS = 10 * 1e3;
+const WORK_BUBBLE_MS = 15 * 1e3;
+const SAY_BUBBLE_MIN_MS = 10 * 1e3;
+const SAY_BUBBLE_MAX_MS = 60 * 1e3;
+const SAY_BUBBLE_BASE_MS = 3 * 1e3;
+const SAY_BUBBLE_PER_CHAR_MS = 250;
+function sayBubbleDurationMs(text) {
+	const points = Array.from(String(text ?? "")).length;
+	return Math.min(SAY_BUBBLE_MAX_MS, Math.max(SAY_BUBBLE_MIN_MS, SAY_BUBBLE_BASE_MS + points * SAY_BUBBLE_PER_CHAR_MS));
+}
+
+//#endregion
+//#region src/host/say-scheduler.ts
+function createSayScheduler(project, now = Date.now) {
+	const pets = new Map();
+	const visible = new Map();
+	let sequence = 0;
+	let timer;
+	let stopped = false;
+	const refresh = () => {
+		if (timer !== void 0) clearTimeout(timer);
+		timer = void 0;
+		const currentTime = now();
+		let nextExpiry = Infinity;
+		for (const [petId, candidates] of pets) {
+			let winner;
+			for (const [source, candidate] of candidates) {
+				if (candidate.expiresAt !== void 0 && candidate.expiresAt <= currentTime) {
+					candidates.delete(source);
+					continue;
+				}
+				nextExpiry = Math.min(nextExpiry, candidate.expiresAt ?? Infinity);
+				if (!winner || candidate.priority > winner.priority || candidate.priority === winner.priority && candidate.sequence > winner.sequence) winner = candidate;
+			}
+			if (visible.get(petId) !== winner) if (winner) {
+				visible.set(petId, winner);
+				project(petId, {
+					...winner.payload,
+					...winner.shown ? { anim: false } : {},
+					messageId: winner.messageId,
+					source: winner.source,
+					priority: winner.priority,
+					...winner.expiresAt === void 0 ? {} : {
+						expiresAt: winner.expiresAt,
+						duration: Math.max(1, winner.expiresAt - currentTime)
+					}
+				});
+				winner.shown = true;
+			} else {
+				visible.delete(petId);
+				project(petId, { clear: true });
+			}
+			if (candidates.size === 0) pets.delete(petId);
+		}
+		if (Number.isFinite(nextExpiry)) {
+			timer = setTimeout(refresh, Math.min(2147483647, Math.max(1, nextExpiry - currentTime)));
+			timer.unref?.();
+		}
+	};
+	return {
+		publish(petId, payload, options) {
+			if (stopped) return void 0;
+			if (payload.duration === 0) {
+				project(petId, payload);
+				return void 0;
+			}
+			const serial = ++sequence;
+			const messageId = options.id ?? `${now()}-${serial}`;
+			const priority = options.source === "confirm" ? 100 : options.source === "complete" ? 90 : options.priority ?? (options.source === "pomodoro-countdown" ? 10 : 50);
+			const expiresAfterMs = payload.duration ?? (typeof payload.text === "string" ? sayBubbleDurationMs(payload.text) : 1e4);
+			const expiresAt = options.expiresAt ?? (payload.hold ? void 0 : now() + expiresAfterMs);
+			const candidates = pets.get(petId) ?? new Map();
+			pets.set(petId, candidates);
+			candidates.set(options.source, {
+				payload,
+				source: options.source,
+				messageId,
+				priority,
+				expiresAt,
+				sequence: serial,
+				...options.expiresAt === void 0 && !payload.hold ? { expiresAfterMs } : {}
+			});
+			refresh();
+			return messageId;
+		},
+		clear(petId, match) {
+			if (stopped || !match.source && !match.messageId) return false;
+			const candidates = pets.get(petId);
+			if (!candidates) return false;
+			let removed = false;
+			for (const [source, candidate] of candidates) {
+				if (match.source && source !== match.source) continue;
+				if (match.messageId && candidate.messageId !== match.messageId) continue;
+				candidates.delete(source);
+				removed = true;
+			}
+			refresh();
+			return removed;
+		},
+		stop() {
+			stopped = true;
+			if (timer !== void 0) clearTimeout(timer);
+			timer = void 0;
+			pets.clear();
+			visible.clear();
+		}
+	};
+}
+
+//#endregion
 //#region src/host/state.ts
 const MAX_STATE_WAIT_MS = 10 * 1e3;
 function parseStateWaitQuery(sinceRaw, timeoutRaw) {
@@ -2240,6 +2351,7 @@ var PollStateStore = class {
 		};
 		this.pets = new Map();
 		this.waiters = new Set();
+		this.sayScheduler = createSayScheduler((petId, payload) => this.writePetLeaf(petId, "say", payload));
 	}
 	/** 下一个 counter。 */
 	next() {
@@ -2257,8 +2369,37 @@ var PollStateStore = class {
 		};
 		this.wakeWaiters();
 	}
-	/** 写一只宠物的叶子（宠物条目不存在则自动建立，所有槽位一起建好，形状恒定）。 */
+	/** 旧写入 API 保留原始载荷；宿主说话功能统一使用 publishSay / clearSay。 */
 	writePet(petId, leaf, data) {
+		this.writePetLeaf(petId, leaf, data);
+	}
+	/** 把候选登记到单槽调度器，返回客户端可回传的消息 id 与当前叶子 counter。 */
+	publishSay(petId, payload, options) {
+		const messageId = this.sayScheduler.publish(petId, payload, options);
+		if (!messageId) return void 0;
+		return {
+			messageId,
+			counter: this.pets.get(petId)?.say.counter ?? 0
+		};
+	}
+	/** 只移除 source 或 messageId 匹配的候选；expectedCounter 防止旧请求清掉新一轮消息。 */
+	clearSay(petId, match = {}) {
+		const entry = this.pets.get(petId);
+		if (match.expectedCounter !== void 0 && entry?.say.counter !== match.expectedCounter) return false;
+		let target = match;
+		if (!match.source && !match.messageId) {
+			const data = entry?.say.data;
+			if (!data || data.holdKind === "confirm" || data.source === "confirm" || data.source === "complete") return false;
+			if (typeof data.messageId !== "string") return false;
+			target = { messageId: data.messageId };
+		}
+		if (match.messageId && entry?.say.data && typeof entry.say.data === "object") {
+			const data = entry.say.data;
+			if (data.messageId === match.messageId && (data.holdKind === "confirm" || data.source === "confirm")) return false;
+		}
+		return this.sayScheduler.clear(petId, target);
+	}
+	writePetLeaf(petId, leaf, data) {
 		let entry = this.pets.get(petId);
 		if (!entry) {
 			entry = {
@@ -2314,6 +2455,7 @@ var PollStateStore = class {
 	* 唤醒时不给区分标志：调用方据此立刻收尾，而不是留一个悬挂的响应。
 	*/
 	cancelAll() {
+		this.sayScheduler.stop();
 		for (const waiter of [...this.waiters]) {
 			this.dropWaiter(waiter);
 			waiter.onWake();
@@ -4168,12 +4310,12 @@ async function handleInteractionRoutes(deps, input) {
 			const blocked = lockBlocked(d.petId, url.searchParams);
 			if (blocked) return blocked;
 			const pic = d.url !== void 0 ? { url: d.url } : d.image !== void 0 ? { image: d.image } : {};
-			state.writePet(d.petId, "say", {
+			state.publishSay(d.petId, {
 				text: d.text,
 				...pic,
 				duration: d.duration,
 				anim: d.anim
-			});
+			}, { source: "broadcast" });
 			return okResult({ ok: true });
 		} catch (e) {
 			return failResult("generate-error", e instanceof Error ? e.message : String(e));
@@ -4192,7 +4334,13 @@ async function handleInteractionRoutes(deps, input) {
 			if (noSurface) return noSurface;
 			const blocked = lockBlocked(d.petId, url.searchParams);
 			if (blocked) return blocked;
-			state.writePet(d.petId, "say", { clear: true });
+			const messageId = url.searchParams.get("messageId") ?? void 0;
+			const counterRaw = url.searchParams.get("expectedCounter");
+			if (counterRaw !== null && !/^\d+$/.test(counterRaw)) return failResult("bad-request", "expectedCounter 必须是非负整数");
+			state.clearSay(d.petId, {
+				...messageId ? { messageId } : {},
+				...counterRaw === null ? {} : { expectedCounter: Number(counterRaw) }
+			});
 			return okResult({ ok: true });
 		} catch (e) {
 			return failResult("generate-error", e instanceof Error ? e.message : String(e));
@@ -5146,11 +5294,11 @@ function maybeFestival(deps, now = new Date()) {
 		const cue = resolveFestival(now, params);
 		if (!cue) continue;
 		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
-		state.writePet(petId, "say", {
+		state.publishSay(petId, {
 			text: cue.text,
 			...meme ? { image: meme.name } : {},
 			anim: false
-		});
+		}, { source: "festival" });
 		if (cue.anim && animExists(found.conf.animations, cue.anim)) state.writePet(petId, "anim", { name: cue.anim });
 		log.info(`[dsh-zdd-pet] 节日演出 pet=${petId}（${cue.name}）：「${cue.text}」` + (cue.anim ? ` 动画=${cue.anim}` : ""));
 		delivered += 1;
@@ -5230,11 +5378,11 @@ function maybeIntimacyAnniversary(deps, now = new Date()) {
 			if (!stage.festival) continue;
 			const text = stage.festivalText ?? "今天是我们的「" + stage.festival + "」，谢谢你一直陪着我～";
 			const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
-			state.writePet(petId, "say", {
+			state.publishSay(petId, {
 				text,
 				...meme ? { image: meme.name } : {},
 				anim: false
-			});
+			}, { source: "festival" });
 			log.info(`[dsh-zdd-pet] 亲密度纪念日 pet=${petId}（${stage.festival}）：「${text}」`);
 			delivered += 1;
 			break;
@@ -7957,10 +8105,10 @@ function createChatMemory(deps) {
 			log.warn("[dsh-zdd-pet] 碎碎念生成失败 pet=" + petId + " reason=" + result.reason + (result.message ? " " + result.message : ""));
 			return result;
 		}
-		state.writePet(petId, "say", result.image ? {
+		state.publishSay(petId, result.image ? {
 			text: result.text,
 			image: result.image
-		} : { text: result.text });
+		} : { text: result.text }, { source: "whisper" });
 		log.info(`[dsh-zdd-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` + (result.image ? `，配图=${result.image}` : ""));
 		return {
 			ok: true,
@@ -8019,10 +8167,10 @@ function createChatMemory(deps) {
 			const extractSystem = petSystemPrompt(found);
 			extractFacts(petId, extractSystem, text, generated.text, configuredModel(found.conf, "whisperModel")).catch(() => {});
 		}
-		state.writePet(petId, "say", generated.image ? {
+		state.publishSay(petId, generated.image ? {
 			text: generated.text,
 			image: generated.image
-		} : { text: generated.text });
+		} : { text: generated.text }, { source: "chat" });
 		return {
 			ok: true,
 			text: generated.text,
@@ -8240,10 +8388,10 @@ function createProactive(deps) {
 			log.warn(`[dsh-zdd-pet] 主动关心生成失败 pet=${petId} reason=${r.reason}`);
 			return;
 		}
-		state.writePet(petId, "say", r.image ? {
+		state.publishSay(petId, r.image ? {
 			text: r.text,
 			image: r.image
-		} : { text: r.text });
+		} : { text: r.text }, { source: "proactive" });
 		lastCareAt.set(petId, Date.now());
 		log.info(`[dsh-zdd-pet] 主动关心（${reason}）pet=${petId}：「${r.text}」`);
 	};
@@ -8354,13 +8502,16 @@ function createExtras(deps) {
 		const text = String(cue.text ?? "").trim();
 		if (!text) return false;
 		const image = cue.image ? String(cue.image).trim() : "";
-		state.writePet(petId, "say", {
+		state.publishSay(petId, {
 			text,
 			...image ? { image } : {},
 			...cue.duration !== void 0 ? { duration: cue.duration } : {},
 			...cue.hold ? { hold: true } : {},
 			...cue.hold && cue.holdKind ? { holdKind: cue.holdKind } : {},
 			...cue.hold && cue.holdKind === "complete" && cue.dismissOnHover !== void 0 ? { dismissOnHover: cue.dismissOnHover } : {}
+		}, {
+			source: cue.source ?? (cue.hold ? cue.holdKind ?? "confirm" : "extras"),
+			expiresAt: cue.expiresAt
 		});
 		return true;
 	};
@@ -8458,7 +8609,7 @@ function createExtras(deps) {
 	};
 	/**
 	* 确认已完成：收起所有启用工作状态联动宠物身上的确认气泡（幂等）。
-	* 只发 clear，不判断当前是不是确认气泡——客户端在没有气泡时 clear 是幂等的。
+	* 只移除 confirm 来源；不影响已经恢复或随后投递的其它气泡。
 	*
 	* @returns 发送 clear 的宠物数。
 	*/
@@ -8475,7 +8626,7 @@ function createExtras(deps) {
 			for (const pet of pets) {
 				const petId = String(pet.id ?? "");
 				if (!petId || pet.workStatusEnabled !== true) continue;
-				state.writePet(petId, "say", { clear: true });
+				state.clearSay(petId, { source: "confirm" });
 				cleared += 1;
 			}
 		}
@@ -8518,28 +8669,12 @@ function createExtras(deps) {
 					hold: true,
 					holdKind: "complete",
 					dismissOnHover: autoDismiss,
-					duration: COMPLETE_HOLD_MS
-				})) {
-					delivered += 1;
-					if (autoDismiss) scheduleCompleteAutoClear(petId, text);
-				}
+					duration: COMPLETE_HOLD_MS,
+					expiresAt: autoDismiss ? Date.now() + COMPLETE_AUTO_CLEAR_MS : void 0
+				})) delivered += 1;
 			}
 		}
 		return delivered;
-	};
-	const completeTimers = new Map();
-	const scheduleCompleteAutoClear = (petId, text) => {
-		const prev = completeTimers.get(petId);
-		if (prev !== void 0) clearTimeout(prev);
-		const t = setTimeout(() => {
-			completeTimers.delete(petId);
-			try {
-				const say = state.read().pets[petId]?.say?.data;
-				if (say && say.holdKind === "complete" && say.text === text) state.writePet(petId, "say", { clear: true });
-			} catch {}
-		}, COMPLETE_AUTO_CLEAR_MS);
-		if (typeof t.unref === "function") t.unref();
-		completeTimers.set(petId, t);
 	};
 	return {
 		deliverCue,
@@ -8653,10 +8788,10 @@ async function maybeGreeting(deps) {
 		}
 		if (!text) text = FALLBACK_GREETINGS[Math.floor(Math.random() * FALLBACK_GREETINGS.length)];
 		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
-		state.writePet(petId, "say", meme ? {
+		state.publishSay(petId, meme ? {
 			text,
 			image: meme.name
-		} : { text });
+		} : { text }, { source: "greeting" });
 		log.info(`[dsh-zdd-pet] 启动吉祥话 pet=${petId}（${greeting.mode}）：「${text}」`);
 	}
 	return true;
@@ -8678,6 +8813,8 @@ function createPomodoroEngine(deps) {
 	let countdownTimer = null;
 	/** 每个宠物的番茄钟气泡配图缓存：倒计时刷新时不换图。 */
 	const bubbleImages = new Map();
+	/** 已投递常驻倒计时的宠物；配置关闭后仍保留清理归属。 */
+	const countdownPetIds = new Set();
 	let disposed = false;
 	const clearTimer = () => {
 		if (timer !== null) {
@@ -8711,34 +8848,38 @@ function createPomodoroEngine(deps) {
 				if (!petId) continue;
 				if (!bubbleImages.has(petId)) bubbleImages.set(petId, conf.bubbleImageEnabled !== false ? pickPetMeme(petId) : void 0);
 				const image = bubbleImages.get(petId);
-				deliverCue(petId, {
+				const payload = {
 					text,
 					...image ? { image } : {},
-					...hold ? { hold: true } : {}
-				});
+					...hold ? {
+						hold: true,
+						anim: false
+					} : {}
+				};
+				if (hold) {
+					countdownPetIds.add(petId);
+					state.publishSay(petId, payload, {
+						source: "pomodoro-countdown",
+						id: "pomodoro-countdown"
+					});
+				} else deliverCue(petId, payload);
 			}
 		}
 	};
 	/** 收起所有番茄钟宠物身上的常驻倒计时气泡。 */
 	const clearBubbles = () => {
-		const { cfg } = readCfg();
-		for (const conf of Object.values(cfg)) {
-			if (!parsePomodoro(conf?.pomodoro)) continue;
-			const pets = Array.isArray(conf?.pets) ? conf.pets : [];
-			for (const pet of pets) {
-				const petId = String(pet.id ?? "");
-				if (petId) state.writePet(petId, "say", { clear: true });
-			}
-		}
+		for (const petId of countdownPetIds) state.clearSay(petId, { source: "pomodoro-countdown" });
+		countdownPetIds.clear();
+		bubbleImages.clear();
 	};
 	/** 只投给发起动作的宠物（关闭 / 出错提示用）。 */
 	const sayTo = (petId, text) => {
 		if (!petId) return;
 		const image = pickPetMeme(petId);
-		deliverCue(petId, image ? {
+		state.publishSay(petId, image ? {
 			text,
 			image
-		} : { text });
+		} : { text }, { source: "pomodoro" });
 	};
 	const remainNow = () => paused ? remainingSec : phase === "idle" ? 0 : Math.max(0, Math.ceil((endsAt - Date.now()) / 1e3));
 	/** 当前状态的一句话（菜单「查看剩余」/ 重复开始等场景）。 */
@@ -8759,14 +8900,28 @@ function createPomodoroEngine(deps) {
 			countdownTimer = null;
 		}
 	};
-	/** 启动常驻倒计时气泡：立即显示一次，之后每 5 秒刷新剩余时间。 */
+	const stop = () => {
+		clearTimer();
+		stopCountdown();
+		phase = "idle";
+		endsAt = 0;
+		remainingSec = 0;
+		paused = false;
+		focusPetId = "";
+		clearBubbles();
+	};
+	/** 启动倒计时与配置检查；暂停期间只检查配置。 */
 	const startCountdown = () => {
 		stopCountdown();
 		if (disposed) return;
 		broadcast(countdownText(), true);
 		countdownTimer = setInterval(() => {
-			if (disposed || phase === "idle" || paused) return;
-			broadcast(countdownText(), true);
+			if (disposed || phase === "idle") return;
+			if (!readCfg().pomo) {
+				stop();
+				return;
+			}
+			if (!paused) broadcast(countdownText(), true);
 		}, 5e3);
 	};
 	const arm = () => {
@@ -8790,10 +8945,9 @@ function createPomodoroEngine(deps) {
 		remainingSec = Math.round(minutes * 60);
 		paused = !pomo.autoStartBreak;
 		endsAt = paused ? 0 : Date.now() + remainingSec * 1e3;
-		if (!paused) {
-			arm();
-			startCountdown();
-		} else broadcast("休息 " + minutes + " 分钟，右键点「继续」开始休息～", true);
+		if (!paused) arm();
+		startCountdown();
+		if (paused) broadcast("休息 " + minutes + " 分钟，右键点「继续」开始休息～", true);
 		log.info(`[dsh-zdd-pet] 番茄钟进入${long ? "长" : "短"}休息 ${minutes} 分钟，auto=${!paused}`);
 	};
 	const onPhaseEnd = () => {
@@ -8801,7 +8955,7 @@ function createPomodoroEngine(deps) {
 		if (disposed) return;
 		const { pomo } = readCfg();
 		if (!pomo) {
-			phase = "idle";
+			stop();
 			return;
 		}
 		if (phase === "focus") {
@@ -8826,8 +8980,15 @@ function createPomodoroEngine(deps) {
 			reason: "disposed",
 			message: "插件已卸载"
 		};
+		if (action === "stop" || action === "reset") {
+			stop();
+			if (action === "reset") completedFocus = 0;
+			log.info(action === "reset" ? "[dsh-zdd-pet] 番茄钟已重置" : "[dsh-zdd-pet] 番茄钟已结束");
+			return { ok: true };
+		}
 		const { pomo } = readCfg();
 		if (!pomo) {
+			stop();
 			sayTo(petId, "番茄钟还没启用，去设置页开启一下吧～");
 			return {
 				ok: false,
@@ -8853,7 +9014,6 @@ function createPomodoroEngine(deps) {
 				remainingSec = remainNow();
 				paused = true;
 				clearTimer();
-				stopCountdown();
 				broadcast("已暂停 · 剩余 " + formatPomodoroClock(remainingSec) + "（右键可继续）", true);
 				return { ok: true };
 			case "resume":
@@ -8865,25 +9025,6 @@ function createPomodoroEngine(deps) {
 				endsAt = Date.now() + remainingSec * 1e3;
 				arm();
 				startCountdown();
-				return { ok: true };
-			case "stop":
-				clearTimer();
-				stopCountdown();
-				phase = "idle";
-				remainingSec = 0;
-				paused = false;
-				clearBubbles();
-				log.info("[dsh-zdd-pet] 番茄钟已结束");
-				return { ok: true };
-			case "reset":
-				clearTimer();
-				stopCountdown();
-				phase = "idle";
-				remainingSec = 0;
-				paused = false;
-				completedFocus = 0;
-				clearBubbles();
-				log.info("[dsh-zdd-pet] 番茄钟已重置");
 				return { ok: true };
 			case "skip":
 				if (phase === "idle") {
@@ -8919,8 +9060,7 @@ function createPomodoroEngine(deps) {
 		control,
 		dispose() {
 			disposed = true;
-			clearTimer();
-			stopCountdown();
+			stop();
 		}
 	};
 }

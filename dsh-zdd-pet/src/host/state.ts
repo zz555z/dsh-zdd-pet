@@ -10,6 +10,8 @@
  * @module dsh-zdd-pet/src/host/state
  */
 
+import { createSayScheduler, type SayPayload, type SayOptions, type SayClear } from './say-scheduler.ts';
+
 /** 一个叶子：计数器 + 载荷（data 为 null 表示还没有数据）。 */
 export interface StateLeaf {
   counter: number;
@@ -99,6 +101,7 @@ export class PollStateStore {
   /** 挂起的等待者。全局集合：任意叶子被写过都唤醒他们——一次写入唤醒所有人是有意的，
    *  换的是实现的简单（桌面一窗一宠，会按窗口数放大）。 */
   declare private readonly waiters: Set<Waiter>;
+  declare private readonly sayScheduler: ReturnType<typeof createSayScheduler>;
 
   constructor() {
     this.last = 0;
@@ -113,6 +116,7 @@ export class PollStateStore {
     };
     this.pets = new Map();
     this.waiters = new Set();
+    this.sayScheduler = createSayScheduler((petId, payload) => this.writePetLeaf(petId, 'say', payload));
   }
 
   /** 下一个 counter。 */
@@ -132,8 +136,42 @@ export class PollStateStore {
     this.wakeWaiters();
   }
 
-  /** 写一只宠物的叶子（宠物条目不存在则自动建立，所有槽位一起建好，形状恒定）。 */
+  /** 旧写入 API 保留原始载荷；宿主说话功能统一使用 publishSay / clearSay。 */
   writePet(petId: string, leaf: PetLeafName, data: unknown): void {
+    this.writePetLeaf(petId, leaf, data);
+  }
+
+  /** 把候选登记到单槽调度器，返回客户端可回传的消息 id 与当前叶子 counter。 */
+  publishSay(
+    petId: string,
+    payload: SayPayload,
+    options: SayOptions,
+  ): { messageId: string; counter: number } | undefined {
+    const messageId = this.sayScheduler.publish(petId, payload, options);
+    if (!messageId) return undefined;
+    return { messageId, counter: this.pets.get(petId)?.say.counter ?? 0 };
+  }
+
+  /** 只移除 source 或 messageId 匹配的候选；expectedCounter 防止旧请求清掉新一轮消息。 */
+  clearSay(petId: string, match: SayClear = {}): boolean {
+    const entry = this.pets.get(petId);
+    if (match.expectedCounter !== undefined && entry?.say.counter !== match.expectedCounter) return false;
+    let target = match;
+    if (!match.source && !match.messageId) {
+      const data = entry?.say.data as { messageId?: unknown; source?: unknown; holdKind?: unknown } | null;
+      if (!data || data.holdKind === 'confirm' || data.source === 'confirm' || data.source === 'complete') return false;
+      if (typeof data.messageId !== 'string') return false;
+      target = { messageId: data.messageId };
+    }
+    if (match.messageId && entry?.say.data && typeof entry.say.data === 'object') {
+      const data = entry.say.data as { messageId?: unknown; holdKind?: unknown; source?: unknown };
+      if (data.messageId === match.messageId && (data.holdKind === 'confirm' || data.source === 'confirm'))
+        return false;
+    }
+    return this.sayScheduler.clear(petId, target);
+  }
+
+  private writePetLeaf(petId: string, leaf: PetLeafName, data: unknown): void {
     let entry = this.pets.get(petId);
     if (!entry) {
       entry = { say: emptyLeaf(), anim: emptyLeaf(), position: emptyLeaf(), throw: emptyLeaf(), lock: emptyLeaf() };
@@ -180,6 +218,7 @@ export class PollStateStore {
    * 唤醒时不给区分标志：调用方据此立刻收尾，而不是留一个悬挂的响应。
    */
   cancelAll(): void {
+    this.sayScheduler.stop();
     for (const waiter of [...this.waiters]) {
       this.dropWaiter(waiter);
       waiter.onWake();

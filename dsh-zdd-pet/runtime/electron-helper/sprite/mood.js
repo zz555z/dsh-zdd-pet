@@ -8,8 +8,14 @@
  */
 'use strict';
 
-/** localStorage 键：按宠物 id 分开存 { v: 心情, t: 上次保存时间戳 }。 */
-const moodKeyOf = (petId) => 'dsh-zdd-pet-mood-' + petId;
+/** 存储受限时仍允许会话内互动。 */
+function affectionStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 Object.assign(PetSprite.prototype, {
   /** 当前心情配置（含默认值兜底）。 */
@@ -20,35 +26,23 @@ Object.assign(PetSprite.prototype, {
   /** 启动时载入心情：读 localStorage，按距上次保存的时长补算衰减，再写回。 */
   loadMood() {
     const p = this.moodParams();
-    let v = p.initial;
-    let t = Date.now();
-    try {
-      const raw = window.localStorage.getItem(moodKeyOf(this.pet.id));
-      if (raw) {
-        const o = JSON.parse(raw);
-        if (Number.isFinite(o && o.v)) v = o.v;
-        if (Number.isFinite(o && o.t)) t = o.t;
-      }
-    } catch {
-      /* 读不到/坏数据：从初始值开始 */
-    }
-    this.mood = S.clampMood(S.decayMood(v, Date.now() - t, p.decayPerHour));
-    this.moodSavedAt = Date.now();
+    const now = Date.now();
+    const stored = S.loadAffection(affectionStorage(), this.pet.id, p.initial, now);
+    const state = p.enabled ? S.decayAffection(stored, now, p.decayPerHour) : { ...stored, savedAt: now };
+    this.mood = state.mood;
+    this.intimacy = state.intimacy;
+    this.moodSavedAt = state.savedAt;
     this.saveMood();
   },
 
-  /** 写回 localStorage。 */
+  /** 写回独立心情和亲密度的完整版本化状态。 */
   saveMood() {
-    const p = this.moodParams();
-    if (!p.enabled) return;
-    try {
-      window.localStorage.setItem(
-        moodKeyOf(this.pet.id),
-        JSON.stringify({ v: S.clampMood(this.mood ?? p.initial), t: Date.now() }),
-      );
-    } catch {
-      /* 存不了就算了，本会话内仍有效 */
-    }
+    S.saveAffection(affectionStorage(), this.pet.id, {
+      stateVersion: 1,
+      mood: S.clampMood(this.mood ?? this.moodParams().initial),
+      intimacy: S.clampMood(this.intimacy ?? this.moodParams().initial),
+      savedAt: this.moodSavedAt ?? Date.now(),
+    });
   },
 
   /** 当前档位（low / normal / high）。 */
@@ -64,7 +58,7 @@ Object.assign(PetSprite.prototype, {
 
   /** 当前亲密度阶段（stranger / familiar / close / bonded）。 */
   intimacyTier() {
-    return S.intimacyTierOf(this.mood ?? 0);
+    return S.intimacyTierOf(this.intimacy ?? 0);
   },
 
   /** 亲密度阶段中文名（形如「亲近」）。 */
@@ -82,16 +76,31 @@ Object.assign(PetSprite.prototype, {
     if (!p.enabled) return false;
     const prevTier = this.intimacyTier();
     const g = Number.isFinite(gain) ? gain : p.touchGain;
-    this.mood = S.clampMood((this.mood ?? p.initial) + g);
-    this.moodSavedAt = Date.now();
+    const touched = S.touchAffection(
+      S.decayAffection(
+        {
+          stateVersion: 1,
+          mood: this.mood ?? p.initial,
+          intimacy: this.intimacy ?? p.initial,
+          savedAt: this.moodSavedAt ?? Date.now(),
+        },
+        Date.now(),
+        p.decayPerHour,
+      ),
+      g,
+    );
+    this.mood = touched.mood;
+    this.intimacy = touched.intimacy;
+    this.moodSavedAt = touched.savedAt;
     this.saveMood();
     // 亲密度阶段升级：播一句阶段专属标语（彩蛋进行中不抢戏）。
     const ip = this.intimacyParams();
-    if (ip.enabled && !this._exciteRunning) {
+    if (ip.enabled) {
       const nextTier = this.intimacyTier();
       if (S.intimacyRank(nextTier) > S.intimacyRank(prevTier)) {
         const stage = S.intimacyStageOf(ip, nextTier);
-        this.showWhisper('【' + stage.label + '】' + stage.motto, undefined, undefined, 6000, false);
+        if (!this._exciteRunning)
+          this.showWhisper('【' + stage.label + '】' + stage.motto, undefined, undefined, 6000, false);
         // 上报宿主：记录首次达到该阶段（供周年纪念日演出）。日期取本地 Y-M-D。
         const d = new Date();
         const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
@@ -119,7 +128,7 @@ Object.assign(PetSprite.prototype, {
     if (!p.enabled) return;
     const now = Date.now();
     this.mood = S.clampMood(S.decayMood(this.mood ?? p.initial, now - (this.moodSavedAt ?? now), p.decayPerHour));
-    this.moodSavedAt = now;
+    this.moodSavedAt = Math.max(this.moodSavedAt ?? now, now);
     this.saveMood();
   },
 
@@ -186,7 +195,7 @@ Object.assign(PetSprite.prototype, {
     this.moodSavedAt = Date.now();
     this.saveMood();
     this.showWhisper(
-      '心情 ' + this.mood + '/100（' + S.moodLabel(this.moodTier()) + '）',
+      '心情 ' + S.displayMood(this.mood) + '/100（' + S.moodLabel(this.moodTier()) + '）',
       undefined,
       undefined,
       4000,
@@ -201,7 +210,7 @@ Object.assign(PetSprite.prototype, {
     // 有常驻气泡（任务完成 / 等待确认）时不要用心情悬浮气泡把它顶掉——否则鼠标一碰
     // 完成气泡就被心情气泡覆盖（表现为「碰到就消失」）。
     if (this.whisperHold) return;
-    const v = S.clampMood(this.mood ?? p.initial);
+    const v = S.displayMood(this.mood ?? p.initial);
     const tier = this.moodTier();
     const ip = this.intimacyParams ? this.intimacyParams() : null;
     const stageSuffix = ip && ip.enabled ? ' · ' + this.intimacyLabel() : '';

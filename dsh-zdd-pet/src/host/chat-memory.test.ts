@@ -61,7 +61,7 @@ function createMemory(reply: string, ws: ReturnType<typeof tempWorkspace>, memeD
     configPaths: ws.configPaths,
     log: { info: () => {}, warn: () => {}, error: () => {} },
     memeDirsFor: () => (memeDir === undefined ? [] : [memeDir]),
-    state: { writePet: () => {} },
+    state: { writePet: () => {}, publishSay: () => {} },
     userRoot: ws.userRoot,
   } as unknown as ChatMemoryInput);
 }

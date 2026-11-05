@@ -158,7 +158,7 @@ export async function maybeGreeting(deps: GreetingDeps): Promise<boolean> {
       found.conf.bubbleImageEnabled !== false
         ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry)))
         : undefined;
-    state.writePet(petId, 'say', meme ? { text, image: meme.name } : { text });
+    state.publishSay(petId, meme ? { text, image: meme.name } : { text }, { source: 'greeting' });
     log.info(`[dsh-zdd-pet] 启动吉祥话 pet=${petId}（${greeting.mode}）：「${text}」`);
   }
   return true;

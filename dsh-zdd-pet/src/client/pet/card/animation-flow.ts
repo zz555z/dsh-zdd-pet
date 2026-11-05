@@ -8,6 +8,7 @@
 import { pick, pickSlot, rollKind } from '../../../shared/pickers.ts';
 import { WORK_STATUS_INDEX } from '../../../shared/work-status.ts';
 import { decideNextAnimation } from '../animation/next-animation.ts';
+import type { Speak } from './hub.ts';
 import type { CardHub } from './hub.ts';
 import type { EndedCue } from '../animation/cues.ts';
 import type { WorkStatusSnapshot } from '../../../shared/work-status.ts';
@@ -22,7 +23,7 @@ export interface AnimationFlow {
   /** 非终态工作状态回到档位循环；没有可恢复状态时返回 false。 */
   resumeWorkStatusAnim(): boolean;
   /** 说一句：抽碎碎念动画并弹气泡，动画与气泡时长互相独立。 */
-  speak(text: string, image?: string, url?: string, duration?: number, anim?: boolean): void;
+  speak: Speak;
 }
 
 /** 注入的 react 能力。 */
@@ -155,6 +156,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
       anim?: boolean,
       hold?: boolean,
       holdKind?: 'confirm' | 'complete',
+      messageId?: string,
     ): void => {
       const card = hub.card;
       let name: string | null = null;
@@ -174,7 +176,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
         card.actions.setOnce(true);
         card.actions.setAnim(name);
       }
-      hub.bubbles.showWhisper(text, { image, url }, duration, hold, holdKind);
+      hub.bubbles.showWhisper(text, { image, url, messageId }, duration, hold, holdKind);
     };
 
     return { applyEndedCue, pickNext, resumeWorkStatusAnim, speak };

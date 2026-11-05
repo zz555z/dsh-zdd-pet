@@ -75,6 +75,8 @@ export declare function readBalance(leaf: StateLeaf): {
  */
 export type SayCue = {
     kind: 'say';
+    /** 宿主调度消息编号：用于精确收起，避免旧请求清掉新消息。 */
+    messageId?: string;
     text: string;
     image?: string;
     url?: string;

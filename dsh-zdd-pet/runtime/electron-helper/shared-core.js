@@ -2582,7 +2582,10 @@ const DEFAULT_MOOD = {
 };
 function clampMood(v) {
 	if (!Number.isFinite(v)) return MOOD_MIN;
-	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, Math.round(v)));
+	return Math.max(MOOD_MIN, Math.min(MOOD_MAX, v));
+}
+function displayMood(value) {
+	return Math.round(clampMood(value));
 }
 function moodTier(value, low, high) {
 	const v = clampMood(value);
@@ -2657,6 +2660,75 @@ function readMoodParams(raw) {
 			high: arr(texts.high)
 		}
 	};
+}
+
+//#endregion
+//#region src/shared/affection-state.ts
+const AFFECTION_KEY_PREFIX = "dsh-zdd-pet-affection-v1-";
+function restoreAffection(input) {
+	const stored = asRecord(input.stored);
+	if (stored?.stateVersion === 1 && isFiniteNumber(stored.mood) && isFiniteNumber(stored.intimacy)) return {
+		stateVersion: 1,
+		mood: clampMood(stored.mood),
+		intimacy: clampMood(stored.intimacy),
+		savedAt: isFiniteNumber(stored.savedAt) ? Math.min(stored.savedAt, input.now) : input.now
+	};
+	const legacy = asRecord(input.legacy);
+	const value = clampMood(isFiniteNumber(legacy?.v) ? legacy.v : input.initial);
+	return {
+		stateVersion: 1,
+		mood: value,
+		intimacy: value,
+		savedAt: isFiniteNumber(legacy?.t) ? Math.min(legacy.t, input.now) : input.now
+	};
+}
+function decayAffection(state, now, rate) {
+	const savedAt = Math.max(state.savedAt, now);
+	return {
+		...state,
+		mood: decayMood(state.mood, savedAt - state.savedAt, rate),
+		savedAt
+	};
+}
+function touchAffection(state, gain) {
+	const amount = Number.isFinite(gain) ? gain : 0;
+	return {
+		...state,
+		mood: clampMood(state.mood + amount),
+		intimacy: clampMood(state.intimacy + Math.max(0, amount))
+	};
+}
+function asRecord(value) {
+	return value && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function isFiniteNumber(value) {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+//#endregion
+//#region src/shared/affection-storage.ts
+function loadAffection(storage, petId, initial, now) {
+	const state = restoreAffection({
+		stored: readJson(storage, AFFECTION_KEY_PREFIX + petId),
+		legacy: readJson(storage, "dsh-zdd-pet-mood-" + petId),
+		initial,
+		now
+	});
+	saveAffection(storage, petId, state);
+	return state;
+}
+function saveAffection(storage, petId, state) {
+	try {
+		storage?.setItem(AFFECTION_KEY_PREFIX + petId, JSON.stringify(state));
+	} catch {}
+}
+function readJson(storage, key) {
+	try {
+		const raw = storage?.getItem(key);
+		return raw ? JSON.parse(raw) : void 0;
+	} catch {
+		return void 0;
+	}
 }
 
 //#endregion
@@ -3076,6 +3148,7 @@ function readSay(leaf$1) {
 	if (typeof d.text !== "string" || !d.text) return null;
 	return {
 		kind: "say",
+		...typeof d.messageId === "string" && d.messageId ? { messageId: d.messageId } : {},
 		text: d.text,
 		image: typeof d.image === "string" ? d.image : void 0,
 		url: typeof d.url === "string" ? d.url : void 0,
@@ -3324,10 +3397,12 @@ exports.createMemeImage = createMemeImage
 exports.createMemeImageFromUrl = createMemeImageFromUrl
 exports.customClickable = customClickable
 exports.customViews = customViews
+exports.decayAffection = decayAffection
 exports.decayMood = decayMood
 exports.decideBalanceNotice = decideBalanceNotice
 exports.decideCare = decideCare
 exports.displayMenuBranch = displayMenuBranch
+exports.displayMood = displayMood
 exports.distToRectSq = distToRectSq
 exports.dragHasFiles = dragHasFiles
 exports.estimateReleaseVelocity = estimateReleaseVelocity
@@ -3356,6 +3431,7 @@ exports.isPromotion = isPromotion
 exports.isTypingTarget = isTypingTarget
 exports.isWebVisible = isWebVisible
 exports.landingSquash = landingSquash
+exports.loadAffection = loadAffection
 exports.memeImageUrl = memeImageUrl
 exports.moodLabel = moodLabel
 exports.moodTextPool = moodTextPool
@@ -3408,6 +3484,7 @@ exports.resolveFontPx = resolveFontPx
 exports.resolveLeafPath = resolveLeafPath
 exports.resolveRect = resolveRect
 exports.rollKind = rollKind
+exports.saveAffection = saveAffection
 exports.sayBubbleDurationMs = sayBubbleDurationMs
 exports.screenOfBox = screenOfBox
 exports.sendChat = sendChat
@@ -3430,6 +3507,7 @@ exports.throwVelocity = throwVelocity
 exports.toBalanceState = toBalanceState
 exports.toWorkStatus = toWorkStatus
 exports.tooltipPlacement = tooltipPlacement
+exports.touchAffection = touchAffection
 exports.translateRects = translateRects
 exports.trimTrail = trimTrail
 exports.truncate = truncate

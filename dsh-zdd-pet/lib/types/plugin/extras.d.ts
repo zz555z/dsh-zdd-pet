@@ -5,6 +5,8 @@ export type ExtrasInput = Pick<HostSetup, 'configPaths'> & Pick<HostSetup, 'meme
 /** 一条待投递的气泡内容：文案 + 可选表情包名（配图）+ 可选常驻/时长。 */
 export interface CueContent {
     text: string;
+    source?: string;
+    expiresAt?: number;
     image?: string;
     /** 常驻气泡（等待用户确认）：不自动收起，直到宿主 clear。 */
     hold?: boolean;

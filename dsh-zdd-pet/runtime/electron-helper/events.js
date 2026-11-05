@@ -167,6 +167,7 @@ PetSprite.prototype.clearWhisper = function clearWhisper() {
   this.whisperOn = false;
   this.whisperHold = false;
   this.whisperHoldKind = null;
+  this.whisperMessageId = undefined;
   this.whisperDismissOnHover = false;
   this.whisperView = null;
   this.whisperImage = '';
@@ -286,13 +287,14 @@ PetSprite.prototype.showWhisper = function showWhisper(
   hold,
   holdKind,
   dismissOnHover,
+  messageId,
 ) {
   this.rememberActivity();
   // 「任务完成」类（holdKind=complete）：鼠标移入/点击收起（dismissOnHover），或宿主导时兜底。
   const isComplete = hold === true && holdKind === 'complete';
   // 常驻气泡（等待确认 confirm / 任务完成 complete）显示期间，新的普通气泡（点击台词/碎碎念/
   // 对话回复）一律不覆盖它——否则完成提示会被随手冒出的碎碎念顶掉。
-  if (this.whisperHold && !hold) return;
+  if (this.whisperHold && !hold && !messageId) return;
   let name = null;
   if (anim !== false) {
     const pool = this.animations.events?.whisper;
@@ -321,6 +323,7 @@ PetSprite.prototype.showWhisper = function showWhisper(
   }
   if (duration === 0) return;
   this.whisperOn = true;
+  this.whisperMessageId = messageId;
   this.whisperHold = !!hold;
   this.whisperHoldKind = isComplete ? 'complete' : hold ? 'confirm' : null;
   // complete 气泡是否「鼠标移入即收」：缺省 true（老宿主/未传都按可收）。
@@ -460,6 +463,7 @@ function applySayLeaf(petId, leaf) {
         said.hold,
         said.holdKind,
         said.dismissOnHover,
+        said.messageId,
       );
   }
 }
