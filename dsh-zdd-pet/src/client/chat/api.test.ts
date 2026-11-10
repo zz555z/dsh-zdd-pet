@@ -16,6 +16,9 @@ import {
   groupRounds,
   memeUrl,
   memoryBoundaryIndex,
+  personaText,
+  playAction,
+  roundsToRevealMemory,
   toChatMessages,
 } from './api.ts';
 
@@ -116,6 +119,21 @@ describe('toChatMessages —— 图信息', () => {
       assert.equal(list[0]?.text, '嗨');
     }
   });
+
+  test('assistant 带动作名 → 记下 action，供喇叭右边的重播按钮用', () => {
+    const list = toChatMessages({
+      messages: [{ role: 'assistant', content: '好耶', ts: 1, action: '优雅女仆舞' }],
+    });
+    assert.equal(list[0]?.action, '优雅女仆舞');
+    assert.equal(list[0]?.meme, undefined);
+  });
+
+  test('动作名空串或非字符串 → 当作没演动作', () => {
+    for (const bad of ['', 42, null, {}]) {
+      const list = toChatMessages({ messages: [{ role: 'assistant', content: '嗯', ts: 1, action: bad }] });
+      assert.equal(list[0]?.action, undefined);
+    }
+  });
 });
 
 describe('取图地址', () => {
@@ -129,6 +147,45 @@ describe('取图地址', () => {
   test('memeUrl 带素材根；素材根为空时退回两段形式', () => {
     assert.equal(memeUrl('可爱', 'main'), '/dsh-zdd-pet-7340/pic/memes/main/%E5%8F%AF%E7%88%B1.png');
     assert.equal(memeUrl('可爱', '  '), '/dsh-zdd-pet-7340/pic/memes/%E5%8F%AF%E7%88%B1.png');
+  });
+});
+
+describe('playAction —— 重播动作走 /anim', () => {
+  /** 用给定响应替身跑一次，回收请求与返回值。 */
+  async function withFetch<T>(
+    body: unknown,
+    run: () => Promise<T>,
+  ): Promise<{ calls: { url: string; method: string; body: unknown }[]; value: T }> {
+    const calls: { url: string; method: string; body: unknown }[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? 'GET', body: init?.body });
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as typeof fetch;
+    try {
+      return { calls, value: await run() };
+    } finally {
+      globalThis.fetch = original;
+    }
+  }
+
+  test('POST /anim?pet=&surface=any，body 只带动作名', async () => {
+    const { calls, value } = await withFetch({ ok: true, playbackId: 'pb_1' }, () => playAction('main', '优雅女仆舞'));
+    assert.deepEqual(
+      calls.map((call) => call.url),
+      // surface 是 /anim 的必填项：缺了它宿主直接 400，按钮会表现为「点了没反应」
+      ['/dsh-zdd-pet-7340/anim?pet=main&surface=any'],
+    );
+    assert.equal(calls[0]?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(calls[0]?.body)), { name: '优雅女仆舞' });
+    assert.equal(value, true);
+  });
+
+  test('宿主拒绝（名字不在池内 / 宠物没在显示）→ 返回 false，不抛错', async () => {
+    const { value } = await withFetch({ ok: false, reason: 'unknown-animation' }, () =>
+      playAction('main', '不存在的动作'),
+    );
+    assert.equal(value, false);
   });
 });
 
@@ -197,6 +254,18 @@ describe('memoryBoundaryIndex —— 记忆边界线的位置', () => {
   });
 });
 
+describe('roundsToRevealMemory —— 让记忆线进入视窗要放多少轮', () => {
+  test('线在倒数第 N 轮之前：至少要 N + 1 轮，线上才有一轮可显示', () => {
+    assert.equal(roundsToRevealMemory(5), 6);
+    assert.equal(roundsToRevealMemory(1), 2);
+  });
+
+  test('没有记忆（0 或负数）→ 0，调用方不必放轮', () => {
+    assert.equal(roundsToRevealMemory(0), 0);
+    assert.equal(roundsToRevealMemory(-3), 0);
+  });
+});
+
 describe('fetchChatConfig —— 同一份 /config 里带出记忆轮数', () => {
   test('按条目读 chatMemoryRounds，同时拍平宠物列表', async () => {
     const body = {
@@ -217,5 +286,51 @@ describe('fetchChatConfig —— 同一份 /config 里带出记忆轮数', () =>
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  test('同一次请求带回每只宠物的人设：实例级优先，没有就用所属条目那份', async () => {
+    const body = {
+      main: {
+        pets: [
+          { id: 'main', name: '主宠' },
+          { id: 'cat', name: '猫', whisperPrompt: '我自己的人设' },
+        ],
+        whisperPrompt: '条目默认人设',
+      },
+      pack: { pets: [{ id: 'pig', name: '猪' }], whisperPrompt: '种类人设' },
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify(body), { status: 200 })) as typeof fetch;
+    try {
+      const config = await fetchChatConfig();
+      assert.deepEqual(config.personaByPet, {
+        main: '条目默认人设',
+        cat: '我自己的人设',
+        pig: '种类人设',
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});
+
+describe('personaText —— 面板显示哪一份人设', () => {
+  test('实例级非空白 → 用实例原文（替换条目那份，保留排版）', () => {
+    assert.equal(personaText('  我的猫娘人设\n第二行 ', '条目人设'), '  我的猫娘人设\n第二行 ');
+  });
+
+  test('实例级纯空白或缺失 → 回落到所属条目顶层那份', () => {
+    assert.equal(personaText('   ', '条目人设'), '条目人设');
+    assert.equal(personaText(undefined, '条目人设'), '条目人设');
+  });
+
+  test('两处都没有 → 空串（内置默认由配置合并保证，这里不凭空造文案）', () => {
+    assert.equal(personaText(undefined, undefined), '');
+    assert.equal(personaText('', ''), '');
+  });
+
+  test('非字符串的脏值 → 按没写处理，不把对象显示给用户', () => {
+    assert.equal(personaText({ text: '对象' }, '条目人设'), '条目人设');
+    assert.equal(personaText(undefined, 42), '');
   });
 });

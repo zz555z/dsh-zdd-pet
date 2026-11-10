@@ -2,17 +2,20 @@
  * 气泡单槽：余额、说话、工作状态三种气泡的显隐、停留计时与优先级选择。
  * 不负责何时点亮与动画联动：tick 判定、抽动画、打日志都在 PetCard；也不负责外观，哑组件在 client/bubble.ts。
  * 依赖注入的 react 与两个气泡组件；三个停留计时器都归本模块清理。
- * 不变量：同一时刻只渲染一个气泡，优先级依次为终态任务、说话、余额、非终态任务。
+ * 不变量：同一时刻只渲染一个气泡，优先级依次为待办面板、常驻气泡、终态任务、任务进度、说话、余额、非终态任务。
  * @module dsh-zdd-pet/src/client/pet/card/bubble-slots
  */
 import { type BalanceState } from '../../../shared/balance/index.ts';
+import { type VoiceState } from '../../../shared/voice.ts';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 /** 当前该挂哪个气泡；`none` 表示哪个条件都不成立。 */
-export type BubbleSlot = 'work-terminal' | 'whisper' | 'balance' | 'work' | 'none';
+export type BubbleSlot = 'todo' | 'work-terminal' | 'whisper' | 'balance' | 'work' | 'none';
 /** 优先级判定的输入：全部是渲染期的既成事实，判定本身不产生副作用。 */
 export interface BubbleSlotInput {
+    /** 待办面板是否打开；打开时独占槽位，其余气泡一律让位。 */
+    todoOn: boolean;
     /** 工作状态是否为终态（success / error）。 */
     workTerminal: boolean;
     /** 工作气泡是否点亮。 */
@@ -43,6 +46,7 @@ export interface BubbleSlotInput {
  *
  * 终态任务只活 10s，所以不让位；有任务（文案或清单进度）时进度气泡常驻，碎碎念与余额让它位
  * （否则碎碎念会顶掉用户正想看的「2/5」）；没任务时才轮到大吼/余额。
+ * 待办面板是用户主动打开的窗口，独占槽位；等待确认的常驻气泡排在它之后，任务进度与完成/失败都顶不掉它。
  *
  * @param input - 三种气泡的显隐与开关。
  * @returns 命中的槽位；都不成立时为 `none`。
@@ -51,9 +55,9 @@ export declare function decideBubbleSlot(input: BubbleSlotInput): BubbleSlot;
 /**
  * 余额气泡的可翻页数。
  *
- * custom 形态由第三方决定页数，windows 两页（收起与展开），其余形态点开没有新内容。
+ * 页数规则归 shared（与每页内容同源），这里只补一个「还没有结果」的兜底。
  *
- * @param balance - 最近一次余额结果。
+ * @param balance - 最近一次余额结果；`null` 表示这一拍还没有数据。
  * @returns 页数，至少 1。
  */
 export declare function balancePageCount(balance: BalanceState | null): number;
@@ -71,6 +75,12 @@ export type WhisperBubbleComponent = (props: {
     url?: string;
     assetRoot?: string;
     on: boolean;
+    /** 任务进度角标（「▰▰▱▱▱  2/5」）；缺省 = 不画进度。 */
+    progress?: string | null;
+    /** 语音播报状态：气泡据此显示转圈 / 喇叭。 */
+    voiceState?: VoiceState;
+    /** 可点时的回调；工作气泡用它跳会话，缺省即不可点。 */
+    onClick?: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
 }) => ReactNode;
 /** 注入的 react 能力。 */
 export interface BubbleSlotsRuntime {
@@ -83,10 +93,17 @@ export interface BubbleSlotsRuntime {
     /** 副作用；用于卸载时清计时器。 */
     useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
 }
-/** 两种气泡组件。 */
+/** 待办面板气泡组件；props 与 `client/todo-bubble.ts` 的 TodoBubble 一致。 */
+export type TodoBubbleComponent = (props: {
+    on: boolean;
+    onClose: () => void;
+}) => ReactNode;
+/** 三种气泡组件。 */
 export interface BubbleComponents {
     /** 余额气泡。 */
     balanceBubble: BalanceBubbleComponent;
+    /** 待办面板气泡。 */
+    todoBubble: TodoBubbleComponent;
     /** 说话气泡。 */
     whisperBubble: WhisperBubbleComponent;
 }
@@ -106,6 +123,10 @@ export interface BubbleSlotsInput {
     workHasTask: boolean;
     /** 任务进度角标文案（「▰▰▱▱▱  2/5」）；null = 无清单进度。 */
     workProgress: string | null;
+    /** 当前展示条目所属会话；有值才把工作气泡做成可点。 */
+    workSessionId?: string | null;
+    /** 点工作气泡时跳过去；缺省即不可点（网页端直接切，桌面端由容器转发）。 */
+    onFocusSession?: (sessionId: string) => void;
     /** 说话气泡配图的素材根。 */
     assetRoot?: string;
 }
@@ -135,6 +156,12 @@ export interface BubbleSlots {
     hideWork(): void;
     /** 回空闲：收起工作气泡并清文本。 */
     resetWork(): void;
+    /** 打开待办面板：它独占槽位，其余气泡让位。 */
+    showTodo(): void;
+    /** 收起待办面板，按原优先级恢复其余气泡。 */
+    hideTodo(): void;
+    /** 开关待办面板：已开则收起，供快捷键使用。 */
+    toggleTodo(): void;
     /** 按优先级渲染当前该挂的气泡；无气泡时为 null。 */
     node(): ReactNode;
 }

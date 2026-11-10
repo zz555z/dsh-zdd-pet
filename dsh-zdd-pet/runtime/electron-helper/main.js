@@ -51,6 +51,7 @@ const { createTray } = require('./main/tray.js');
 const { createWindows } = require('./main/windows.js');
 const { registerIpc } = require('./main/ipc.js');
 const { createDisplaySync } = require('./main/displays.js');
+const { dshHomeDir, resolveUserDataDir } = require('./main/user-data.js');
 
 /** Linux 指针提供者：仅在 Linux 创建；查询失败时 get() 返回 null（调用方回退 Electron 原生 API） */
 const linuxPointer = process.platform === 'linux' ? createLinuxPointer() : null;
@@ -101,6 +102,24 @@ for (const stream of [process.stdout, process.stderr]) {
   });
 }
 
+// 受限令牌下原 userData 可能不可写：Chromium 的 profile 初始化会卡住，whenReady 永不 resolve，
+// 宿主只看到约 6 秒后的一次 0xC0000005，没有任何可读错误。探测放在管道守卫之后，
+// 保证这里的日志写入不会踩上宿主已死时的 EPIPE。
+const userDataDecision = resolveUserDataDir({
+  currentDir: app.getPath('userData'),
+  dshHome: dshHomeDir(),
+  appMode: APP_MODE,
+});
+if (userDataDecision.fallback) {
+  app.setPath('userData', userDataDecision.dir);
+  console.error('[dsh-zdd-pet-desktop-helper] userData 不可写，回退到', userDataDecision.dir);
+} else if (userDataDecision.error) {
+  console.error(
+    '[dsh-zdd-pet-desktop-helper] userData 回退失败:',
+    String(userDataDecision.error.message || userDataDecision.error),
+  );
+}
+
 // ② 宿主探测：DSH_PET_HOST_PID 由宿主 spawn 时注入；未注入或非法 → 0 → 不探测（不误退）。
 // DPI 探测实例是一次性短命进程（父进程是 helper 而不是宿主），不参与这套机制。
 const HOST_PID = parseHostPid(process.env.DSH_PET_HOST_PID);
@@ -144,10 +163,12 @@ const dpi = createDpi({
 /** bridge 模式：DSH_PET_BRIDGE=1（宿主注入）。开启时注册 dsh-zdd-pet-bridge scheme + 管道转发 */
 const BRIDGE = process.env.DSH_PET_BRIDGE === '1';
 
-/** 「打开网站」这一项的去向（宿主按自身形态注入）：
- *  'desktop' = 宿主是 DSH 桌面应用 → 唤起桌面应用主窗口；
- *  'site'    = dsh web / 独立模式 / 手写 start-desktop（无该变量）→ 原行为：默认浏览器打开站点。 */
-const OPEN_TARGET = process.env.DSH_PET_OPEN_TARGET === 'desktop' ? 'desktop' : 'site';
+/** 菜单首项的去向（宿主按自身形态注入）：
+ *  'desktop'    = DSH 桌面应用 → 唤起应用主窗口；
+ *  'standalone' = 独立模式 → 打开本机 AI 设置页；
+ *  'web'        = dsh web / 手写 start-desktop（无该变量）→ 默认浏览器打开站点。 */
+const OPEN_TARGET_RAW = process.env.DSH_PET_OPEN_TARGET;
+const OPEN_TARGET = OPEN_TARGET_RAW === 'desktop' || OPEN_TARGET_RAW === 'standalone' ? OPEN_TARGET_RAW : 'web';
 /** 协议行前缀（与 helper-process.ts 的 BRIDGE_PREFIX 一致） */
 const BRIDGE_PREFIX = 'dsh-zdd-pet-bridge:';
 
@@ -216,6 +237,19 @@ const tray = createTray({
   platform: TRAY_PLATFORM,
   helperDir: __dirname,
 });
+
+/**
+ * 应用模式的重建钩子：同进程里没有「重启 helper 进程」这条路，宿主改完显示位置会调它——
+ * 关窗 → 按新的 DSH_PET_PETS 重建 → 刷新托盘勾选。
+ * 双进程模式不注册：那边重启进程本身就是重建，注册了反而多一条没人走的路径。
+ */
+if (process.env.DSH_PET_IN_PROCESS === '1') {
+  globalThis.__dshPetRebuildUi = async () => {
+    petWindows.closeAll();
+    petWindows.create();
+    await tray.refresh();
+  };
+}
 
 app.whenReady().then(() => {
   // 探测子进程：此时没有 force-device-scale-factor，读到的是 Windows 的真实主屏缩放。
@@ -297,5 +331,7 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   // 托盘常驻：桌面上没有宠物也要留着，否则「全关掉」就再也切不回来
   if (tray.exists()) return;
+  // 应用模式：窗口是被重建钩子关掉的，不是用户要退出——留着进程等下一次重建
+  if (process.env.DSH_PET_IN_PROCESS === '1') return;
   app.quit();
 });

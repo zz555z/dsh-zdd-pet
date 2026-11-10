@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import { appendFileSync, chmodSync, closeSync, constants, createReadStream, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize, resolve, sep } from "node:path";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawn } from "node:child_process";
 import { homedir } from "node:os";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
 import OpenAI from "openai";
@@ -46,6 +45,11 @@ const FONT_PRESETS = [
 ];
 const FONT_SIZE_MIN = 4;
 const FONT_SIZE_MAX = 200;
+const DEFAULT_FONT = {
+	family: "candy",
+	size: 21,
+	followPet: true
+};
 const FONT_REF_SIZE = 462;
 const BUBBLE_FONT_BASE_PX = .0455 * FONT_REF_SIZE;
 const TIP_FONT_BASE_PX = .026 * FONT_REF_SIZE;
@@ -91,7 +95,7 @@ function createFileLogger(options) {
 	const debugEnabled = options.debugEnabled ?? false;
 	const now = options.now ?? (() => new Date());
 	let pending = [];
-	let dropped = 0;
+	let dropped$1 = 0;
 	/** 已离开 pending、尚未提交到文件的文本；退出与 dispose 靠它补写。 */
 	let activeChunk = "";
 	let flushing = null;
@@ -101,10 +105,10 @@ function createFileLogger(options) {
 	const ensureDir = () => dirReady ??= mkdir(dirname(file), { recursive: true }).then(() => void 0).catch(() => void 0);
 	/** 取走当前缓冲（含溢出提示）；取出后 pending 为空，文本改由调用方保管。 */
 	const takePending = () => {
-		const note = dropped > 0 ? formatLogLine("warn", `日志缓冲溢出，丢弃 ${dropped} 条`, now()) : "";
+		const note = dropped$1 > 0 ? formatLogLine("warn", `日志缓冲溢出，丢弃 ${dropped$1} 条`, now()) : "";
 		const chunk = note + pending.join("");
 		pending = [];
-		dropped = 0;
+		dropped$1 = 0;
 		return chunk;
 	};
 	/** 同步提交 activeChunk；提交后这批文本与内存无关，退出路径不会重复写。 */
@@ -132,7 +136,7 @@ function createFileLogger(options) {
 		} catch {}
 		pending.push(formatLogLine(level, redactSensitive(String(message)), now()));
 		if (pending.length > maxPending) {
-			dropped += pending.length - maxPending;
+			dropped$1 += pending.length - maxPending;
 			pending.splice(0, pending.length - maxPending);
 		}
 		if (disposed) flushSync();
@@ -231,11 +235,19 @@ function isValidPetId(value) {
 }
 const GLOBAL_DEFAULT_KEYS = [
 	"physics",
+	"animationWeights",
 	"font",
 	"confineToScreen",
 	"bubbleImageEnabled",
+	"voiceEnabled",
+	"voiceName",
+	"voiceVolume",
+	"voiceWhisperEnabled",
+	"voiceTodoEnabled",
+	"voiceNotifyEnabled",
 	"whisperImageEnabled",
 	"chatImageEnabled",
+	"chatAnimationEnabled",
 	"chatImageLimit",
 	"chatMemoryRounds",
 	"whisperModel",
@@ -306,6 +318,40 @@ function effectiveUserFile(paths) {
 	if (existsSync(paths.userFile)) return paths.userFile;
 	if (paths.legacyUserFile && existsSync(paths.legacyUserFile)) return paths.legacyUserFile;
 	return void 0;
+}
+
+//#endregion
+//#region src/shared/constants.ts
+const HIT_BOX = {
+	x0: 200,
+	y0: 50,
+	x1: 440,
+	y1: 335
+};
+const ROUTE_SEGMENT = "/dsh-zdd-pet-7340";
+function mountPrefixOf(baseURI) {
+	if (baseURI === void 0 || baseURI === "") return "";
+	try {
+		const url = new URL(baseURI);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+		return url.pathname.replace(/\/+$/, "");
+	} catch {
+		return "";
+	}
+}
+function routePathOf(baseURI) {
+	return mountPrefixOf(baseURI) + ROUTE_SEGMENT;
+}
+const ROUTE_PATH = routePathOf(typeof document === "undefined" ? void 0 : document.baseURI);
+
+//#endregion
+//#region src/shared/pet-size.ts
+/** 人物本体宽度占画框宽度的比例；由命中框反推（240/640），不在别处再写一份 0.375。 */
+const BODY_WIDTH_RATIO = (HIT_BOX.x1 - HIT_BOX.x0) / 640;
+const SIZE_PERCENT_MIN = 1;
+const SIZE_PERCENT_DEFAULT = 20;
+function isValidSizePercent(value) {
+	return typeof value === "number" && Number.isFinite(value) && value >= SIZE_PERCENT_MIN;
 }
 
 //#endregion
@@ -647,7 +693,42 @@ function festivalValid(value) {
 }
 
 //#endregion
+//#region src/host/voice/voices.ts
+const VOICES = [
+	{
+		id: "zh-CN-XiaoxiaoNeural",
+		name: "晓晓",
+		tag: "女 · 通用",
+		default: false
+	},
+	{
+		id: "zh-CN-XiaoyiNeural",
+		name: "晓伊",
+		tag: "女 · 活泼",
+		default: true
+	},
+	{
+		id: "zh-CN-YunxiNeural",
+		name: "云希",
+		tag: "男 · 年轻",
+		default: false
+	},
+	{
+		id: "zh-CN-YunjianNeural",
+		name: "云健",
+		tag: "男 · 沉稳",
+		default: false
+	}
+];
+const DEFAULT_VOICE = "zh-CN-XiaoyiNeural";
+function isKnownVoice(id) {
+	return VOICES.some((voice) => voice.id === id);
+}
+
+//#endregion
 //#region src/host/config/validate.ts
+/** 内置玩法动画的槽位数：`animations.baifan` 必须恰好这么多个（顺序是玩法契约，见 shared/types 的 Animations）。 */
+const ACTIVITY_SLOTS = 5;
 /** animations 段完整性校验（与旧 assertAnimationsHost 同一套规则；不 throw，非法返回 false） */
 function animationsValid(a) {
 	if (!a || typeof a !== "object") return false;
@@ -674,7 +755,34 @@ function animationsValid(a) {
 		} else return false;
 	}
 	const balance = evEntries.balance;
-	return Array.isArray(balance) && balance.length > 0;
+	if (!Array.isArray(balance) || balance.length === 0) return false;
+	if (anims.baifan !== void 0 && !activitySlotsValid(anims.baifan)) return false;
+	return anims.sleep === void 0 || sleepValid(anims.sleep);
+}
+/** sleep 段校验：非空套数组，每套都必须有非空的 start / loop / end 字符串数组。
+*  未写由调用方放行（可选字段）；这里只处理「写了」的形态。 */
+function sleepValid(value) {
+	if (!Array.isArray(value) || value.length === 0) return false;
+	for (const set of value) {
+		if (!set || typeof set !== "object" || Array.isArray(set)) return false;
+		const entry = set;
+		for (const phase of [
+			"start",
+			"loop",
+			"end"
+		]) {
+			const pool = entry[phase];
+			if (!Array.isArray(pool) || pool.length === 0) return false;
+			for (const name of pool) if (typeof name !== "string" || name.length === 0) return false;
+		}
+	}
+	return true;
+}
+/** baifan 段校验：恰好 {@link ACTIVITY_SLOTS} 个非空动画名。
+*  写少写多都算非法——槽位按索引取，缺一个就是那个时机没有动画可播。 */
+function activitySlotsValid(value) {
+	if (!Array.isArray(value) || value.length !== ACTIVITY_SLOTS) return false;
+	return value.every((name) => typeof name === "string" && name.length > 0);
 }
 /** animationWeights 段校验（idle/turn/move 三个非负数字） */
 function weightsValid(w) {
@@ -697,7 +805,7 @@ function physicsValid(value) {
 	const r = Number(p.restitution);
 	const f = Number(p.groundFriction);
 	const tp = Number(p.throwPower);
-	return Number.isFinite(g) && g >= 0 && Number.isFinite(r) && r >= 0 && r <= 1 && Number.isFinite(f) && f >= 0 && typeof p.ceilingBounce === "boolean" && Number.isFinite(tp) && tp > 0 && typeof p.petCollision === "boolean";
+	return Number.isFinite(g) && g >= 0 && Number.isFinite(r) && r >= 0 && r <= 1 && Number.isFinite(f) && f >= 0 && typeof p.ceilingBounce === "boolean" && Number.isFinite(tp) && tp > 0 && typeof p.petCollision === "boolean" && (p.hapticEnabled === void 0 || typeof p.hapticEnabled === "boolean") && (p.tiltGravity === void 0 || typeof p.tiltGravity === "boolean") && (p.shakeThrow === void 0 || typeof p.shakeThrow === "boolean");
 }
 function fontValid(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -737,7 +845,14 @@ function topFieldValid(key, value) {
 		case "clickSoundEnabled": return typeof value === "boolean";
 		case "bubbleImageEnabled": return typeof value === "boolean";
 		case "whisperImageEnabled": return typeof value === "boolean";
+		case "voiceEnabled": return typeof value === "boolean";
+		case "voiceName": return typeof value === "string" && isKnownVoice(value);
+		case "voiceVolume": return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+		case "voiceWhisperEnabled": return typeof value === "boolean";
+		case "voiceTodoEnabled": return typeof value === "boolean";
+		case "voiceNotifyEnabled": return typeof value === "boolean";
 		case "chatImageEnabled": return typeof value === "boolean";
+		case "chatAnimationEnabled": return typeof value === "boolean";
 		case "confineToScreen": return typeof value === "boolean";
 		case "trayEnabled": return typeof value === "boolean";
 		case "animations": return animationsValid(value);
@@ -756,6 +871,12 @@ function topFieldValid(key, value) {
 		case "whisperModel":
 		case "chatModel": return modelSelectionValid(value);
 		case "workStatusTexts": return workStatusTextsValid(value);
+		case "sleepRefuseTexts":
+		case "sleepStartTexts":
+		case "sleepEndTexts": {
+			if (!Array.isArray(value) || value.length === 0) return false;
+			return value.every((text) => typeof text === "string" && text.length > 0);
+		}
 		default: return true;
 	}
 }
@@ -831,6 +952,15 @@ function petNumber(own$1, def, min, label, field, id) {
 	if (own$1 !== void 0 && own$1 !== null) warnOnce(`${label}:${field}:${id}`, `宠物「${id}」的 ${field} 非法，已取默认值`);
 	return Number(def);
 }
+/** 实例级 sizePercent：写了合法值才落键；缺省与越界都不落键，渲染侧按默认值处理。
+*  不补默认值——补了会让「没动过」在保存时变成显式值，配置文件凭空长大，且没有用户层时形状不一致。 */
+function petSizePercentField(own$1, def, label, id) {
+	const value = own$1 ?? def;
+	if (value === void 0 || value === null) return {};
+	if (isValidSizePercent(value)) return { sizePercent: value };
+	warnOnce(`${label}:sizePercent:${id}`, `宠物「${id}」的 sizePercent 非法（应为不小于 ${SIZE_PERCENT_MIN} 的数字），已忽略（按默认 ${SIZE_PERCENT_DEFAULT} 处理）`);
+	return {};
+}
 /** 宠物实例字段取布尔；缺失 → 静默取默认；显式写但非法 → 告警 + 默认 */
 function petBool(own$1, def, label, field, id) {
 	if (typeof own$1 === "boolean") return own$1;
@@ -861,6 +991,7 @@ function mergePet(base, raw, label, seenIds) {
 		id,
 		name,
 		size: petNumber(p.size, base.size, 1, label, "size", id),
+		...petSizePercentField(p.sizePercent, base.sizePercent, label, id),
 		balanceEnabled: petBool(p.balanceEnabled, base.balanceEnabled, label, "balanceEnabled", id),
 		whisperEnabled: petBool(p.whisperEnabled, base.whisperEnabled, label, "whisperEnabled", id),
 		workStatusEnabled: petBool(p.workStatusEnabled, base.workStatusEnabled, label, "workStatusEnabled", id),
@@ -972,6 +1103,8 @@ function saveUserConfig(raw, existing) {
 		seenIds.add(id);
 		const size = Number(pp.size);
 		if (!Number.isFinite(size) || size <= 0) return null;
+		const sizePercent = pp.sizePercent;
+		if (sizePercent !== void 0 && sizePercent !== null && !isValidSizePercent(sizePercent)) return null;
 		let name = typeof pp.name === "string" ? pp.name.trim() : "";
 		if (!name) {
 			defaultLog("warn", `dsh-zdd-pet: pet「${id}」缺少 name，已按默认 ${id}（宠物 id）处理`);
@@ -1012,6 +1145,7 @@ function saveUserConfig(raw, existing) {
 			}
 		};
 		if (persona) pet.whisperPrompt = persona;
+		if (sizePercent !== void 0 && sizePercent !== null) pet.sizePercent = sizePercent;
 		out.push(pet);
 	}
 	const ne = o.notificationsEnabled;
@@ -1024,12 +1158,28 @@ function saveUserConfig(raw, existing) {
 	if (wie !== void 0 && typeof wie !== "boolean") return null;
 	const cie = o.chatImageEnabled;
 	if (cie !== void 0 && typeof cie !== "boolean") return null;
+	const cae = o.chatAnimationEnabled;
+	if (cae !== void 0 && typeof cae !== "boolean") return null;
 	const cts = o.confineToScreen;
 	if (cts !== void 0 && typeof cts !== "boolean") return null;
+	const ve = o.voiceEnabled;
+	if (ve !== void 0 && typeof ve !== "boolean") return null;
+	const vn = o.voiceName;
+	if (vn !== void 0 && !topFieldValid("voiceName", vn)) return null;
+	const vv = o.voiceVolume;
+	if (vv !== void 0 && !topFieldValid("voiceVolume", vv)) return null;
+	const vwe = o.voiceWhisperEnabled;
+	if (vwe !== void 0 && !topFieldValid("voiceWhisperEnabled", vwe)) return null;
+	const vte = o.voiceTodoEnabled;
+	if (vte !== void 0 && !topFieldValid("voiceTodoEnabled", vte)) return null;
+	const vne = o.voiceNotifyEnabled;
+	if (vne !== void 0 && !topFieldValid("voiceNotifyEnabled", vne)) return null;
 	const te = o.trayEnabled;
 	if (te !== void 0 && typeof te !== "boolean") return null;
 	const ph = o.physics;
 	if (ph !== void 0 && !physicsValid(ph)) return null;
+	const aw = o.animationWeights;
+	if (aw !== void 0 && !topFieldValid("animationWeights", aw)) return null;
 	const fo = o.font;
 	if (fo !== void 0 && !fontValid(fo)) return null;
 	const po = o.pomodoro;
@@ -1058,15 +1208,28 @@ function saveUserConfig(raw, existing) {
 		provider: String(v.provider).trim(),
 		model: String(v.model).trim()
 	});
+	const cleanWeights = (v) => ({
+		idle: Number(v.idle),
+		turn: Number(v.turn),
+		move: Number(v.move)
+	});
 	const outConfig = { pets: out };
 	if (ne !== void 0) outConfig.notificationsEnabled = ne;
 	if (cse !== void 0) outConfig.clickSoundEnabled = cse;
 	if (bid !== void 0) outConfig.bubbleImageEnabled = bid;
 	if (wie !== void 0) outConfig.whisperImageEnabled = wie;
 	if (cie !== void 0) outConfig.chatImageEnabled = cie;
+	if (cae !== void 0) outConfig.chatAnimationEnabled = cae;
 	if (cts !== void 0) outConfig.confineToScreen = cts;
+	if (ve !== void 0) outConfig.voiceEnabled = ve;
+	if (vn !== void 0) outConfig.voiceName = vn;
+	if (vv !== void 0) outConfig.voiceVolume = vv;
+	if (vwe !== void 0) outConfig.voiceWhisperEnabled = vwe;
+	if (vte !== void 0) outConfig.voiceTodoEnabled = vte;
+	if (vne !== void 0) outConfig.voiceNotifyEnabled = vne;
 	if (te !== void 0) outConfig.trayEnabled = te;
 	if (ph !== void 0) outConfig.physics = ph;
+	if (aw !== void 0) outConfig.animationWeights = cleanWeights(aw);
 	if (fo !== void 0) outConfig.font = fo;
 	if (po !== void 0) {
 		const pv = po;
@@ -1152,9 +1315,17 @@ function saveUserConfig(raw, existing) {
 	if (bid !== void 0) bodyOwned.add("bubbleImageEnabled");
 	if (wie !== void 0) bodyOwned.add("whisperImageEnabled");
 	if (cie !== void 0) bodyOwned.add("chatImageEnabled");
+	if (cae !== void 0) bodyOwned.add("chatAnimationEnabled");
 	if (cts !== void 0) bodyOwned.add("confineToScreen");
+	if (ve !== void 0) bodyOwned.add("voiceEnabled");
+	if (vn !== void 0) bodyOwned.add("voiceName");
+	if (vv !== void 0) bodyOwned.add("voiceVolume");
+	if (vwe !== void 0) bodyOwned.add("voiceWhisperEnabled");
+	if (vte !== void 0) bodyOwned.add("voiceTodoEnabled");
+	if (vne !== void 0) bodyOwned.add("voiceNotifyEnabled");
 	if (te !== void 0) bodyOwned.add("trayEnabled");
 	if (ph !== void 0) bodyOwned.add("physics");
+	if (aw !== void 0) bodyOwned.add("animationWeights");
 	if (fo !== void 0) bodyOwned.add("font");
 	if (po !== void 0) bodyOwned.add("pomodoro");
 	if (gr !== void 0) bodyOwned.add("greeting");
@@ -1198,9 +1369,21 @@ const PACKAGE_MEMES_DIR = join(PACKAGE_ROOT_ASSETS, "memes");
 
 //#endregion
 //#region src/host/helper/electron.ts
-const require = createRequire(import.meta.url);
 const packageRoot = PACKAGE_ROOT;
 const defaultHelperMain = resolve(packageRoot, "runtime", "electron-helper", "main.js");
+const DESKTOP_DEBUG_PORT = 0;
+/** 强制 XWayland 的 Chromium 开关：Wayland 原生下小窗的定位/置顶/穿透都不可用。 */
+const OZONE_X11_SWITCH = "--ozone-platform=x11";
+function shouldForceXWayland(env = process.env, platform = process.platform) {
+	return platform === "linux" && Boolean(env.WAYLAND_DISPLAY) && Boolean(env.DISPLAY);
+}
+function helperLaunchArgs$1(helperPath, options = {}) {
+	const debugPort = options.debugPort ?? DESKTOP_DEBUG_PORT;
+	const switches = [];
+	if (options.forceX11 === true) switches.push(OZONE_X11_SWITCH);
+	if (debugPort > 0) switches.push("--remote-debugging-port=" + debugPort);
+	return [...switches, helperPath];
+}
 /** 只做基本文件校验：不验证二进制格式，也不实际启动候选。 */
 function isNonEmptyFile(path) {
 	try {
@@ -1220,10 +1403,6 @@ function resolveElectronPath(candidates = []) {
 	};
 	for (const value of candidates) push(value);
 	if (process.env.DSH_PET_ELECTRON_PATH) push(process.env.DSH_PET_ELECTRON_PATH);
-	try {
-		const resolved = require("electron");
-		if (typeof resolved === "string" && resolved) push(resolved);
-	} catch {}
 	push(defaultElectronExe());
 	return list.find(isNonEmptyFile);
 }
@@ -1245,6 +1424,14 @@ function electronLandingDir() {
 }
 function defaultElectronExe() {
 	return join(electronLandingDir(), ELECTRON_REL);
+}
+function readElectronVersion(electronExe) {
+	try {
+		const version = readFileSync(join(dirname(electronExe), "version"), "utf8").trim();
+		return /^\d+\.\d+\.\d+/.test(version) ? version : void 0;
+	} catch {
+		return void 0;
+	}
 }
 async function ensureElectronDownload(options = {}) {
 	const version = options.version || process.env.DSH_PET_ELECTRON_VERSION || "43.3.0";
@@ -1325,7 +1512,7 @@ function defaultLaunch(options = {}) {
 	const helperPath = options.helperPath || defaultHelperMain;
 	return {
 		command: electronPath,
-		args: [helperPath]
+		args: helperLaunchArgs$1(helperPath, { forceX11: shouldForceXWayland() })
 	};
 }
 
@@ -1338,6 +1525,10 @@ const BRIDGE_PREFIX = "dsh-zdd-pet-bridge:";
 const HELPER_STOP_TIMEOUT_MS = 3e3;
 const HELPER_STOP_GRACE_MS = 1e3;
 const HELPER_STABLE_MS = 3 * 60 * 1e3;
+/** Electron 沙箱初始化失败时的退出码 0x80000003（STATUS_BREAKPOINT）；Node 的两种报法靠 `>>> 0` 归一。 */
+const SANDBOX_INIT_FAILED_CODE = 2147483651;
+/** 只有在这个时间窗内秒退、且一行输出都没有时，才把退出当成「沙箱起不来」。 */
+const SANDBOX_FALLBACK_WINDOW_MS = 5e3;
 function restartBackoffDelayMs(consecutiveFailures, baseMs = 750) {
 	const MAX = 3e4;
 	const raw = baseMs * 2 ** Math.max(0, consecutiveFailures);
@@ -1348,6 +1539,52 @@ function shouldCircuitBreak(consecutiveFailures, limit = 12) {
 }
 function helperRunIsStable(elapsedMs) {
 	return elapsedMs >= HELPER_STABLE_MS;
+}
+/** Windows NTSTATUS 退出码 → 中文短语；只收「进程被系统当场终止」这一类，其余不收录。 */
+const WINDOWS_EXIT_MEANINGS = {
+	3221225477: "访问违例",
+	[SANDBOX_INIT_FAILED_CODE]: "断点（沙箱初始化失败）",
+	3221225781: "缺少 DLL",
+	3221225794: "DLL 初始化失败"
+};
+/**
+* 把子进程退出码翻成一句人话。
+*
+* 只认 Windows 的 NTSTATUS 形态（无符号值 ≥ 0x80000000）：POSIX 退出码只有 0–255，不会撞上这张表。
+* 入参同时认 Node 的两种报法——`3221225477` 与 `-1073741819` 指向同一个 `0xC0000005`。
+* @param code - 子进程退出码；null 表示被信号终止。
+* @returns 中文短语；未收录或 code 为 null 时返回 undefined。
+*/
+function explainExitCode(code) {
+	if (code === null) return void 0;
+	return WINDOWS_EXIT_MEANINGS[code >>> 0];
+}
+function describeExit(code, signal) {
+	return `code=${String(code)}${describeCodeDetail(code)}, signal=${String(signal)}`;
+}
+/** 退出码的括号说明：形态像 NTSTATUS 才补十六进制，含义未收录时只留十六进制。 */
+function describeCodeDetail(code) {
+	if (code === null) return "";
+	const unsigned = code >>> 0;
+	if (unsigned < 2147483648) return "";
+	const hex = `0x${unsigned.toString(16).toUpperCase()}`;
+	const meaning = explainExitCode(code);
+	return ` (${meaning ? `${hex} ${meaning}` : hex})`;
+}
+function crashLoopAdvice(platform) {
+	const raise = "或设 DSH_PET_RESTART_MAX_FAILURES 提高重试上限后重启。";
+	if (platform === "win32") return `换一个 Electron 版本（删掉日志里 electron= 指向的目录，用 DSH_PET_ELECTRON_VERSION 指定可用版本后重启），或用 DSH_PET_ELECTRON_PATH 指向本机能开窗的 electron.exe；${raise}`;
+	if (platform === "linux") return `确认有可用显示环境（DISPLAY / WAYLAND_DISPLAY，无显示时用 Xvfb 并设 DSH_PET_DESKTOP_FORCE=1）；${raise}`;
+	return `用 DSH_PET_ELECTRON_PATH 指向本机能开窗的 Electron；${raise}`;
+}
+function shouldFallbackToNoSandbox(input) {
+	if (input.alreadyApplied || input.customCommand || input.sandboxOptOut) return false;
+	if (input.code === null || input.code >>> 0 !== SANDBOX_INIT_FAILED_CODE) return false;
+	if (input.sawOutput) return false;
+	return input.ranMs < SANDBOX_FALLBACK_WINDOW_MS;
+}
+function helperOutputIsMeaningful(chunk) {
+	return Boolean(chunk.trim());
 }
 const RESTART_BASE_MS_DEFAULT = 750;
 const RESTART_MAX_FAILURES_DEFAULT = 12;
@@ -1377,6 +1614,11 @@ function waitForChildExit(child, timeoutMs, onTimeout) {
 
 //#endregion
 //#region src/host/helper/child.ts
+/** 日志里的运行时身份：` · electron=<路径> (<版本>)`；版本读不到时只留路径。 */
+function electronIdentity(electronExe) {
+	const version = readElectronVersion(electronExe);
+	return ` · electron=${electronExe}${version ? ` (${version})` : ""}`;
+}
 function helperSpawnEnv(hostPid, extra) {
 	const env = {
 		...process.env,
@@ -1385,6 +1627,9 @@ function helperSpawnEnv(hostPid, extra) {
 	};
 	delete env.ELECTRON_RUN_AS_NODE;
 	return env;
+}
+function helperLaunchArgs(baseArgs, opts) {
+	return opts.sandboxFallback && !opts.customCommand ? ["--no-sandbox", ...baseArgs] : [...baseArgs];
 }
 var HelperProcess = class {
 	constructor(options = {}, logger = console) {
@@ -1396,6 +1641,9 @@ var HelperProcess = class {
 		this.restartFailures = 0;
 		this.lastStartAt = 0;
 		this.stdoutBuffer = "";
+		this.launchIdentity = "";
+		this.hasSandboxFallbackApplied = false;
+		this.hasChildOutput = false;
 	}
 	/** 拉起子进程；已有子进程在跑或正在停止时直接返回现有句柄。 */
 	start() {
@@ -1407,7 +1655,14 @@ var HelperProcess = class {
 			args: this.options.args || [helperPath]
 		} : defaultLaunch(this.options);
 		const command = launch.command;
-		const args = this.options.args || launch.args;
+		const args = helperLaunchArgs(this.options.args || launch.args, {
+			sandboxFallback: this.hasSandboxFallbackApplied,
+			customCommand: Boolean(this.options.command)
+		});
+		if (!this.options.command && shouldForceXWayland()) this.logger.info?.("dsh-zdd-pet desktop helper: Wayland 会话，强制 XWayland（--ozone-platform=x11）");
+		else if (!this.options.command && process.platform === "linux" && process.env.WAYLAND_DISPLAY) this.logger.warn?.("dsh-zdd-pet desktop helper: 纯 Wayland 无 XWayland，桌面模式的定位/置顶/穿透不可用；请改用 X11 会话");
+		this.hasChildOutput = false;
+		this.launchIdentity = electronIdentity(command);
 		const cwd = this.options.cwd || dshHomeDir();
 		mkdirSync(cwd, { recursive: true });
 		const child = spawn(command, args, {
@@ -1421,27 +1676,39 @@ var HelperProcess = class {
 			windowsHide: true
 		});
 		this.child = child;
+		const stableTimer = setTimeout(() => {
+			if (this.child === child && !this.stopping) this.logger.info?.(`dsh-zdd-pet desktop helper stable for ${HELPER_STABLE_MS / 6e4}m${this.launchIdentity}`);
+		}, HELPER_STABLE_MS);
+		stableTimer.unref?.();
 		child.once("error", (error) => {
-			this.logger.error?.(`dsh-zdd-pet desktop helper failed to start: ${error.message}`);
+			this.logger.error?.(`dsh-zdd-pet desktop helper failed to start: ${error.message}${this.launchIdentity}`);
 			if (child.pid === void 0 && this.child === child) {
 				this.child = void 0;
+				clearTimeout(stableTimer);
 				this.scheduleRestart();
 			}
 		});
 		child.once("exit", (code, signal) => {
 			if (this.child !== child) return;
 			this.child = void 0;
+			clearTimeout(stableTimer);
 			if (!this.stopping) {
-				this.logger.warn?.(`dsh-zdd-pet desktop helper exited (code=${String(code)}, signal=${String(signal)}); restarting`);
+				if (this.applySandboxFallback(code)) return;
+				this.logger.warn?.(`dsh-zdd-pet desktop helper exited (${describeExit(code, signal)})${this.launchIdentity}; restarting`);
 				this.scheduleRestart();
 			}
 		});
 		child.stdout.on("data", (chunk) => {
-			this.onStdoutChunk(String(chunk));
+			const text = String(chunk);
+			if (helperOutputIsMeaningful(text)) this.hasChildOutput = true;
+			this.onStdoutChunk(text);
 		});
 		child.stderr.on("data", (chunk) => {
 			const line = String(chunk).trim();
-			if (line) this.logger.warn?.(`[dsh-zdd-pet desktop helper] ${line}`);
+			if (helperOutputIsMeaningful(line)) {
+				this.hasChildOutput = true;
+				this.logger.warn?.(`[dsh-zdd-pet desktop helper] ${line}`);
+			}
 		});
 		child.stdin?.on("error", () => {});
 		return child;
@@ -1534,12 +1801,28 @@ var HelperProcess = class {
 			} catch {}
 		});
 	}
+	/** 沙箱初始化失败的特殊崩溃 → 改用 `--no-sandbox` 立刻重试一次，不计入退避与熔断额度。 */
+	applySandboxFallback(code) {
+		const applied = shouldFallbackToNoSandbox({
+			code,
+			sawOutput: this.hasChildOutput,
+			ranMs: Date.now() - this.lastStartAt,
+			alreadyApplied: this.hasSandboxFallbackApplied,
+			customCommand: Boolean(this.options.command),
+			sandboxOptOut: process.env.DSH_PET_GPU_SANDBOX === "1"
+		});
+		if (!applied) return false;
+		this.hasSandboxFallbackApplied = true;
+		this.logger.warn?.(`dsh-zdd-pet desktop helper 因 Chromium 沙箱初始化失败而秒退（${describeExit(code, null)}），改用 --no-sandbox 重试一次${this.launchIdentity}`);
+		this.start();
+		return true;
+	}
 	scheduleRestart() {
 		if (this.restartTimer || this.stopping) return;
 		if (helperRunIsStable(Date.now() - this.lastStartAt)) this.restartFailures = 0;
 		else this.restartFailures += 1;
 		if (shouldCircuitBreak(this.restartFailures, this.resolveMaxFailures())) {
-			this.logger.error?.(`dsh-zdd-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, no more restarts. Fix the environment (e.g. DISPLAY/headless) or set DSH_PET_RESTART_MAX_FAILURES to raise the limit.`);
+			this.logger.error?.(`dsh-zdd-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, no more restarts${this.launchIdentity} · 建议：${crashLoopAdvice(process.platform)} · Fix the environment (e.g. DISPLAY/headless) or set DSH_PET_RESTART_MAX_FAILURES to raise the limit.`);
 			return;
 		}
 		const base = this.resolveRestartBaseMs();
@@ -1663,6 +1946,26 @@ async function fetchJson(url, key, label) {
 	if (!res.ok) throw new Error("commandcode " + label + " HTTP " + res.status);
 	return await res.json();
 }
+/**
+* 从 usage 响应读区间用量（本期累计）；五个字段齐全才返回，缺一个即视为没有这项数据。
+*
+* 这些字段来自批量聚合（窗口百分比才是实时的），所以宁可整页不出，也不拿半份数字拼一张会漂的卡片。
+*/
+function readUsage(summary) {
+	const totalTokens = looseNum(summary?.totalTokens);
+	const inputTokens = looseNum(summary?.totalTokensIn);
+	const outputTokens = looseNum(summary?.totalTokensOut);
+	const requests = looseNum(summary?.totalCount);
+	const spentUsd = looseNum(summary?.totalCost);
+	if (totalTokens === void 0 || inputTokens === void 0 || outputTokens === void 0 || requests === void 0 || spentUsd === void 0) return void 0;
+	return {
+		totalTokens,
+		inputTokens,
+		outputTokens,
+		requests,
+		spentUsd
+	};
+}
 function parseCommandCode(creditsBody, subscriptionBody, summaryBody, provider) {
 	const root = obj(creditsBody);
 	const credits = obj(root?.credits);
@@ -1681,6 +1984,8 @@ function parseCommandCode(creditsBody, subscriptionBody, summaryBody, provider) 
 	const pool = spent + remaining;
 	const data = { monthly: pool > 0 ? spent / pool * 100 : 0 };
 	if (pool > 0) data.monthlyCapUsd = pool;
+	const usage = readUsage(summary);
+	if (usage) data.usage = usage;
 	const subscription = obj(obj(subscriptionBody)?.data);
 	const periodEnd = subscription?.currentPeriodEnd;
 	if (typeof periodEnd === "string" && periodEnd.length > 0) data.monthlyResetsAt = periodEnd;
@@ -1724,11 +2029,7 @@ const commandCode = {
 		} catch {
 			subscription = void 0;
 		}
-		const periodStart = obj(obj(subscription)?.data)?.currentPeriodStart;
-		const summary = await fetchJson(API_BASE + "/alpha/usage/summary" + queryString({
-			since: typeof periodStart === "string" ? periodStart : void 0,
-			orgId
-		}), key, "/alpha/usage/summary");
+		const summary = await fetchJson(API_BASE + "/alpha/usage/summary" + queryString({ orgId }), key, "/alpha/usage/summary");
 		return parseCommandCode(credits, subscription, summary, provider);
 	}
 };
@@ -1984,6 +2285,81 @@ async function queryBalance(provider, resolveKey, resolveAccount) {
 }
 
 //#endregion
+//#region src/host/voice/registry.ts
+const BUILTIN_VOICE_ID = "edge";
+/** 当前生效的第三方实现；`null` = 没注册，合成走内置实现。 */
+let current$2 = null;
+function registerVoiceProvider(def) {
+	if (!def || typeof def !== "object") throw new TypeError("voice provider 定义必须是对象");
+	if (typeof def.id !== "string" || def.id.length === 0) throw new TypeError("id 必须是非空字符串");
+	if (def.id === BUILTIN_VOICE_ID) throw new TypeError("不能与内置实现同名: " + BUILTIN_VOICE_ID);
+	if (typeof def.synthesize !== "function") throw new TypeError("synthesize 必须是函数");
+	current$2 = def;
+	return () => {
+		if (current$2 === def) current$2 = null;
+	};
+}
+function activeVoiceProvider() {
+	return current$2;
+}
+function listVoiceProviders() {
+	return {
+		builtin: [BUILTIN_VOICE_ID],
+		external: current$2 ? [current$2.id] : []
+	};
+}
+
+//#endregion
+//#region src/host/voice/speech-registry.ts
+const BUILTIN_SPEECH_ID = "dsh";
+/** 当前生效的第三方实现；`null` = 没注册，识别走宿主自带能力。 */
+let current$1 = null;
+function registerSpeechProvider(def) {
+	if (!def || typeof def !== "object") throw new TypeError("speech provider 定义必须是对象");
+	if (typeof def.id !== "string" || def.id.length === 0) throw new TypeError("id 必须是非空字符串");
+	if (def.id === BUILTIN_SPEECH_ID) throw new TypeError("不能与内置来源同名: " + BUILTIN_SPEECH_ID);
+	if (typeof def.transcribe !== "function") throw new TypeError("transcribe 必须是函数");
+	current$1 = def;
+	return () => {
+		if (current$1 === def) current$1 = null;
+	};
+}
+function activeSpeechProvider() {
+	return current$1;
+}
+function listSpeechProviders() {
+	return {
+		builtin: [BUILTIN_SPEECH_ID],
+		external: current$1 ? [current$1.id] : []
+	};
+}
+
+//#endregion
+//#region src/host/chat-memory-provider.ts
+const NATIVE_MEMORY_ID = "native";
+/** 当前生效的第三方实现；null = 没注册，走原生路径。 */
+let current = null;
+function registerChatMemoryProvider(def) {
+	if (!def || typeof def !== "object") throw new TypeError("memory provider 定义必须是对象");
+	if (typeof def.id !== "string" || def.id.length === 0) throw new TypeError("id 必须是非空字符串");
+	if (def.id === NATIVE_MEMORY_ID) throw new TypeError("不能占用原生实现标识: " + NATIVE_MEMORY_ID);
+	if (typeof def.recall !== "function" && typeof def.capture !== "function") throw new TypeError("recall 与 capture 至少要有一个是函数");
+	current = def;
+	return () => {
+		if (current === def) current = null;
+	};
+}
+function activeChatMemoryProvider() {
+	return current;
+}
+function listChatMemoryProviders() {
+	return {
+		builtin: [NATIVE_MEMORY_ID],
+		external: current ? [current.id] : []
+	};
+}
+
+//#endregion
 //#region src/host/menu.ts
 /**
 * 第三方右键菜单注册表（进程内存态，DSH 重启即清空，不落盘）。
@@ -2174,12 +2550,12 @@ var MenuRegistry = class {
 			hold.timer = setTimeout(finish, Math.min(waitMs, MENU_WAIT_MAX_MS));
 			set.add(finish);
 		});
-		const current = this.owners.get(owner);
-		if (!current) return null;
+		const current$3 = this.owners.get(owner);
+		if (!current$3) return null;
 		const out = {};
-		for (const [label, pet] of current.items) {
+		for (const [label, pet] of current$3.items) {
 			out[label] = pet;
-			current.items.set(label, null);
+			current$3.items.set(label, null);
 		}
 		return out;
 	}
@@ -2410,6 +2786,10 @@ const MIME = {
 	".mov": "video/quicktime",
 	".mp4": "video/mp4",
 	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".webp": "image/webp",
+	".gif": "image/gif",
 	".wav": "audio/wav",
 	".json": "application/json; charset=utf-8",
 	".jsonc": "application/json; charset=utf-8",
@@ -2417,6 +2797,24 @@ const MIME = {
 	".woff": "font/woff",
 	".woff2": "font/woff2"
 };
+const IMAGE_HEAD_BYTES = 16;
+function imageTypeOf(header, size) {
+	if (size >= 8 && header.readUInt32BE(0) === 2303741511 && header.readUInt32BE(4) === 218765834) return "image/png";
+	if (size >= 3 && header[0] === 255 && header[1] === 216 && header[2] === 255) return "image/jpeg";
+	if (size >= 6) {
+		const tag = header.toString("latin1", 0, 6);
+		if (tag === "GIF87a" || tag === "GIF89a") return "image/gif";
+	}
+	if (size >= 12 && header.toString("latin1", 0, 4) === "RIFF" && header.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+	return void 0;
+}
+function imageExtOf(contentType) {
+	if (contentType === "image/png") return ".png";
+	if (contentType === "image/jpeg") return ".jpg";
+	if (contentType === "image/webp") return ".webp";
+	if (contentType === "image/gif") return ".gif";
+	return void 0;
+}
 function resolveAsset(root, rel) {
 	if (rel.length === 0) return void 0;
 	const candidate = normalize(join(root, rel));
@@ -2561,7 +2959,7 @@ function readBody(req) {
 
 //#endregion
 //#region src/shared/timings.ts
-const BUBBLE_DURATION_MS = 10 * 1e3;
+const BUBBLE_DURATION_MS$1 = 10 * 1e3;
 const WORK_BUBBLE_MS = 15 * 1e3;
 const SAY_BUBBLE_MIN_MS = 10 * 1e3;
 const SAY_BUBBLE_MAX_MS = 60 * 1e3;
@@ -2716,7 +3114,8 @@ var PollStateStore = class {
 			workStatus: emptyLeaf(),
 			notify: emptyLeaf(),
 			config: emptyLeaf(),
-			menu: emptyLeaf()
+			menu: emptyLeaf(),
+			focusSession: emptyLeaf()
 		};
 		this.pets = new Map();
 		this.waiters = new Set();
@@ -2776,7 +3175,8 @@ var PollStateStore = class {
 				anim: emptyLeaf(),
 				position: emptyLeaf(),
 				throw: emptyLeaf(),
-				lock: emptyLeaf()
+				lock: emptyLeaf(),
+				sleep: emptyLeaf()
 			};
 			this.pets.set(petId, entry);
 		}
@@ -2925,10 +3325,10 @@ function todoViewFromTodo(event) {
 		task: null,
 		progress: null
 	};
-	let current;
-	for (const t of todos) if (t?.status === "in_progress") current = t;
-	const next = current ? void 0 : todos.find((t) => t?.status === "pending");
-	const task = current ? taskStepText(current.content) : next ? taskStepText("接下来：" + String(next.content ?? "")) : null;
+	let current$3;
+	for (const t of todos) if (t?.status === "in_progress") current$3 = t;
+	const next = current$3 ? void 0 : todos.find((t) => t?.status === "pending");
+	const task = current$3 ? taskStepText(current$3.content) : next ? taskStepText("接下来：" + String(next.content ?? "")) : null;
 	if (!task) return {
 		task: null,
 		progress: null
@@ -2966,6 +3366,7 @@ var WorkStatusStore = class {
 			state: null,
 			task: null,
 			progress: null,
+			sessionId: null,
 			ts: 0
 		};
 	}
@@ -2993,7 +3394,8 @@ var WorkStatusStore = class {
 			state,
 			seq,
 			task: prev?.task ?? null,
-			progress: prev?.progress ?? null
+			progress: prev?.progress ?? null,
+			sessionId
 		});
 		this.refresh();
 		return true;
@@ -3055,16 +3457,18 @@ var WorkStatusStore = class {
 	snapshot() {
 		return this.snap;
 	}
-	/** 重算展示：state / task / progress 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
+	/** 重算展示：state / task / progress / sessionId 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
 	refresh() {
 		const best = pickDisplayed(this.sessions.values());
 		const nextState = best?.state ?? null;
 		const nextTask = best?.task ?? null;
 		const nextProgress = best?.progress ?? null;
-		if (nextState === this.snap.state && nextTask === this.snap.task && sameProgress(nextProgress, this.snap.progress)) return;
+		const nextSession = best?.sessionId ?? null;
+		if (nextState === this.snap.state && nextTask === this.snap.task && sameProgress(nextProgress, this.snap.progress) && nextSession === this.snap.sessionId) return;
 		this.snap.state = nextState;
 		this.snap.task = nextTask;
 		this.snap.progress = nextProgress;
+		this.snap.sessionId = nextSession;
 		this.snap.ts = Date.now();
 	}
 };
@@ -3099,6 +3503,11 @@ function createHostSetup(ctx) {
 	};
 	/** 独立模式的碎碎念授权策略（可选能力）：DSH 宿主里是 undefined → 回落到只看 pet.whisperEnabled。 */
 	const standaloneAiPolicy = () => optionalService("standaloneAi");
+	/** 独立模式的余额凭证（可选能力）：DSH 宿主里是 undefined → 回落到模型服务商与 credential store。 */
+	const standaloneAiBalance = () => {
+		const service = optionalService("standaloneAi");
+		return service?.balanceAuth?.();
+	};
 	const userConfigPath = join(userRoot, "main-config.jsonc");
 	const legacyUserConfigPath = join(userRoot, "main-config.json");
 	const petConfigDir = join(userRoot, "pet");
@@ -3124,10 +3533,24 @@ function createHostSetup(ctx) {
 	};
 	const state = new PollStateStore();
 	const menuRegistry = new MenuRegistry();
-	ctx.provide("petApiZdd", { balance: {
-		register: registerBalanceProvider,
-		list: listBalanceProviders
-	} });
+	ctx.provide("petApiZdd", {
+		balance: {
+			register: registerBalanceProvider,
+			list: listBalanceProviders
+		},
+		voice: {
+			register: registerVoiceProvider,
+			list: listVoiceProviders
+		},
+		speech: {
+			register: registerSpeechProvider,
+			list: listSpeechProviders
+		},
+		memory: {
+			register: registerChatMemoryProvider,
+			list: listChatMemoryProviders
+		}
+	});
 	const playback = new PlaybackStore();
 	const workStatus = new WorkStatusStore();
 	/** 外部写入槽：固定会话 id，最后写入者生效；不做多写者仲裁/租约/会话管理 */
@@ -3146,6 +3569,7 @@ function createHostSetup(ctx) {
 		memeDirsFor,
 		optionalService,
 		standaloneAiPolicy,
+		standaloneAiBalance,
 		state,
 		menuRegistry,
 		playback,
@@ -3154,10 +3578,6 @@ function createHostSetup(ctx) {
 		nextExternalWorkSeq
 	};
 }
-
-//#endregion
-//#region src/shared/constants.ts
-const ROUTE_PATH = "/dsh-zdd-pet-7340";
 
 //#endregion
 //#region src/host/routes/result.ts
@@ -3203,10 +3623,73 @@ function rejected(status, reason, message) {
 }
 
 //#endregion
+//#region src/host/pet-avatar.ts
+/** 探测顺序：正常情况下同一素材根只有一个头像文件，顺序只影响同时存在多份时的遍历次序。 */
+const AVATAR_EXTS = [
+	".png",
+	".jpg",
+	".jpeg",
+	".webp",
+	".gif"
+];
+function petAvatarFile(avatarDir, petId) {
+	let best;
+	let bestMtime = -Infinity;
+	for (const ext of AVATAR_EXTS) {
+		const file = resolveAsset(avatarDir, petId + "-avatar" + ext);
+		if (file === void 0 || !existsSync(file)) continue;
+		let mtime;
+		try {
+			mtime = statSync(file).mtimeMs;
+		} catch {
+			continue;
+		}
+		if (mtime > bestMtime) {
+			bestMtime = mtime;
+			best = {
+				file,
+				contentType: MIME[ext] ?? "application/octet-stream"
+			};
+		}
+	}
+	return best;
+}
+function savePetAvatar(avatarDir, petId, bytes) {
+	const contentType = imageTypeOf(bytes, Math.min(bytes.length, IMAGE_HEAD_BYTES));
+	const ext = contentType === void 0 ? void 0 : imageExtOf(contentType);
+	if (ext === void 0) return {
+		ok: false,
+		reason: "not-image"
+	};
+	const file = resolveAsset(avatarDir, petId + "-avatar" + ext);
+	if (file === void 0) return {
+		ok: false,
+		reason: "write-failed"
+	};
+	for (const other of AVATAR_EXTS) {
+		if (other === ext) continue;
+		const stale = resolveAsset(avatarDir, petId + "-avatar" + other);
+		if (stale === void 0) continue;
+		try {
+			unlinkSync(stale);
+		} catch {}
+	}
+	try {
+		writeFileSync(file, bytes);
+	} catch {
+		return {
+			ok: false,
+			reason: "write-failed"
+		};
+	}
+	return { ok: true };
+}
+
+//#endregion
 //#region src/host/routes/assets.ts
 async function handleAssetsRoutes(deps, input) {
 	const { assetRootFor, memeDirsFor, petConfigDir, userRootFor } = deps;
-	const { rest } = input;
+	const { rest, url } = input;
 	const [scope, ...restParts] = rest.split("/");
 	if (scope === "logo") {
 		if (restParts.length > 0) return {
@@ -3214,6 +3697,20 @@ async function handleAssetsRoutes(deps, input) {
 			status: 400,
 			body: "dsh-zdd-pet: expected /dsh-zdd-pet-7340/logo"
 		};
+		const assetRoot = (url.searchParams.get("root") ?? "").trim();
+		if (assetRoot !== "" && assetRoot !== "main") {
+			if (!isValidPetId(assetRoot)) return {
+				kind: "text",
+				status: 400,
+				body: "dsh-zdd-pet: invalid asset root"
+			};
+			const own$1 = petAvatarFile(petConfigDir, assetRoot);
+			if (own$1 !== void 0) return {
+				kind: "file",
+				file: own$1.file,
+				contentType: own$1.contentType
+			};
+		}
 		const logo = resolveExisting(join(PACKAGE_ROOT, "assets"), "logo.png");
 		if (logo === void 0) return {
 			kind: "text",
@@ -3352,8 +3849,6 @@ async function handleAssetsRoutes(deps, input) {
 //#region src/host/routes/attachment.ts
 /** 附件 id 的合法形状（与宿主附件服务同一规则）：`sha256:` + 64 位小写 hex。 */
 const ATTACHMENT_ID = /^sha256:[a-f0-9]{64}$/;
-/** 嗅探读取的文件头长度：覆盖四种格式魔数所需的最大偏移（WebP 要看到第 12 字节）。 */
-const HEAD_BYTES = 16;
 async function handleAttachmentRoutes(deps, input) {
 	const { method, rest, url } = input;
 	if (rest === "attachment") {
@@ -3404,8 +3899,8 @@ function sniffImageType(file) {
 	try {
 		const fd = openSync(file, "r");
 		try {
-			const head = Buffer.alloc(HEAD_BYTES);
-			return imageTypeOf(head, readSync(fd, head, 0, HEAD_BYTES, 0));
+			const head = Buffer.alloc(IMAGE_HEAD_BYTES);
+			return imageTypeOf(head, readSync(fd, head, 0, IMAGE_HEAD_BYTES, 0));
 		} finally {
 			closeSync(fd);
 		}
@@ -3413,22 +3908,42 @@ function sniffImageType(file) {
 		return void 0;
 	}
 }
-/**
-* 魔数判定（PNG / JPEG / GIF / WebP）。
-*
-* @param header - 文件头缓冲（可能不满 {@link HEAD_BYTES}）。
-* @param size - header 里实际读到的字节数。
-* @returns 图片的 Content-Type；不是这四种之一时返回 undefined。
-*/
-function imageTypeOf(header, size) {
-	if (size >= 8 && header.readUInt32BE(0) === 2303741511 && header.readUInt32BE(4) === 218765834) return "image/png";
-	if (size >= 3 && header[0] === 255 && header[1] === 216 && header[2] === 255) return "image/jpeg";
-	if (size >= 6) {
-		const tag = header.toString("latin1", 0, 6);
-		if (tag === "GIF87a" || tag === "GIF89a") return "image/gif";
-	}
-	if (size >= 12 && header.toString("latin1", 0, 4) === "RIFF" && header.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+
+//#endregion
+//#region src/host/routes/avatar.ts
+/** 解码后的字节上限：请求体 1 MiB 是 base64 文本的上限，解码后天然不超过 768 KiB。 */
+const MAX_AVATAR_BYTES = 768 * 1024;
+async function handleAvatarRoutes(deps, input) {
+	if (input.rest === "pet-avatar") return acceptUpload(deps, input);
 	return void 0;
+}
+/**
+* 受理一次上传。
+*
+* @param deps - 路由层依赖（只用到文件宠物目录）。
+* @param input - 已解析的请求（方法、URL、请求体）。
+* @returns 成功，或按原因分档的业务/协议失败。
+*/
+async function acceptUpload(deps, input) {
+	if (input.method !== "POST") return methodNotAllowed();
+	const assetRoot = (input.url.searchParams.get("root") ?? "").trim();
+	if (assetRoot === "") return failResult("bad-request", "缺少 root 参数（素材根）");
+	if (!isValidPetId(assetRoot)) return failResult("bad-request", "素材根不合法");
+	if (assetRoot === "main") return failResult("bad-request", "内置条目不能换头像：main 不写入 pet/ 目录");
+	let raw;
+	try {
+		raw = JSON.parse(input.body ?? "");
+	} catch {
+		return invalidJson();
+	}
+	const base64 = typeof raw === "object" && raw !== null ? raw.base64 : void 0;
+	if (typeof base64 !== "string" || base64 === "") return failResult("bad-request", "base64 必须是非空字符串");
+	const bytes = Buffer.from(base64, "base64");
+	if (bytes.length === 0 || bytes.toString("base64") !== base64) return failResult("bad-request", "base64 不合法");
+	if (bytes.length > MAX_AVATAR_BYTES) return payloadTooLarge("头像超过 768 KiB");
+	const saved = savePetAvatar(deps.petConfigDir, assetRoot, bytes);
+	if (!saved.ok) return saved.reason === "not-image" ? failResult("unsupported", "只支持 PNG / JPEG / WebP / GIF") : failResult("internal-error", "头像写入失败");
+	return okResult({ ok: true });
 }
 
 //#endregion
@@ -3440,6 +3955,63 @@ async function handleBalanceRoutes(deps, input) {
 		if (method !== "POST") return methodNotAllowed();
 		await refreshBalance(true);
 		return okResult({ ok: true });
+	}
+	return void 0;
+}
+
+//#endregion
+//#region src/host/routes/character.ts
+/** 包内 assets 根：角色图按 `<素材根>-character.<ext>` 平铺在这里，与 `logo.png` 同层。 */
+const PACKAGE_ASSETS_DIR = join(PACKAGE_ROOT, "assets");
+/** 探测顺序：正常只有一份，顺序只影响多份并存时取哪一份。 */
+const CHARACTER_EXTS = [
+	".png",
+	".jpg",
+	".jpeg",
+	".webp",
+	".gif"
+];
+async function handleCharacterRoutes(deps, input) {
+	if (input.rest !== "character") return void 0;
+	const assetRoot = (input.url.searchParams.get("root") ?? "").trim();
+	if (assetRoot === "") return {
+		kind: "text",
+		status: 400,
+		body: "dsh-zdd-pet: expected /dsh-zdd-pet-7340/character?root=<素材根>"
+	};
+	if (!isValidPetId(assetRoot)) return {
+		kind: "text",
+		status: 400,
+		body: "dsh-zdd-pet: invalid asset root"
+	};
+	const found = findCharacter(deps.petConfigDir, assetRoot);
+	if (found === void 0) return {
+		kind: "text",
+		status: 404,
+		body: "dsh-zdd-pet: character not found"
+	};
+	return {
+		kind: "file",
+		file: found.file,
+		contentType: found.contentType
+	};
+}
+/**
+* 按素材根找角色图：`pet/` 优先，包内兜底。
+*
+* 扩展名只走白名单，不按目录扫描：用户目录里可能有别的文件，扫描会把无关文件当成角色图。
+* @param petDir - `pet/` 目录（pet pack 素材根所在处）。
+* @param assetRoot - 已校验的素材根。
+* @returns 命中的文件；都没有时 undefined。
+*/
+function findCharacter(petDir, assetRoot) {
+	const name = assetRoot + "-character";
+	for (const dir of [petDir, PACKAGE_ASSETS_DIR]) for (const ext of CHARACTER_EXTS) {
+		const hit = resolveExisting(dir, name + ext);
+		if (hit !== void 0) return {
+			file: hit,
+			contentType: MIME[ext] ?? "application/octet-stream"
+		};
 	}
 	return void 0;
 }
@@ -3687,6 +4259,239 @@ function profileNameFrom(packageRoot$1) {
 }
 
 //#endregion
+//#region src/host/todo/types.ts
+const TODO_FILE_VERSION = 1;
+const TODO_TEXT_MAX = 200;
+const TODO_BODY_MAX_BYTES = 16 * 1024;
+function normalizeTodoText(raw) {
+	if (typeof raw !== "string") return null;
+	const text = raw.trim();
+	if (text === "") return null;
+	if (Array.from(text).length > TODO_TEXT_MAX) return null;
+	return text;
+}
+function normalizeTodoDueAt(raw) {
+	if (raw === null || raw === void 0) return {
+		ok: true,
+		value: null
+	};
+	if (typeof raw !== "number" || !Number.isFinite(raw)) return { ok: false };
+	if (Math.abs(raw) > 864e13) return { ok: false };
+	return {
+		ok: true,
+		value: raw
+	};
+}
+/** 读一个有限数字，非法时回落。 */
+function finiteOr(raw, fallback) {
+	return typeof raw === "number" && Number.isFinite(raw) ? raw : fallback;
+}
+function parseTodoRecord(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const record = raw;
+	if (typeof record.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(record.id)) return null;
+	const text = normalizeTodoText(record.text);
+	if (text === null) return null;
+	const due = normalizeTodoDueAt(record.dueAt);
+	if (!due.ok) return null;
+	const createdAt = finiteOr(record.createdAt, 0);
+	const updatedAt = finiteOr(record.updatedAt, createdAt);
+	const done = record.done === true;
+	const completedAt = done ? finiteOr(record.completedAt, updatedAt) : null;
+	const lastRemindedAt = typeof record.lastRemindedAt === "number" && Number.isFinite(record.lastRemindedAt) ? record.lastRemindedAt : null;
+	return {
+		id: record.id,
+		text,
+		dueAt: due.value,
+		done,
+		createdAt,
+		updatedAt,
+		completedAt,
+		lastRemindedAt
+	};
+}
+function parseTodoFile(raw) {
+	const root = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+	const list = Array.isArray(root.todos) ? root.todos : [];
+	const out = [];
+	const seen = new Set();
+	for (const item of list) {
+		const todo = parseTodoRecord(item);
+		if (todo === null || seen.has(todo.id)) continue;
+		seen.add(todo.id);
+		out.push(todo);
+	}
+	return out;
+}
+function cloneTodo(todo) {
+	return { ...todo };
+}
+function sortTodos(list) {
+	return [...list].sort((a, b) => {
+		if (a.done !== b.done) return a.done ? 1 : -1;
+		if (a.done) return (b.completedAt ?? 0) - (a.completedAt ?? 0);
+		const aDue = a.dueAt ?? Number.POSITIVE_INFINITY;
+		const bDue = b.dueAt ?? Number.POSITIVE_INFINITY;
+		if (aDue !== bDue) return aDue - bDue;
+		return a.createdAt - b.createdAt;
+	});
+}
+
+//#endregion
+//#region src/host/todo/store.ts
+const TODO_FILE_NAME = "todos.json";
+/** 异常 → 一行可读原因（日志用，不外泄给 HTTP 响应）。 */
+function messageOf(error) {
+	return error instanceof Error ? error.message : String(error);
+}
+var TodoStore = class {
+	constructor(options) {
+		this.file = options.file;
+		this.log = options.log;
+		this.now = options.now ?? (() => Date.now());
+		this.queue = Promise.resolve();
+		this.cached = null;
+		this.seq = 0;
+	}
+	/** 全部待办（排序后的副本）。 */
+	list() {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			return sortTodos(this.cached ?? []).map(cloneTodo);
+		});
+	}
+	/**
+	* 新建一条。
+	*
+	* id 由时间戳 + 进程内序号生成：重启后时间戳不同，旧 id 不会撞。
+	*
+	* @param input - 已校验的正文与到期时刻。
+	* @returns 落盘成功后的记录副本。
+	*/
+	create(input) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const at = this.now();
+			this.seq += 1;
+			const todo = {
+				id: `todo-${at.toString(36)}-${this.seq.toString(36)}`,
+				text: input.text,
+				dueAt: input.dueAt,
+				done: false,
+				createdAt: at,
+				updatedAt: at,
+				completedAt: null,
+				lastRemindedAt: null
+			};
+			await this.persist([...this.cached ?? [], todo]);
+			return cloneTodo(todo);
+		});
+	}
+	/**
+	* 更新一条。
+	*
+	* 改期限或重新打开都会清空 `lastRemindedAt`：提醒按新的到期时刻重新排期。
+	*
+	* @returns 更新后的记录；id 不存在返回 null。
+	*/
+	update(id, patch) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const list = this.cached ?? [];
+			const index = list.findIndex((todo) => todo.id === id);
+			if (index < 0) return null;
+			const prev = list[index];
+			const at = this.now();
+			const next = {
+				...prev,
+				updatedAt: at
+			};
+			if (patch.text !== void 0) next.text = patch.text;
+			if (patch.dueAt !== void 0) {
+				next.dueAt = patch.dueAt;
+				next.lastRemindedAt = null;
+			}
+			if (patch.done !== void 0) {
+				next.done = patch.done;
+				next.completedAt = patch.done ? prev.completedAt ?? at : null;
+				if (!patch.done) next.lastRemindedAt = null;
+			}
+			const updated = [...list];
+			updated[index] = next;
+			await this.persist(updated);
+			return cloneTodo(next);
+		});
+	}
+	/**
+	* 删除一条。
+	*
+	* @returns 删掉的条数；0 表示本来就没有（幂等，不当成错误）。
+	*/
+	remove(id) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const list = this.cached ?? [];
+			const next = list.filter((todo) => todo.id !== id);
+			if (next.length === list.length) return 0;
+			await this.persist(next);
+			return 1;
+		});
+	}
+	/** 记下一次提醒时刻：只动 `lastRemindedAt`，不推进 `updatedAt`（那不是用户修改）。 */
+	markReminded(id, at) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const list = this.cached ?? [];
+			const index = list.findIndex((todo) => todo.id === id);
+			if (index < 0) return;
+			const next = [...list];
+			next[index] = {
+				...list[index],
+				lastRemindedAt: at
+			};
+			await this.persist(next);
+		});
+	}
+	/** 队列：上一个任务结束后执行下一个；失败不影响后续任务。 */
+	run(task) {
+		const next = this.queue.then(task, task);
+		this.queue = next.then(() => void 0, () => void 0);
+		return next;
+	}
+	async ensureLoaded() {
+		if (this.cached !== null) return;
+		this.cached = await this.readDisk();
+	}
+	async readDisk() {
+		let raw;
+		try {
+			raw = await readFile(this.file, "utf8");
+		} catch (error) {
+			if (error.code !== "ENOENT") this.log.warn?.(`[dsh-zdd-pet] 待办文件读取失败，按空清单继续：${messageOf(error)}`);
+			return [];
+		}
+		try {
+			return parseTodoFile(JSON.parse(raw));
+		} catch (error) {
+			this.log.warn?.(`[dsh-zdd-pet] 待办文件解析失败，按空清单继续：${messageOf(error)}`);
+			return [];
+		}
+	}
+	/** 原子写：临时文件写完再 rename，进程中途退出不会留下半个 JSON。 */
+	async persist(next) {
+		const file = {
+			version: TODO_FILE_VERSION,
+			todos: [...next]
+		};
+		await mkdir(dirname(this.file), { recursive: true });
+		const temp = this.file + ".tmp";
+		await writeFile(temp, JSON.stringify(file, null, 2) + "\n", "utf8");
+		await rename(temp, this.file);
+		this.cached = [...next];
+	}
+};
+
+//#endregion
 //#region src/host/routes/config/save.ts
 async function saveConfigRoute(deps, input) {
 	if (input.method === "PUT") return saveUserLayer(deps, input);
@@ -3705,7 +4510,7 @@ async function saveUserLayer(deps, input) {
 	try {
 		const existing = readUserConfig(configPaths);
 		const clean = saveUserConfig(parsed, existing);
-		if (!clean) return failResult("bad-request", "invalid pet config: expected { pets:[{name?,id,size,balanceEnabled,display,position:{corner,marginX,marginY}}] }（id 为非空字符串且去除首尾空白后唯一；display 为 web/desktop/both/none 之一；可选顶层 notificationsEnabled / whisperImageEnabled / chatImageEnabled / trayEnabled 布尔；可选宠物布尔 whisperEnabled / workStatusEnabled / fixedEnabled）");
+		if (!clean) return failResult("bad-request", "invalid pet config: expected { pets:[{name?,id,size,sizePercent?,balanceEnabled,display,position:{corner,marginX,marginY}}] }（id 为非空字符串且去除首尾空白后唯一；sizePercent 可选，不小于 1 的数字；display 为 web/desktop/both/none 之一；可选顶层 notificationsEnabled / whisperImageEnabled / chatImageEnabled / chatAnimationEnabled / trayEnabled 布尔；可选宠物布尔 whisperEnabled / workStatusEnabled / fixedEnabled）");
 		if (input.url.searchParams.get("force") !== "1" && userConfigUnparsable(configPaths)) return failResult("user-config-unparsable", "用户配置无法解析，需确认后重建", {
 			needConfirm: true,
 			userFile: userConfigPath
@@ -3906,6 +4711,7 @@ function getMeta(deps) {
 		default: join(PACKAGE_ROOT, "assets", "config.jsonc"),
 		animations: thumbUserRoot,
 		memes: memesUserRoot,
+		todos: join(userRoot, TODO_FILE_NAME),
 		logs: log.file,
 		storage: storageEntries({
 			userDataRoot: userRoot,
@@ -3943,6 +4749,38 @@ async function handleDesktopRoutes(deps, input) {
 		return okResult({ ok: true });
 	}
 	return void 0;
+}
+
+//#endregion
+//#region src/host/surface.ts
+const SURFACES = [
+	"web",
+	"desktop",
+	"both",
+	"any"
+];
+const SURFACE_TEXT = "surface 必填：web / desktop / both / any";
+function normalizeSurface(v) {
+	return typeof v === "string" && SURFACES.includes(v) ? v : null;
+}
+function displayCovers(want, display) {
+	switch (want) {
+		case "any": return display === "web" || display === "desktop" || display === "both" || display === "none";
+		case "web": return display === "web" || display === "both";
+		case "desktop": return display === "desktop" || display === "both";
+		case "both": return display === "both";
+	}
+}
+function isDisplayed(display) {
+	return displayCovers("web", display) || displayCovers("desktop", display);
+}
+function pickVoiceSurface(display) {
+	if (displayCovers("desktop", display)) return "desktop";
+	if (displayCovers("web", display)) return "web";
+	return null;
+}
+function voiceTargetOfSurface(want) {
+	return want === "web" || want === "desktop" ? want : void 0;
 }
 
 //#endregion
@@ -3996,7 +4834,7 @@ function limitPool(pool, limit) {
 //#endregion
 //#region src/host/anim.ts
 /** 配置里的池子收窄：非数组、非字符串项一律丢弃。 */
-function strings(v) {
+function strings$1(v) {
 	return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "") : [];
 }
 /** 朝向收窄：只认两个字面量，其余（大小写、空白、非字符串）一律不算。 */
@@ -4007,14 +4845,14 @@ function animationNames(animations) {
 	const push = (names) => {
 		for (const n of names) if (!out.includes(n)) out.push(n);
 	};
-	push(strings(a.idle));
-	push(strings(a.turn));
-	push(strings(a.drag));
-	push(strings(a.clicks));
+	push(strings$1(a.idle));
+	push(strings$1(a.turn));
+	push(strings$1(a.drag));
+	push(strings$1(a.clicks));
 	const moves = a.moves && typeof a.moves === "object" ? a.moves : {};
 	push(Array.isArray(moves.actions) ? moves.actions.map((m) => m && typeof m === "object" ? m.name : void 0).filter((x) => typeof x === "string" && x !== "") : []);
 	if (Array.isArray(a.categories)) {
-		for (const c of a.categories) if (c && typeof c === "object") push(strings(c.actions));
+		for (const c of a.categories) if (c && typeof c === "object") push(strings$1(c.actions));
 	}
 	const events = a.events && typeof a.events === "object" ? a.events : {};
 	for (const key of Object.keys(events)) {
@@ -4022,9 +4860,10 @@ function animationNames(animations) {
 		if (!Array.isArray(pool)) continue;
 		const names = [];
 		for (const slot of pool) if (typeof slot === "string") names.push(slot);
-		else names.push(...strings(slot));
+		else names.push(...strings$1(slot));
 		push(names);
 	}
+	push(strings$1(a.baifan));
 	return out;
 }
 function normalizeHttpUrl(v) {
@@ -4119,6 +4958,9 @@ function normalizeBroadcastDuration(duration) {
 }
 function normalizeBroadcastAnim(anim) {
 	return anim !== false;
+}
+function normalizeBroadcastVoice(speak) {
+	return speak === true;
 }
 /**
 * `?pet=` → 实际落点（与 ./anim、./motion-cue 同一口径）：必填且必须真实存在。
@@ -4221,7 +5063,7 @@ function decideBubbleClear(args) {
 //#endregion
 //#region src/host/routes/interaction.ts
 async function handleInteractionRoutes(deps, input) {
-	const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, state, surfaceBlocked } = deps;
+	const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, sleep, state, surfaceBlocked } = deps;
 	const { body, method, rest, url } = input;
 	if (rest === "lock" || rest === "lock/release") {
 		const isRelease = rest === "lock/release";
@@ -4257,6 +5099,7 @@ async function handleInteractionRoutes(deps, input) {
 				if (d.reason === "lock-lost") extra.cause = d.cause;
 				return failResult(d.reason, d.message, extra);
 			}
+			sleep.wake(petId);
 			return okResult({
 				ok: true,
 				lockId: d.lockId,
@@ -4272,7 +5115,8 @@ async function handleInteractionRoutes(deps, input) {
 		try {
 			const who = requirePet(url.searchParams, () => readAllConfig(configPaths), { surface: true });
 			if (!who.ok) return who.res;
-			const r = await publishWhisper(who.petId);
+			const want = normalizeSurface(url.searchParams.get("surface"));
+			const r = await publishWhisper(who.petId, url.searchParams.get("image") ?? void 0, want === null ? void 0 : voiceTargetOfSurface(want));
 			if (r.ok) return okResult({
 				ok: true,
 				text: r.text,
@@ -4296,6 +5140,7 @@ async function handleInteractionRoutes(deps, input) {
 		const duration = normalizeBroadcastDuration(o.duration);
 		if (duration === null) return failResult("bad-request", "duration 必须是 ≥0 的有限数字（毫秒）");
 		const anim = normalizeBroadcastAnim(o.anim);
+		const speak = normalizeBroadcastVoice(o.speak);
 		try {
 			const cfg = readAllConfig(configPaths);
 			const d = decideBroadcast({
@@ -4314,11 +5159,14 @@ async function handleInteractionRoutes(deps, input) {
 			const blocked = lockBlocked(d.petId, url.searchParams);
 			if (blocked) return blocked;
 			const pic = d.url !== void 0 ? { url: d.url } : d.image !== void 0 ? { image: d.image } : {};
+			const want = normalizeSurface(url.searchParams.get("surface"));
+			const voiceTo = want === null ? void 0 : voiceTargetOfSurface(want);
 			state.publishSay(d.petId, {
 				text: d.text,
 				...pic,
 				duration: d.duration,
-				anim: d.anim
+				anim: d.anim,
+				...speak && voiceTo ? { voiceTo } : {}
 			}, { source: "broadcast" });
 			return okResult({ ok: true });
 		} catch (e) {
@@ -4570,27 +5418,6 @@ var PoseStore = class {
 		return this.byPet.size;
 	}
 };
-
-//#endregion
-//#region src/host/surface.ts
-const SURFACES = [
-	"web",
-	"desktop",
-	"both",
-	"any"
-];
-const SURFACE_TEXT = "surface 必填：web / desktop / both / any";
-function normalizeSurface(v) {
-	return typeof v === "string" && SURFACES.includes(v) ? v : null;
-}
-function displayCovers(want, display) {
-	switch (want) {
-		case "any": return display === "web" || display === "desktop" || display === "both" || display === "none";
-		case "web": return display === "web" || display === "both";
-		case "desktop": return display === "desktop" || display === "both";
-		case "both": return display === "both";
-	}
-}
 
 //#endregion
 //#region src/host/routes/motion.ts
@@ -4849,7 +5676,7 @@ const WEEKDAYS = [
 	"星期五",
 	"星期六"
 ];
-const DAY_MS = 864e5;
+const DAY_MS$1 = 864e5;
 const DEFAULT_AHEAD = 3;
 const DEFAULT_SPAN = 1;
 const DEFAULT_AFTER = 3;
@@ -5092,11 +5919,11 @@ function getLunarFormatter() {
 	return lunarFormatter ?? void 0;
 }
 function dayOfYear(date) {
-	return (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 1)) / DAY_MS;
+	return (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 1)) / DAY_MS$1;
 }
 function dayOfYearOf(year, monthDay) {
 	const [month, day] = monthDay.split("-").map(Number);
-	return (Date.UTC(year, (month ?? 1) - 1, day ?? 1) - Date.UTC(year, 0, 1)) / DAY_MS;
+	return (Date.UTC(year, (month ?? 1) - 1, day ?? 1) - Date.UTC(year, 0, 1)) / DAY_MS$1;
 }
 /**
 * 公历日期 → 农历月日。
@@ -5426,6 +6253,37 @@ async function handleIntimacyRoutes(deps, input) {
 }
 
 //#endregion
+//#region src/host/routes/session.ts
+/** 会话 id 上限：DSH 的 id 形如 `session-<uuid>`（44 字符），128 已足够，更长的视为伪造输入。 */
+const MAX_SESSION_ID_CHARS = 128;
+/** 宿主在「还没有会话」时写进快照的哨兵值，不能当作跳转目标。 */
+const UNKNOWN_SESSION_ID = "unknown";
+async function handleSessionRoutes(deps, input) {
+	const isFocusSession = input.rest === "focus-session";
+	if (!isFocusSession) return void 0;
+	if (input.method !== "POST") return methodNotAllowed();
+	let payload;
+	try {
+		payload = JSON.parse(input.body ?? "");
+	} catch {
+		return invalidJson();
+	}
+	const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId.trim() : "";
+	if (sessionId === "" || sessionId === UNKNOWN_SESSION_ID) return failResult("bad-request", "sessionId 必填");
+	if (sessionId.length > MAX_SESSION_ID_CHARS) return failResult("bad-request", `sessionId 超过 ${MAX_SESSION_ID_CHARS} 字符`);
+	const ts = Date.now();
+	deps.state.writeSection("focusSession", {
+		sessionId,
+		ts
+	});
+	return okResult({
+		ok: true,
+		sessionId,
+		ts
+	});
+}
+
+//#endregion
 //#region src/host/routes/state.ts
 async function handleStateRoutes(deps, input) {
 	const { EXTERNAL_WORK_SESSION, ctx, nextExternalWorkSeq, publishWorkStatus, state, workStatus } = deps;
@@ -5465,8 +6323,8 @@ async function handleStateRoutes(deps, input) {
 		const headers = { "cache-control": "no-cache, no-store" };
 		const parsed = parseStateWaitQuery(url.searchParams.get("since"), url.searchParams.get("timeout"));
 		if (parsed.kind === "error") return failResult("bad-request", parsed.error);
-		const current = state.read();
-		if (parsed.kind === "none" || current.counter !== parsed.since) return okResult(current, headers);
+		const current$3 = state.read();
+		if (parsed.kind === "none" || current$3.counter !== parsed.since) return okResult(current$3, headers);
 		const since = parsed.since;
 		return await new Promise((resolveWait) => {
 			let settled = false;
@@ -5533,6 +6391,287 @@ async function handleStateRoutes(deps, input) {
 }
 
 //#endregion
+//#region src/host/sleep.ts
+/** 文案池收窄：非数组、非字符串项一律丢弃（配置已校验，这里只防手工改坏的文件）。 */
+function textPool(value) {
+	return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item !== "") : [];
+}
+function pickSleepText(pool) {
+	return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : void 0;
+}
+function sleepTextsOf(conf) {
+	return {
+		start: textPool(conf.sleepStartTexts),
+		end: textPool(conf.sleepEndTexts),
+		refuse: textPool(conf.sleepRefuseTexts)
+	};
+}
+/** 池子收窄：非数组、非字符串项一律丢弃（配置已校验，这里只防手工改坏的文件）。 */
+function strings(value) {
+	return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item !== "") : [];
+}
+function pickSleepNames(animations, roll = Math.random) {
+	const conf = animations && typeof animations === "object" ? animations : {};
+	const sets = Array.isArray(conf.sleep) ? conf.sleep : [];
+	const usable = [];
+	for (const set of sets) {
+		if (!set || typeof set !== "object") continue;
+		const entry = set;
+		const start = strings(entry.start);
+		const loop = strings(entry.loop);
+		const end = strings(entry.end);
+		if (!start.length || !loop.length || !end.length) continue;
+		usable.push({
+			start: start[Math.floor(roll() * start.length)],
+			loop: loop[Math.floor(roll() * loop.length)],
+			end: end[Math.floor(roll() * end.length)]
+		});
+	}
+	if (!usable.length) return null;
+	return usable[Math.floor(roll() * usable.length)];
+}
+var SleepStore = class {
+	constructor(opts) {
+		this.sets = new Map();
+		this.onChange = opts?.onChange ?? (() => {});
+	}
+	/** 这只宠物此刻是否在睡。 */
+	sleeping(petId) {
+		return this.sets.has(petId);
+	}
+	/** 本次睡觉挑中的那套名字；没睡时 null。 */
+	setOf(petId) {
+		return this.sets.get(petId) ?? null;
+	}
+	/**
+	* 进睡。已经在睡时保持原套、不重写叶子——重复调用（接口被连点、命令与菜单同时触发）
+	* 不该把动画从头放一遍。
+	* @returns 这次是否真的进入了睡觉状态。
+	*/
+	enter(petId, set) {
+		if (this.sets.has(petId)) return false;
+		this.sets.set(petId, set);
+		this.onChange(petId, {
+			sleeping: true,
+			...set
+		});
+		return true;
+	}
+	/**
+	* 醒来。
+	* @returns 这次是否真的从睡眠状态退出（没在睡 = 幂等空操作）。
+	*/
+	wake(petId) {
+		if (!this.sets.delete(petId)) return false;
+		this.onChange(petId, { sleeping: false });
+		return true;
+	}
+	/** 全部唤醒（插件卸载 / 桌面 Helper 重启路径）：否则渲染端要一直停在睡姿。 */
+	wakeAll() {
+		for (const petId of [...this.sets.keys()]) this.wake(petId);
+	}
+	/** 当前是否有任意宠物在睡（余额全局拉取据此决定要不要整拍跳过）。 */
+	anySleeping() {
+		return this.sets.size > 0;
+	}
+	/** 在睡的宠物 id（测试与日志用；顺序不保证）。 */
+	ids() {
+		return [...this.sets.keys()];
+	}
+};
+
+//#endregion
+//#region src/host/routes/sleep.ts
+async function handleSleepRoutes(deps, input) {
+	const { configPaths, lock, requirePet, sleep, state } = deps;
+	const { method, rest, url } = input;
+	const isSleep = rest === "sleep";
+	const isWake = rest === "wake";
+	if (!isSleep && !isWake) return void 0;
+	if (method !== "POST") return methodNotAllowed();
+	try {
+		const who = requirePet(url.searchParams, () => readAllConfig(configPaths));
+		if (!who.ok) return who.res;
+		const texts = sleepTextsOf(who.conf);
+		if (rest === "wake") {
+			const changed$1 = sleep.wake(who.petId);
+			const text = pickSleepText(texts.end);
+			if (text !== void 0) state.writePet(who.petId, "say", {
+				text,
+				anim: false
+			});
+			return okResult({
+				ok: true,
+				sleeping: false,
+				changed: changed$1
+			});
+		}
+		if (lock.locked(who.petId)) return failResult("locked", "这只桌宠正被占用，不能睡觉");
+		const names = pickSleepNames(who.conf.animations);
+		if (names === null) return failResult("no-sleep-animations", "这只宠物没有配置睡觉动画（animations.sleep）");
+		const changed = sleep.enter(who.petId, names);
+		if (changed) {
+			const text = pickSleepText(texts.start);
+			if (text !== void 0) state.writePet(who.petId, "say", {
+				text,
+				anim: false
+			});
+		}
+		const active = sleep.setOf(who.petId) ?? names;
+		return okResult({
+			ok: true,
+			sleeping: true,
+			changed,
+			start: active.start,
+			loop: active.loop,
+			end: active.end
+		});
+	} catch (e) {
+		return failResult("generate-error", e instanceof Error ? e.message : String(e));
+	}
+}
+
+//#endregion
+//#region src/host/routes/todos.ts
+/** 路径前缀：`todos` 或 `todos/<id>`。 */
+const PREFIX = "todos";
+/** Object.prototype.hasOwnProperty 的短别名：PATCH 要把「没传」与「传了 null」分开。 */
+const has = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
+/** 解析请求体：不是 JSON 对象 → null。 */
+function parseObjectBody(body) {
+	if (body === void 0) return null;
+	let parsed;
+	try {
+		parsed = JSON.parse(body);
+	} catch {
+		return null;
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+	return parsed;
+}
+/**
+* PATCH 的字段校验：出现的键逐个校验，任一非法整包拒绝。
+*
+* @param raw - 已解析的请求体。
+* @returns 待写入的字段集合；没有可写字段时返回空对象。
+*/
+function readPatch(raw) {
+	const patch = {};
+	if (has(raw, "text")) {
+		const text = normalizeTodoText(raw.text);
+		if (text === null) return null;
+		patch.text = text;
+	}
+	if (has(raw, "dueAt")) {
+		const due = normalizeTodoDueAt(raw.dueAt);
+		if (!due.ok) return null;
+		patch.dueAt = due.value;
+	}
+	if (has(raw, "done")) {
+		if (typeof raw.done !== "boolean") return null;
+		patch.done = raw.done;
+	}
+	return patch;
+}
+async function handleTodoRoutes(deps, input) {
+	const { body, method, rest } = input;
+	if (rest !== PREFIX && !rest.startsWith(PREFIX + "/")) return void 0;
+	const { log, todos } = deps;
+	try {
+		if (rest === "todos") {
+			if (method === "GET") return okResult({
+				ok: true,
+				todos: await todos.list()
+			});
+			if (method !== "POST") return methodNotAllowed();
+			if (Buffer.byteLength(body ?? "", "utf8") > TODO_BODY_MAX_BYTES) return payloadTooLarge();
+			const raw = parseObjectBody(body);
+			if (raw === null) return invalidJson();
+			const text = normalizeTodoText(raw.text);
+			if (text === null) return failResult("bad-request", `text 必须是非空字符串，最多 ${TODO_TEXT_MAX} 个字符`);
+			const due = normalizeTodoDueAt(raw.dueAt);
+			if (!due.ok) return failResult("bad-request", "dueAt 必须是毫秒时间戳或 null");
+			return okResult({
+				ok: true,
+				todo: await todos.create({
+					text,
+					dueAt: due.value
+				})
+			});
+		}
+		const id = rest.slice(PREFIX.length + 1);
+		if (id === "" || id.includes("/")) return failResult("bad-request", "todo id 不合法");
+		if (method === "PATCH") {
+			if (Buffer.byteLength(body ?? "", "utf8") > TODO_BODY_MAX_BYTES) return payloadTooLarge();
+			const raw = parseObjectBody(body);
+			if (raw === null) return invalidJson();
+			const patch = readPatch(raw);
+			if (patch === null) return failResult("bad-request", "text / dueAt / done 至少一个字段不合法");
+			if (Object.keys(patch).length === 0) return failResult("bad-request", "没有可更新的字段");
+			const todo = await todos.update(id, patch);
+			if (todo === null) return failResult("todo-not-found", "没有这条待办");
+			return okResult({
+				ok: true,
+				todo
+			});
+		}
+		if (method === "DELETE") return okResult({
+			ok: true,
+			removed: await todos.remove(id)
+		});
+		return methodNotAllowed();
+	} catch (error) {
+		log.warn(`[dsh-zdd-pet] 待办读写失败：${error instanceof Error ? error.message : String(error)}`);
+		return failResult("internal-error", "dsh-zdd-pet: 待办读写失败");
+	}
+}
+
+//#endregion
+//#region src/host/routes/voice.ts
+async function handleVoiceRoutes(deps, input) {
+	const { body, method, rest, signal } = input;
+	if (rest === "voice/voices") {
+		if (method !== "GET") return methodNotAllowed();
+		return okResult({
+			ok: true,
+			voices: deps.voice.listVoices()
+		});
+	}
+	if (rest === "voice/speak") {
+		if (method !== "POST") return methodNotAllowed();
+		let parsed;
+		try {
+			parsed = JSON.parse(body ?? "null");
+		} catch {
+			return invalidJson();
+		}
+		const result = await deps.voice.speak(parsed);
+		if (!result.ok) return failResult(result.reason, result.message);
+		return {
+			kind: "file",
+			file: result.file,
+			contentType: "audio/mpeg"
+		};
+	}
+	if (rest === "voice/hear") {
+		if (method !== "POST") return methodNotAllowed();
+		let parsed;
+		try {
+			parsed = JSON.parse(body ?? "null");
+		} catch {
+			return invalidJson();
+		}
+		const result = await deps.speech.hear(parsed, signal);
+		if (!result.ok) return failResult(result.reason, result.message);
+		return okResult({
+			ok: true,
+			text: result.text
+		});
+	}
+	return void 0;
+}
+
+//#endregion
 //#region src/host/routes/index.ts
 /** 处理器顺序：越靠前越先匹配；素材兜底必须在末尾。 */
 const HANDLERS$1 = [
@@ -5540,18 +6679,43 @@ const HANDLERS$1 = [
 	handleDesktopRoutes,
 	handleMenuRoutes,
 	handleStateRoutes,
+	handleSessionRoutes,
 	handleBalanceRoutes,
 	handleInteractionRoutes,
 	handleMotionRoutes,
 	handlePlaybackRoutes,
 	handlePomodoroRoutes,
 	handleIntimacyRoutes,
+	handleSleepRoutes,
 	handleChatRoutes,
 	handleAttachmentRoutes,
+	handleTodoRoutes,
+	handleVoiceRoutes,
+	handleAvatarRoutes,
+	handleCharacterRoutes,
 	handleAssetsRoutes
 ];
+/**
+* 睡觉期间要拒绝的端点：只列「打扰类」。
+*
+* 刻意用白名单而不是黑名单——新增端点默认放行，不会因为忘了排除而把维护动作（改显示位置、
+* 重载配置）或拖拽链路（/position、/throw）一起锁死；反过来，漏列一个打扰端点只是它还能用，
+* 不会造成「宠物叫不醒」。
+*/
+function sleepGated(rest, method) {
+	if (rest === "chat") return method === "POST";
+	if (rest === "todos") return method === "POST" || method === "DELETE";
+	return rest === "anim" || rest === "whisper" || rest === "balance" || rest === "broadcast" || rest === "bubble/clear" || rest === "menu/click" || rest === "voice";
+}
 function createPetRouter(deps) {
 	return async (url, rest, method, body, signal) => {
+		if (sleepGated(rest, method)) {
+			const petId = String(url.searchParams.get("pet") ?? "").trim();
+			if (petId) {
+				const blocked = deps.sleepBlocked(petId, url.searchParams);
+				if (blocked) return blocked;
+			}
+		}
 		for (const handle of HANDLERS$1) {
 			const result = await handle(deps, {
 				url,
@@ -5579,7 +6743,7 @@ function createHttpRoute(deps) {
 	*  signal 可选：调用方断开时中止挂起等待（只有 /playback 的 wait 分支会用到；管道侧不传）。 */
 	const handlePetRoute = async (rawUrl, method, body, signal) => {
 		const url = new URL(rawUrl, "http://localhost");
-		const rest = decodeURIComponent(url.pathname.slice(ROUTE_PATH.length + 1));
+		const rest = decodeURIComponent(url.pathname.slice(ROUTE_SEGMENT.length + 1));
 		const run$1 = () => dispatchPetRoute(url, rest, method, body, signal);
 		const isConfigQueue = rest === "config" || (rest === "pet-display" || rest === "pet-config") && method === "POST";
 		if (isConfigQueue) {
@@ -5595,13 +6759,14 @@ function createHttpRoute(deps) {
 function registerHttpRoute(ctx, handlePetRoute) {
 	ctx.effect(() => ctx.webServer.register({
 		kind: "prefix",
-		path: ROUTE_PATH,
+		path: ROUTE_SEGMENT,
 		handler: async (req, res) => {
 			const abort = new AbortController();
 			const onClose = () => abort.abort();
 			res.on("close", onClose);
 			try {
-				const body = req.method === "PUT" || req.method === "POST" ? await readBody(req) : void 0;
+				const readsBody = req.method === "PUT" || req.method === "POST" || req.method === "PATCH";
+				const body = readsBody ? await readBody(req) : void 0;
 				const result = await handlePetRoute(req.url ?? "/", req.method ?? "GET", body, abort.signal);
 				res.off("close", onClose);
 				if (result.kind === "json") sendJson$1(res, result.status, result.obj, result.headers);
@@ -5619,7 +6784,7 @@ function registerHttpRoute(ctx, handlePetRoute) {
 				}
 			}
 		}
-	}), "dsh-zdd-pet: /dsh-zdd-pet-7340 asset route");
+	}), `dsh-zdd-pet: ${ROUTE_SEGMENT} asset route`);
 }
 
 //#endregion
@@ -5640,7 +6805,7 @@ function registerLifecycle(deps) {
 //#endregion
 //#region src/host/plugin/command-chat.ts
 function registerChatCommand(deps) {
-	const { ctx, chatWithPet, log, publishWhisper, resolveActivePetId } = deps;
+	const { ctx, chatWithPet, log, publishWhisper, resolveActivePetId, sleep, sleepRefusalText } = deps;
 	ctx.effect(() => ctx.commands.register({
 		name: "chat",
 		description: "与桌宠对话：留空 = 碎碎念一句；输入消息 = 正常对话",
@@ -5650,6 +6815,10 @@ function registerChatCommand(deps) {
 			if (!petId) return {
 				kind: "error",
 				text: "没有可交互的桌宠"
+			};
+			if (sleep.sleeping(petId)) return {
+				kind: "error",
+				text: sleepRefusalText(petId)
 			};
 			const text = rawInput.trim();
 			if (!text) {
@@ -5782,17 +6951,22 @@ function automaticWhisperSchedule(policy, petEnabled, configuredPeriodSec) {
 		enabled: petEnabled,
 		periodSec: configuredPeriodSec
 	};
-	const period = policy.whisperIntervalSec();
 	return {
-		enabled: petEnabled && policy.isReady() && policy.canWhisper(),
-		periodSec: Number.isFinite(period) ? Math.max(60, period) : 300
+		enabled: petEnabled && policy.isReady(),
+		periodSec: configuredPeriodSec
 	};
 }
 
 //#endregion
 //#region src/host/plugin/loops.ts
+/** 梦话周期的兜底值（秒）：配置里 eventsRefreshSec.sleepTalk 缺失/非法时用它。 */
+const SLEEP_TALK_DEFAULT_SEC = 60;
+/** 错峰队列里相邻两只之间的间隔（ms）：同拍到点的宠物依次开口，才会错开冒泡与语音。 */
+const WHISPER_STAGGER_MS = 1e4;
+/** 错峰队列上限：6 只 × 10s = 60s，正好覆盖最短周期，队列不会追着拍跑。 */
+const WHISPER_QUEUE_MAX = 6;
 function registerLoops(deps) {
-	const { ctx, balancePeriodSec, configPaths, deliverCue, lastWhisperAt, lock, log, pickPetMeme, publishWhisper, refreshBalance, standaloneAiPolicy, whisperPeriodSec } = deps;
+	const { ctx, balancePeriodSec, configPaths, deliverCue, lastWhisperAt, lock, log, pickPetMeme, publishWhisper, publishSleepTalk, refreshBalance, sleep, standaloneAiPolicy, whisperPeriodSec } = deps;
 	ctx.effect(() => {
 		let disposed = false;
 		let timer = null;
@@ -5805,8 +6979,9 @@ function registerLoops(deps) {
 			try {
 				const cfg = readAllConfig(configPaths);
 				sec = balancePeriodSec(cfg);
-				if (flattenPetList(cfg).some((p) => p.balanceEnabled === true)) await refreshBalance();
-				else log.info("[dsh-zdd-pet] 余额周期跳过：没有启用余额的宠物");
+				const pets = flattenPetList(cfg);
+				if (pets.some((p) => p.balanceEnabled === true && !sleep.sleeping(String(p.id ?? "")))) await refreshBalance();
+				else log.info("[dsh-zdd-pet] 余额周期跳过：没有醒着且启用余额的宠物");
 			} catch (e) {
 				log.warn("[dsh-zdd-pet] 余额周期读配置失败，周期刷新已停止（重启 DSH 后恢复）：" + (e instanceof Error ? e.message : String(e)));
 				return;
@@ -5822,6 +6997,34 @@ function registerLoops(deps) {
 	ctx.effect(() => {
 		let disposed = false;
 		let timer = null;
+		/** 待发布的宠物（FIFO）；一次只发一只，两只之间隔 {@link WHISPER_STAGGER_MS}。 */
+		const pending = [];
+		/** 队列内相邻两只之间的等待句柄；与拍定时器分开计，两者都要在卸载时清掉。 */
+		let drainTimer = null;
+		/** 是否已经有一只正在生成；同一时刻只允许一只，否则两只仍会同时写出气泡。 */
+		let pumping = false;
+		/**
+		* 从队列取下一只发布，等它写完再隔一个间隔发下一只。
+		*
+		* 间隔从「文字真的写进状态」算起，而不是从发起点算：单次生成耗时在 3–15 秒之间波动，
+		* 从发起点算的固定间隔会被慢的那只吃掉，两只又撞到一起。
+		*/
+		async function pump() {
+			if (disposed || pumping || drainTimer !== null) return;
+			const petId = pending.shift();
+			if (petId === void 0) return;
+			pumping = true;
+			try {
+				await publishWhisper(petId, void 0, void 0, "whisper");
+			} catch {} finally {
+				pumping = false;
+			}
+			if (disposed || pending.length === 0) return;
+			drainTimer = setTimeout(() => {
+				drainTimer = null;
+				pump();
+			}, WHISPER_STAGGER_MS);
+		}
 		function arm(sec) {
 			if (disposed) return;
 			timer = setTimeout(() => void tick(), Math.max(1e3, sec * 1e3));
@@ -5844,7 +7047,12 @@ function registerLoops(deps) {
 					checked += 1;
 					const schedule = automaticWhisperSchedule(standaloneAiPolicy(), pet.whisperEnabled === true, whisperPeriodSec(found.conf));
 					if (!schedule.enabled) {
-						skipped.push(petId + ": " + (pet.whisperEnabled === true ? "独立模式未授权自动碎碎念" : "whisperEnabled=false"));
+						skipped.push(petId + ": " + (pet.whisperEnabled === true ? "独立模式 AI 未就绪" : "whisperEnabled=false"));
+						continue;
+					}
+					const display = String(pet.display ?? "");
+					if (!isDisplayed(display)) {
+						skipped.push(petId + ": display=none");
 						continue;
 					}
 					const sec = schedule.periodSec;
@@ -5857,13 +7065,22 @@ function registerLoops(deps) {
 						skipped.push(petId + ": 占用锁跳过");
 						continue;
 					}
+					if (sleep.sleeping(petId)) {
+						skipped.push(petId + ": 睡觉中");
+						continue;
+					}
+					if (pending.length >= WHISPER_QUEUE_MAX) {
+						skipped.push(petId + ": 错峰队列已满");
+						continue;
+					}
 					due += 1;
-					log.info(`[dsh-zdd-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），开始生成`);
 					lastWhisperAt.set(petId, now);
-					publishWhisper(petId).catch(() => {});
+					log.info(`[dsh-zdd-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），入队待发`);
+					pending.push(petId);
 				}
+				pump();
 				if (Number.isFinite(min)) next = min;
-				log.info(`[dsh-zdd-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` + (skipped.length > 0 ? `（${skipped.join("；")}）` : "") + `；下一拍 ${next}s`);
+				log.info(`[dsh-zdd-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` + (due > 1 ? `；${due} 只按 ${WHISPER_STAGGER_MS / 1e3}s 间隔依次说` : "") + (skipped.length > 0 ? `（${skipped.join("；")}）` : "") + `；下一拍 ${next}s`);
 			} catch (e) {
 				log.warn("[dsh-zdd-pet] 碎碎念调度读配置失败，自动碎碎念已停止（重启 DSH 后恢复）：" + (e instanceof Error ? e.message : String(e)));
 				return;
@@ -5874,6 +7091,7 @@ function registerLoops(deps) {
 		return () => {
 			disposed = true;
 			if (timer !== null) clearTimeout(timer);
+			if (drainTimer !== null) clearTimeout(drainTimer);
 		};
 	}, "dsh-zdd-pet: whisper poll");
 	ctx.effect(() => {
@@ -5927,16 +7145,64 @@ function registerLoops(deps) {
 			if (timer !== null) clearTimeout(timer);
 		};
 	}, "dsh-zdd-pet: pomodoro poll");
+	ctx.effect(() => {
+		let disposed = false;
+		let timer = null;
+		/** petId → 上一次说梦话的时刻；醒来不清，下次睡着时按周期自然接着算。 */
+		const lastTalkAt = new Map();
+		function arm(sec) {
+			if (disposed) return;
+			timer = setTimeout(() => void tick(), Math.max(1e3, sec * 1e3));
+		}
+		function tick() {
+			let next = SLEEP_TALK_DEFAULT_SEC;
+			try {
+				const cfg = readAllConfig(configPaths);
+				const now = Date.now();
+				let min = Infinity;
+				for (const petId of sleep.ids()) {
+					const found = findPetInstance(cfg, petId);
+					if (!found) continue;
+					const sec = sleepTalkPeriodSec(found.conf);
+					min = Math.min(min, sec);
+					if (now - (lastTalkAt.get(petId) ?? 0) < sec * 1e3) continue;
+					lastTalkAt.set(petId, now);
+					publishSleepTalk(petId).catch(() => {});
+				}
+				if (Number.isFinite(min)) next = min;
+			} catch (e) {
+				log.warn("[dsh-zdd-pet] 梦话调度读配置失败，说梦话已停止（重启 DSH 后恢复）：" + (e instanceof Error ? e.message : String(e)));
+				return;
+			}
+			arm(next);
+		}
+		tick();
+		return () => {
+			disposed = true;
+			if (timer !== null) clearTimeout(timer);
+		};
+	}, "dsh-zdd-pet: sleep talk poll");
+}
+/** 梦话周期（秒）：条目级 eventsRefreshSec.sleepTalk，读不到按 60 兜底（与配置注释同一口径）。 */
+function sleepTalkPeriodSec(conf) {
+	const table = conf.eventsRefreshSec;
+	const sec = Number(table?.sleepTalk);
+	return Number.isFinite(sec) && sec > 0 ? sec : SLEEP_TALK_DEFAULT_SEC;
 }
 
 //#endregion
 //#region src/host/plugin/command-balance.ts
 function registerBalanceCommand(deps) {
-	const { ctx, refreshBalance } = deps;
+	const { ctx, effectivePetList, refreshBalance, sleep, sleepRefusalText } = deps;
 	ctx.effect(() => ctx.commands.register({
 		name: "balance",
 		description: "手动触发桌宠余额显示（立即弹出余额气泡）",
 		handler: () => {
+			const visible = effectivePetList().filter((pet) => String(pet.display ?? "") !== "none");
+			if (visible.length > 0 && visible.every((pet) => sleep.sleeping(String(pet.id ?? "")))) return {
+				kind: "error",
+				text: sleepRefusalText(String(visible[0].id ?? ""))
+			};
 			refreshBalance(true);
 			return {
 				kind: "success",
@@ -6018,12 +7284,12 @@ function trimEdges(token) {
 }
 function tokenizeCommand(command) {
 	const tokens = [];
-	let current = "";
+	let current$3 = "";
 	let quote = null;
 	for (const ch of command) {
 		if (quote !== null) {
 			if (ch === quote) quote = null;
-			else current += ch;
+			else current$3 += ch;
 			continue;
 		}
 		if (ch === "\"" || ch === "'" || ch === "`") {
@@ -6031,13 +7297,13 @@ function tokenizeCommand(command) {
 			continue;
 		}
 		if (/\s/.test(ch) || ch === ";" || ch === "|") {
-			if (current !== "") tokens.push(current);
-			current = "";
+			if (current$3 !== "") tokens.push(current$3);
+			current$3 = "";
 			continue;
 		}
-		current += ch;
+		current$3 += ch;
 	}
-	if (current !== "") tokens.push(current);
+	if (current$3 !== "") tokens.push(current$3);
 	return tokens.map(trimEdges).filter((token) => token !== "");
 }
 /** arguments 的解析上限（UTF-16 码元数）：超过就不解析（write / edit 会带上整个文件内容）。 */
@@ -6526,6 +7792,21 @@ function hasBlockingActivity(activity) {
 	}
 	return false;
 }
+/** 回复开头在会话状态里的缓存上限：只用于一条 toast，留太长没有意义。 */
+const MAX_REPLY_TEXT = 200;
+function lastAssistantText(event) {
+	if (event?.type !== "assistant/message") return null;
+	const content = event.data?.message?.content;
+	if (!Array.isArray(content)) return null;
+	for (let i = content.length - 1; i >= 0; i -= 1) {
+		const block = content[i];
+		if (block?.type !== "text" || typeof block.text !== "string") continue;
+		const text = block.text.replace(/\s+/g, " ").trim();
+		if (text === "") continue;
+		return text.length > MAX_REPLY_TEXT ? text.slice(0, MAX_REPLY_TEXT) : text;
+	}
+	return null;
+}
 function turnEndNotifyKind(kind) {
 	if (kind === "completed") return "completed";
 	if (kind === "error" || kind === "max-tokens") return kind;
@@ -6544,7 +7825,7 @@ function parseToolQuestions(args) {
 		return null;
 	}
 }
-function reduceNotifyFrame(event) {
+function reduceNotifyFrame(event, replyText) {
 	if (!event?.type) return null;
 	switch (event.type) {
 		case "turn/end": {
@@ -6555,7 +7836,10 @@ function reduceNotifyFrame(event) {
 				type: "session/event",
 				event: {
 					type: "turn/end",
-					data: { reason }
+					data: kind === "completed" && replyText ? {
+						reason,
+						text: replyText
+					} : { reason }
 				}
 			};
 		}
@@ -6703,7 +7987,7 @@ function trackToolEvent(ledger, sessionId, input) {
 	return void 0;
 }
 function registerSessionWatch(deps) {
-	const { ctx, cancelTerminalCleanup, clearConfirm, deliverComplete, deliverConfirm, deliverEasterEgg, lastTodoText, log, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
+	const { ctx, cancelTerminalCleanup, clearConfirm, deliverComplete, deliverConfirm, deliverEasterEgg, lastTodoText, log, lastReplyText, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
 	ctx.effect(() => {
 		/** 当前正在等待用户确认的会话集合：确认气泡是常驻的，收到结果后要按会话清掉。 */
 		const pendingConfirms = new Set();
@@ -6824,11 +8108,16 @@ function registerSessionWatch(deps) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- session/event 载荷无公开类型，any 只用于接收，函数内立刻交给 shouldNotifySession / reduceNotifyFrame 推导
 			(session, event) => {
 				if (!shouldNotifySession(session)) return;
+				if (event?.type === "assistant/message") {
+					const text = lastAssistantText(event);
+					if (text) lastReplyText.set(sessionIdOf(session), text);
+				}
 				if (isCompletionTurnEnd(event)) {
 					deliverComplete("done", completeText("done"));
 					scheduleCompletionNotify(sessionIdOf(session), event);
 					return;
 				}
+				if (event?.type === "turn/end") lastReplyText.delete(sessionIdOf(session));
 				const frame = reduceNotifyFrame(event);
 				const errKind = turnEndNotifyKind(event?.type === "turn/end" ? event.data?.reason?.kind : void 0);
 				if (errKind === "error" || errKind === "max-tokens") {
@@ -6952,6 +8241,10 @@ function toBridgeResponse(id, result) {
 //#region src/host/plugin/desktop/spawn.ts
 /** 宿主是不是 DSH 桌面应用（Electron 宿主）。 */
 const isDesktopHost = () => Boolean(process.versions.electron);
+function resolveOpenTarget(siteUrl, desktopHost) {
+	if (desktopHost) return "desktop";
+	return siteUrl.includes("/standalone-ai/") ? "standalone" : "web";
+}
 function createDesktopSpawn(deps) {
 	const { ctx, getHandlePetRoute, log, reportDownload, thumbUserRoot, getHasDesktopPet, desktopPetList, getTrayOn } = deps;
 	let desktopModeEverActive = false;
@@ -6982,15 +8275,18 @@ function createDesktopSpawn(deps) {
 			return;
 		}
 		portWaitAttempts = 0;
-		const origin = `http://127.0.0.1:${port}`;
+		let origin = `http://127.0.0.1:${port}`;
+		try {
+			origin = ctx.webServer.getOrigin();
+		} catch {}
 		const siteUrl = ctx.connection.authenticatedUrl(origin);
-		const configUrl = `${origin}${ROUTE_PATH}/config`;
+		const configUrl = `${origin}${ROUTE_SEGMENT}/config`;
 		helper = new HelperProcess({
 			electronPath,
 			env: {
 				DSH_PET_CONFIG_URL: configUrl,
 				DSH_PET_SITE_URL: siteUrl,
-				DSH_PET_OPEN_TARGET: isDesktopHost() ? "desktop" : "site",
+				DSH_PET_OPEN_TARGET: resolveOpenTarget(siteUrl, isDesktopHost()),
 				DSH_PET_SCALE: "1",
 				DSH_PET_BRIDGE: "1",
 				DSH_PET_PETS: JSON.stringify(desktopPetList())
@@ -7079,11 +8375,18 @@ function createDesktopSpawn(deps) {
 //#endregion
 //#region src/host/plugin/desktop/sync.ts
 function createDesktopSync(deps) {
-	const { log, logDesktopDecision, startHelper, stopHelperAndWait } = deps;
+	const { log, logDesktopDecision, desktopPetList, startHelper, stopHelperAndWait } = deps;
+	/** 同进程内跑 helper（打包应用）：没有子进程可重启，只能让 helper 自己重建窗口。 */
+	const inProcessHost = process.env.DSH_PET_IN_PROCESS === "1";
 	let desktopSyncQueue = Promise.resolve();
 	const restartDesktop = () => {
 		desktopSyncQueue = desktopSyncQueue.then(async () => {
 			logDesktopDecision();
+			if (inProcessHost) {
+				process.env.DSH_PET_PETS = JSON.stringify(desktopPetList());
+				await globalThis.__dshPetRebuildUi?.();
+				return;
+			}
 			await stopHelperAndWait("desktop-config-change");
 			startHelper();
 		}).catch((e) => {
@@ -7352,10 +8655,46 @@ function windowsDetail(v) {
 	}
 	return rows.length > 0 ? rows : windowsRows(v);
 }
+/** 紧凑计数：1.2B / 96.0M / 478.3K，千以下取整。固定一位小数——同一页三个数字宽度稳定，不随取值跳动。 */
+function compactCount(n) {
+	if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+	if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+	if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+	return String(Math.round(n));
+}
+/**
+* 第三页：本期累计用量。一行 `usage` 承载整张卡，两端摆成三行两列——
+* 「Token / 总量」「输入 / 输出」「本期请求数 / 花费」，总量是唯一的大字。
+*
+* 服务商没给这项数据时返回 undefined，由页数判定决定气泡只有两页；给的一半数字不会被拼进来。
+*/
+function windowsUsage(v) {
+	const u = v.usage;
+	if (!u) return void 0;
+	const total = compactCount(u.totalTokens);
+	const input = compactCount(u.inputTokens) + " 入";
+	const output = compactCount(u.outputTokens) + " 出";
+	const period = "本期 " + u.requests + " 次";
+	const spend = "$" + u.spentUsd.toFixed(2);
+	const sum = u.inputTokens + u.outputTokens;
+	const inputPercent = sum > 0 ? u.inputTokens / sum * 100 : void 0;
+	return [{
+		role: "usage",
+		text: "Token " + total + " · " + input + " / " + output + " · " + period + " · " + spend,
+		title: "Token",
+		total,
+		input,
+		output,
+		period,
+		spend,
+		inputPercent
+	}];
+}
 const windowsHandler = {
 	percent: windowsPercent,
 	rows: windowsRows,
-	detail: windowsDetail
+	detail: windowsDetail,
+	usage: windowsUsage
 };
 
 //#endregion
@@ -7440,7 +8779,7 @@ function credentialRef(ref) {
 //#endregion
 //#region src/host/plugin/balance-poll.ts
 function createBalancePoll(deps) {
-	const { ctx, configPaths, deliverCue, getActivePetId, log, memeValid, state } = deps;
+	const { ctx, configPaths, deliverCue, getActivePetId, log, memeValid, state, standaloneAiBalance } = deps;
 	const gagStates = new Map();
 	/**
 	* 余额告急演出：额度快用光时让桌宠跳出来演一段（带表情包）。
@@ -7523,10 +8862,12 @@ function createBalancePoll(deps) {
 			manual: true
 		} : v;
 		try {
-			const sel = ctx.agentDefaultModel.currentSelection();
+			const standalone = standaloneAiBalance();
+			const provider = standalone?.provider || ctx.agentDefaultModel.currentSelection().provider;
 			const result = await queryBalance(
-				sel.provider,
+				provider,
 				async (ref) => {
+					if (standalone?.apiKey) return standalone.apiKey;
 					const rc = await ctx.credentials.resolve(credentialRef(ref));
 					return rc?.value;
 				},
@@ -7621,14 +8962,52 @@ function ReasoningEffortId(id) {
 }
 
 //#endregion
+//#region src/host/chat-action.ts
+function chatActionNames(animations) {
+	const a = animations && typeof animations === "object" ? animations : {};
+	if (!Array.isArray(a.categories)) return [];
+	const out = [];
+	for (const category of a.categories) {
+		if (!category || typeof category !== "object") continue;
+		const actions = category.actions;
+		if (!Array.isArray(actions)) continue;
+		for (const name of actions) {
+			if (typeof name !== "string" || name === "") continue;
+			if (!out.includes(name)) out.push(name);
+		}
+	}
+	return out;
+}
+function actionInstruction(names) {
+	return "\n\n[动作] 回复结尾可选做一个动作给用户看，从下列清单里挑最贴合当前语境的：\n" + names.map((name) => "- " + name).join("\n") + "\n挑中就在回复最后另起一行写 [动作:名称]（名称原样照抄）；没有合适的就完全不要写这个标记。";
+}
+function extractChatAction(text, names) {
+	const tag = /\[动作[:：]\s*([^\]\n]+?)\s*\]/g;
+	let action;
+	let tagged = false;
+	const cleaned = text.replace(tag, (_tag, raw) => {
+		tagged = true;
+		const name = raw.trim();
+		if (action === void 0 && names.includes(name)) action = name;
+		return "";
+	});
+	if (!tagged) return { text };
+	const body = cleaned.replace(/[ \t]+$/gm, "").replace(/\n{2,}/g, "\n").trim();
+	return action === void 0 ? { text: body } : {
+		text: body,
+		action
+	};
+}
+
+//#endregion
 //#region src/host/llm-call.ts
 const PET_CALL_IDENTITY = "dsh-zdd-pet";
 function noTextReason(finish) {
-	const { kind, failure } = finish ?? {};
+	const { kind, failure: failure$1 } = finish ?? {};
 	if (kind === "aborted") return "生成已取消";
 	if (kind === "max-tokens") return "输出达到上限，未产出正文";
 	if (kind !== "error") return "模型未返回文本";
-	const { message, code } = failure ?? {};
+	const { message, code } = failure$1 ?? {};
 	if (typeof message === "string" && message.trim() !== "") return message;
 	if (typeof code === "string" && code.trim() !== "") return code;
 	return "未提供失败原因";
@@ -7685,125 +9064,6 @@ function modelCandidates(ctx, preferred) {
 }
 function modelLabel(m) {
 	return m.provider + "/" + m.model;
-}
-
-//#endregion
-//#region src/host/chat.ts
-/** 单次生成超时（ms）：对话等 LLM 回复，60s 足够。 */
-const TIMEOUT_MS$1 = 6e4;
-/** 配图指令：附在 user 正文之后（紧邻回答位置，模型更容易遵守）。
-*  交给模型选而不是随机抽：对话有真实上下文（用户输入 + 历史），按语境挑才贴合。 */
-function imageInstruction(pool) {
-	return "\n\n[配图] 回复结尾可选附一张表情包给用户看，从下列清单里挑最贴合当前语境的：\n" + memeCatalog(pool) + "\n挑中就在回复最后另起一行写 [图:名称]（名称原样照抄）；没有合适的就完全不要写这个标记。";
-}
-async function generateChat(input) {
-	const { ctx, system, history, userText, preferred, image } = input;
-	const pool = [...input.pool ?? []];
-	const candidates = modelCandidates(ctx, preferred);
-	if (candidates.length === 0) return {
-		ok: false,
-		reason: "provider-missing",
-		message: "当前对话未配置模型"
-	};
-	const llm = ctx.llm;
-	if (!llm || typeof llm.stream !== "function") return {
-		ok: false,
-		reason: "generate-error",
-		message: "LLM 服务不可用"
-	};
-	let last = {
-		ok: false,
-		reason: "generate-error",
-		message: noTextReason(void 0)
-	};
-	for (const [i, sel] of candidates.entries()) {
-		const result = await generateWith$1(ctx, {
-			llm,
-			sel,
-			system,
-			history,
-			userText,
-			pool,
-			image
-		});
-		if (result.ok) return result;
-		last = result;
-		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 对话用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
-	}
-	return last;
-}
-/** 用一个确定的 provider/model 跑一次对话生成（失败原样返回结构化原因，不吞）。 */
-async function generateWith$1(ctx, once) {
-	const { llm, sel, system, history, userText, pool, image } = once;
-	const historyMessages = history.map((m) => m.role === "user" ? createUserMessage({
-		content: [{
-			type: "text",
-			text: m.content
-		}],
-		source: { kind: "user" }
-	}) : createAssistantMessage({
-		content: [{
-			type: "text",
-			text: m.content
-		}],
-		source: {
-			provider: sel.provider,
-			model: sel.model
-		}
-	}));
-	const deadline = AbortSignal.timeout(TIMEOUT_MS$1);
-	const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
-	const wantImage = pool.length > 0;
-	const content = [{
-		type: "text",
-		text: wantImage ? userText + imageInstruction(pool) : userText
-	}];
-	if (image !== void 0) content.push({
-		type: "image",
-		attachment: image
-	});
-	const options = {
-		provider: sel.provider,
-		model: sel.model,
-		sessionId: PET_CALL_IDENTITY,
-		messages: [...historyMessages, createUserMessage({
-			content,
-			source: { kind: "user" }
-		})],
-		system,
-		temperature: 1,
-		...supportsOff ? { reasoningEffort: ReasoningEffortId("off") } : {},
-		signal: deadline
-	};
-	const assembler = new BlockAssembler();
-	try {
-		for await (const chunk of llm.stream(options)) assembler.push(chunk);
-	} catch (e) {
-		return {
-			ok: false,
-			reason: "generate-error",
-			message: e instanceof Error ? e.message : String(e)
-		};
-	}
-	const text = assembler.blocks().filter((b) => b.type === "text").map((b) => "text" in b ? b.text : "").join("").trim();
-	if (!text) return {
-		ok: false,
-		reason: "generate-error",
-		message: noTextReason(assembler.finish)
-	};
-	if (!wantImage) return {
-		ok: true,
-		text
-	};
-	const picked = extractChatImage(text, pool);
-	return picked.image ? {
-		ok: true,
-		text: picked.text,
-		image: picked.image
-	} : {
-		ok: true,
-		text: picked.text
-	};
 }
 
 //#endregion
@@ -7906,41 +9166,63 @@ function timeContextOf(date) {
 	const holiday = holidayClauseOf(date);
 	return "【当下】现在是" + date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日" + (WEEKDAYS[day] ?? "星期?") + " " + pad2(hour) + ":" + pad2(date.getMinutes()) + "，" + timeSlotOf(hour) + "，" + dayKindOf(day) + (holiday ? "，" + holiday : "") + "。这只是背景，不必刻意报时，也别句句都提节日——多数时候正常说话就好，真贴切时才顺口带一句。";
 }
-
-//#endregion
-//#region src/host/persona.ts
-function petPersona(conf, pet) {
-	const own$1 = pet.whisperPrompt;
-	if (typeof own$1 === "string" && own$1.trim() !== "") return own$1;
-	const entry = conf.whisperPrompt;
-	return typeof entry === "string" ? entry : "";
-}
-function composeSystemPrompt(parts) {
-	const name = String(parts.name || parts.id);
-	const nameLine = name ? "你的名字是“" + name + "”。" : "";
-	const lines = [parts.prompt, nameLine].filter((line) => line !== "");
-	const time = timeContextOf(parts.now);
-	if (time) lines.push(time);
-	return lines.join("\n");
+function historyStampOf(ts, now) {
+	const at = new Date(ts);
+	if (Number.isNaN(at.getTime()) || Number.isNaN(now.getTime())) return "";
+	const date = (at.getFullYear() === now.getFullYear() ? "" : at.getFullYear() + "年") + (at.getMonth() + 1) + "月" + at.getDate() + "日";
+	return date + " " + pad2(at.getHours()) + ":" + pad2(at.getMinutes());
 }
 
 //#endregion
-//#region src/host/whisper.ts
-/** 单次生成超时（ms）：碎碎念不需要长输出，30s 足够。 */
-const TIMEOUT_MS = 3e4;
-/** 碎碎念指令：纯文本（没有配图时的原样请求）。 */
-const USER_TEXT = "随便说一句日常碎碎念，一句就好，20 字以内。";
+//#region src/host/chat.ts
+/** 单次生成超时（ms）：对话等 LLM 回复，60s 足够。 */
+const TIMEOUT_MS$1 = 6e4;
+/** 历史消息打时间前缀的阈值（ms）：30 分钟内的连续对话不加，避免每句都多几个 token。 */
+const HISTORY_STAMP_GAP_MS = 30 * 60 * 1e3;
 /**
-* 碎碎念指令：带表情包时要求模型配合作画说一句。
+* user 历史消息的正文：距现在超过阈值时，前面加 `[10月31日 22:53]`。
 *
-* 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
-* 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
-* 交模型选只能盲选，还多一层幻觉风险。
+* 只给 user 打：同一轮 user / assistant 共享同一个 ts，标一条就够；标在 assistant 上时，
+* 模型会把这行当成自己的说话格式照抄（实际出现过回复以 `[11:54]` 开头）。
+* 阈值内的连续对话不加前缀——否则一段正常闲聊会变成每句一个时间戳。
+*
+* @param message - 历史消息（带 ts）。
+* @param nowMs - 本次生成时刻（毫秒），整批历史共用一个，避免逐条取时钟导致同批时间不一致。
+* @returns 需要前缀时返回 `[时:分] 原文`，否则原样返回 `content`。
 */
-function userTextWithMeme(meme) {
-	return "随便说一句日常碎碎念，一句就好，20 字以内。\n这次会配一张表情包一起显示，图的内容是：" + meme.name + "（" + meme.desc + "）。\n请让这句话和这张图的情绪/场景自然契合，像是配合画面说出来的；不要描述画面本身。";
+function userHistoryTextOf(message, nowMs) {
+	if (!Number.isFinite(message.ts)) return message.content;
+	if (!(nowMs - message.ts > HISTORY_STAMP_GAP_MS)) return message.content;
+	const stamp = historyStampOf(message.ts, new Date(nowMs));
+	return stamp === "" ? message.content : "[" + stamp + "] " + message.content;
 }
-async function generateWhisper(ctx, system, meme, preferred, userPrompt) {
+/**
+* 历史里回填的配图 / 动作标记（`[动作:名称]` 与 `[图:名称]`，各占一行，顺序固定）。
+*
+* 记忆里只存名字、正文里的标记在落盘前已被剥掉；不回填的话模型看不到自己前几轮配过哪张图、
+* 演过什么动作，用户说“换一个”时它连换的是什么都不知道，只会重复挑同一张或答非所问。
+* 只回填 assistant：user 的附件引用依旧不带（旧图不重发给模型）。
+* 名称可能为空串（手改过记忆文件）——空值不回填，纯文本历史逐字不变。
+*
+* @param message - 历史消息。
+* @returns 需要回填时返回 `\n[动作:…]\n[图:…]`，否则空串。
+*/
+function historyMarkersOf(message) {
+	if (message.role !== "assistant") return "";
+	const lines = [];
+	if (typeof message.action === "string" && message.action !== "") lines.push("[动作:" + message.action + "]");
+	if (typeof message.meme === "string" && message.meme !== "") lines.push("[图:" + message.meme + "]");
+	return lines.length === 0 ? "" : "\n" + lines.join("\n");
+}
+/** 配图指令：附在 user 正文之后（紧邻回答位置，模型更容易遵守）。
+*  交给模型选而不是随机抽：对话有真实上下文（用户输入 + 历史），按语境挑才贴合。 */
+function imageInstruction(pool) {
+	return "\n\n[配图] 回复结尾可选附一张表情包给用户看，从下列清单里挑最贴合当前语境的：\n" + memeCatalog(pool) + "\n挑中就在回复最后另起一行写 [图:名称]（名称原样照抄）；没有合适的就完全不要写这个标记。";
+}
+async function generateChat(input) {
+	const { ctx, system, history, userText, preferred, image } = input;
+	const pool = [...input.pool ?? []];
+	const actions = [...input.actions ?? []];
 	const candidates = modelCandidates(ctx, preferred);
 	if (candidates.length === 0) return {
 		ok: false,
@@ -7959,26 +9241,61 @@ async function generateWhisper(ctx, system, meme, preferred, userPrompt) {
 		message: noTextReason(void 0)
 	};
 	for (const [i, sel] of candidates.entries()) {
-		const result = await generateWith(ctx, llm, sel, system, meme, userPrompt);
+		const result = await generateWith$1(ctx, {
+			llm,
+			sel,
+			system,
+			history,
+			userText,
+			pool,
+			actions,
+			image
+		});
 		if (result.ok) return result;
 		last = result;
-		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
+		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 对话用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
 	}
 	return last;
 }
-/** 用一个确定的 provider/model 跑一次生成（候选链的一环；失败原样返回结构化原因，不吞）。 */
-async function generateWith(ctx, llm, sel, system, meme, userPrompt) {
-	const deadline = AbortSignal.timeout(TIMEOUT_MS);
+/** 用一个确定的 provider/model 跑一次对话生成（失败原样返回结构化原因，不吞）。 */
+async function generateWith$1(ctx, once) {
+	const { llm, sel, system, history, userText, pool, actions, image } = once;
+	const nowMs = Date.now();
+	const historyMessages = history.map((m) => m.role === "user" ? createUserMessage({
+		content: [{
+			type: "text",
+			text: userHistoryTextOf(m, nowMs)
+		}],
+		source: { kind: "user" }
+	}) : createAssistantMessage({
+		content: [{
+			type: "text",
+			text: m.content + historyMarkersOf(m)
+		}],
+		source: {
+			provider: sel.provider,
+			model: sel.model
+		}
+	}));
+	const deadline = AbortSignal.timeout(TIMEOUT_MS$1);
 	const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
+	const wantImage = pool.length > 0;
+	const wantAction = actions.length > 0;
+	const instruction = (wantImage ? imageInstruction(pool) : "") + (wantAction ? actionInstruction(actions) : "");
+	const content = [{
+		type: "text",
+		text: instruction === "" ? userText : userText + instruction
+	}];
+	if (image !== void 0) content.push({
+		type: "image",
+		attachment: image
+	});
 	const options = {
 		provider: sel.provider,
 		model: sel.model,
 		sessionId: PET_CALL_IDENTITY,
-		messages: [createUserMessage({
-			content: [{
-				type: "text",
-				text: meme ? userTextWithMeme(meme) : userPrompt ?? USER_TEXT
-			}],
+		messages: [...historyMessages, createUserMessage({
+			content,
 			source: { kind: "user" }
 		})],
 		system,
@@ -8002,10 +9319,162 @@ async function generateWith(ctx, llm, sel, system, meme, userPrompt) {
 		reason: "generate-error",
 		message: noTextReason(assembler.finish)
 	};
-	return meme ? {
+	if (!wantImage && !wantAction) return {
+		ok: true,
+		text
+	};
+	const acted = wantAction ? extractChatAction(text, actions) : { text };
+	const picked = wantImage ? extractChatImage(acted.text, pool) : { text: acted.text };
+	return {
+		ok: true,
+		text: picked.text,
+		...picked.image ? { image: picked.image } : {},
+		...acted.action ? { action: acted.action } : {}
+	};
+}
+
+//#endregion
+//#region src/host/persona.ts
+/**
+* 历史时间说明：历史里 user 消息带 `[月日 时:分]` 前缀时追加，让模型知道那些时刻可以用来算跨度。
+*
+* 措辞把前缀限定为「对话记录里的时间标注」而不是「回复格式」；前缀只标在 user 消息上——
+* 标在 assistant 上时模型会照抄成自己的说话格式（出现过回复以 `[11:54]` 开头）。
+*/
+const HISTORY_TIMES_LINE = "【历史】对话记录里，主人的话前面标着 [月日 时:分]，那是那句话发生的时刻；它只是记录里的时间标注，不是你的说话格式。判断“多久以前”“隔了几天”时按它换算，别把隔了很久的话当成刚说过的。你的回复直接从正文开始，不要写时间、不要加方括号前缀。";
+function petPersona(conf, pet) {
+	const own$1 = pet.whisperPrompt;
+	if (typeof own$1 === "string" && own$1.trim() !== "") return own$1;
+	const entry = conf.whisperPrompt;
+	return typeof entry === "string" ? entry : "";
+}
+function composeSystemPrompt(parts) {
+	const name = String(parts.name || parts.id);
+	const nameLine = name ? "你的名字是“" + name + "”。" : "";
+	const lines = [parts.prompt, nameLine].filter((line) => line !== "");
+	const time = timeContextOf(parts.now);
+	if (time) {
+		lines.push(time);
+		if (parts.historyTimes === true) lines.push(HISTORY_TIMES_LINE);
+	}
+	return lines.join("\n");
+}
+
+//#endregion
+//#region src/host/whisper.ts
+/** 单次生成超时（ms）：碎碎念不需要长输出，30s 足够。 */
+const TIMEOUT_MS = 3e4;
+/** 碎碎念指令：纯文本（没有配图时的原样请求）。 */
+const USER_TEXT = "随便说一句日常碎碎念，一句就好，20 字以内。";
+/** 梦话指令：睡觉期间嘟囔一句。与碎碎念指令同属「功能指令」，不进配置（配置里只有人设）。 */
+const SLEEP_TALK_TEXT = "你正在睡觉，随便嘟囔一句梦话，一句就好，20 字以内；含糊、半梦半醒，不要清醒地回应任何人。";
+const SLEEP_TALK_INSTRUCTION = SLEEP_TALK_TEXT;
+/**
+* 配图说明：告诉模型「这次会配一张表情包」，让正文与画面情绪契合。
+*
+* 单独抽出来是为了让「带配图的碎碎念」与「自定义指令 + 配图」共用同一段说明——
+* 前者是上游的碎碎念配图，后者是 fork 的主动关心（自定义指令 + 配图）。
+*/
+function memeGuide(meme) {
+	return "这次会配一张表情包一起显示，图的内容是：" + meme.name + "（" + meme.desc + "）。\n请让这句话和这张图的情绪/场景自然契合，像是配合画面说出来的；不要描述画面本身。";
+}
+/**
+* 碎碎念指令：带表情包时要求模型配合作画说一句。
+*
+* 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
+* 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
+* 交模型选只能盲选，还多一层幻觉风险。
+*/
+function userTextWithMeme(meme) {
+	return USER_TEXT + "\n" + memeGuide(meme);
+}
+/**
+* 拼出这一次的用户指令正文。
+*
+* 三条来源，按优先级：
+* 1. 自定义指令（instruction）——梦话 / 主动关心 / 吉祥话池都走这里；
+* 2. 带配图的碎碎念——「一句日常碎碎念 + 配图说明」；
+* 3. 纯文本碎碎念。
+*
+* 自定义指令与配图同时存在时（fork 的主动关心）：指令为准，再补一段配图说明，
+* 两边的诉求都保住——既说该说的话，又知道这张配图画的是什么。
+*/
+function buildUserText(request) {
+	if (request.instruction) return request.meme ? request.instruction + "\n" + memeGuide(request.meme) : request.instruction;
+	return request.meme ? userTextWithMeme(request.meme) : USER_TEXT;
+}
+async function generateWhisper(ctx, requestOrSystem, legacyMeme, legacyPreferred, legacyUserPrompt) {
+	const request = typeof requestOrSystem === "string" ? {
+		system: requestOrSystem,
+		meme: legacyMeme,
+		preferred: legacyPreferred,
+		instruction: legacyUserPrompt
+	} : requestOrSystem;
+	const candidates = modelCandidates(ctx, request.preferred);
+	if (candidates.length === 0) return {
+		ok: false,
+		reason: "provider-missing",
+		message: "当前对话未配置模型"
+	};
+	const llm = ctx.llm;
+	if (!llm || typeof llm.stream !== "function") return {
+		ok: false,
+		reason: "generate-error",
+		message: "LLM 服务不可用"
+	};
+	let last = {
+		ok: false,
+		reason: "generate-error",
+		message: noTextReason(void 0)
+	};
+	for (const [i, sel] of candidates.entries()) {
+		const result = await generateWith(ctx, llm, sel, request);
+		if (result.ok) return result;
+		last = result;
+		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
+	}
+	return last;
+}
+/** 用一个确定的 provider/model 跑一次生成（候选链的一环；失败原样返回结构化原因，不吞）。 */
+async function generateWith(ctx, llm, sel, request) {
+	const deadline = AbortSignal.timeout(TIMEOUT_MS);
+	const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
+	const options = {
+		provider: sel.provider,
+		model: sel.model,
+		sessionId: PET_CALL_IDENTITY,
+		messages: [createUserMessage({
+			content: [{
+				type: "text",
+				text: buildUserText(request)
+			}],
+			source: { kind: "user" }
+		})],
+		system: request.system,
+		temperature: 1,
+		...supportsOff ? { reasoningEffort: ReasoningEffortId("off") } : {},
+		signal: deadline
+	};
+	const assembler = new BlockAssembler();
+	try {
+		for await (const chunk of llm.stream(options)) assembler.push(chunk);
+	} catch (e) {
+		return {
+			ok: false,
+			reason: "generate-error",
+			message: e instanceof Error ? e.message : String(e)
+		};
+	}
+	const text = assembler.blocks().filter((b) => b.type === "text").map((b) => "text" in b ? b.text : "").join("").trim();
+	if (!text) return {
+		ok: false,
+		reason: "generate-error",
+		message: noTextReason(assembler.finish)
+	};
+	return request.meme ? {
 		ok: true,
 		text,
-		image: meme.name
+		image: request.meme.name
 	} : {
 		ok: true,
 		text
@@ -8068,6 +9537,17 @@ function createMemoryOrphans(deps) {
 
 //#endregion
 //#region src/host/plugin/chat-memory.ts
+/** 第三方召回的硬超时（ms）：到点按“不修改内容”继续生成，不拖住这一轮对话。 */
+const RECALL_TIMEOUT_MS = 1500;
+/** 校验召回补丁里的历史项：形状不对的整段丢弃，避免坏数据把生成打崩。 */
+function isChatTurn(value) {
+	const turn = value;
+	return (turn?.role === "user" || turn?.role === "assistant") && typeof turn?.content === "string" && typeof turn?.ts === "number";
+}
+/** 这一句该由哪一端念：取宠物实例的 display 推导（桌面优先）；两端都不显示时为 `undefined`。 */
+function voiceTargetFor(pet) {
+	return pickVoiceSurface(String(pet.display ?? "")) ?? void 0;
+}
 /** 记忆文件最多保留的轮数（1 轮 = 2 条消息）；超出按最旧截断，避免文件无限增长。 */
 const MEMORY_MAX_ROUNDS = 200;
 /** 每个会话按轮数裁剪到上限；就地修改，调用方随后序列化。 */
@@ -8076,7 +9556,7 @@ function pruneMemory(mem) {
 	for (const entry of Object.values(mem)) for (const bucket of Object.values(entry)) if (Array.isArray(bucket.messages) && bucket.messages.length > keep) bucket.messages = bucket.messages.slice(-keep);
 }
 function createChatMemory(deps) {
-	const { ctx, configPaths, log, memeDirsFor, state, userRoot } = deps;
+	const { ctx, configPaths, log, memeDirsFor, playback, state, userRoot } = deps;
 	const longMemoryEnabled = deps.longMemoryEnabled ?? (() => false);
 	const readFacts = deps.readFacts ?? (async () => []);
 	const factsPromptSection = deps.factsPromptSection ?? (() => "");
@@ -8120,14 +9600,16 @@ function createChatMemory(deps) {
 		return run$1;
 	};
 	/** 某宠物的最终人设 system：实例级 `pets[].whisperPrompt` 优先，没写回落到所属条目的那份。
-	*  拼装在 ./persona（纯函数）：人设正文 + 名字声明 + 一行时间背景，时间每次现算。
+	*  拼装在 ./persona（纯函数）：人设正文 + 名字声明 + 一行时间背景，时间每次现算；
+	*  对话路径传 `{ historyTimes: true }` 追加【历史】说明，碎碎念没有历史，不传。
 	*  收 `findPetInstance` 的命中结果而不是 (petId, cfg)：调用方都已解析过，再查只会多一处
 	*  「查不到就兜底 main」的不可达分支。 */
-	const petSystemPrompt = (found) => composeSystemPrompt({
+	const petSystemPrompt = (found, options = {}) => composeSystemPrompt({
 		prompt: petPersona(found.conf, found.pet),
 		name: String(found.pet.name ?? ""),
 		id: String(found.pet.id ?? ""),
-		now: new Date()
+		now: new Date(),
+		...options.historyTimes === true ? { historyTimes: true } : {}
 	});
 	/** 对话记忆轮数（1 轮 = 1 问 1 答）：该宠物所属条目的 chatMemoryRounds（合并器已填默认）。
 	*  收已解析的条目配置：调用方都已拿到 `findPetInstance` 的结果。 */
@@ -8135,11 +9617,73 @@ function createChatMemory(deps) {
 		const v = Number(conf.chatMemoryRounds);
 		return Number.isFinite(v) && v >= 0 ? Math.floor(v) : 5;
 	};
-	/** 生成并返回某宠物的一句碎碎念（周期调度与菜单手动触发共用）：人设取它自己的 whisperPrompt，
+	/**
+	* 对话前修改内容：召回钩子返回要覆盖的字段，核心合并后再交给模型。
+	*
+	* 超时、抛错、返回非法形状都当“不修改”，只记提供者 id 与原因。
+	*
+	* @param petId - 目标宠物；第三方按它区分记忆空间。
+	* @param content - 本轮将要发给模型的 system/history/userText。
+	* @returns 合法的覆盖字段；没有可应用的字段时 undefined。
+	*/
+	const recallPatch = async (petId, content) => {
+		const provider = activeChatMemoryProvider();
+		const recall = provider?.recall;
+		if (!provider || !recall) return void 0;
+		let timer;
+		try {
+			const timeout = new Promise((resolve$1) => {
+				timer = setTimeout(() => resolve$1(void 0), RECALL_TIMEOUT_MS);
+				timer.unref?.();
+			});
+			const result = await Promise.race([Promise.resolve(recall.call(provider, {
+				petId,
+				...content
+			})), timeout]);
+			if (!result || typeof result !== "object") return void 0;
+			const patch = {};
+			if (typeof result.system === "string") patch.system = result.system;
+			if (typeof result.userText === "string") patch.userText = result.userText;
+			if (Array.isArray(result.history) && result.history.every(isChatTurn)) patch.history = result.history;
+			return Object.keys(patch).length === 0 ? void 0 : patch;
+		} catch (error) {
+			log.warn("[dsh-zdd-pet] 记忆召回失败 id=" + provider.id + "：" + (error instanceof Error ? error.message : String(error)));
+			return void 0;
+		} finally {
+			if (timer !== void 0) clearTimeout(timer);
+		}
+	};
+	/**
+	* 落盘后接收这一轮问答：核心不等待，失败只记提供者 id 与原因。
+	*
+	* @param petId - 目标宠物。
+	* @param turn - 本轮问答与元信息；action/image 只是名字，不含素材本体。
+	*/
+	const captureTurn = (petId, turn) => {
+		const provider = activeChatMemoryProvider();
+		const capture = provider?.capture;
+		if (!provider || !capture) return;
+		Promise.resolve().then(() => capture.call(provider, {
+			petId,
+			...turn
+		})).catch((error) => {
+			log.warn("[dsh-zdd-pet] 记忆接收失败 id=" + provider.id + "：" + (error instanceof Error ? error.message : String(error)));
+		});
+	};
+	/** 生成并返回某宠物的一句碎碎念（周期调度、菜单手动触发与命令行共用）：人设取它自己的 whisperPrompt，
 	*  没写回落到所属条目；成功写进 S 的 pets.<id>.say——碎碎念 / 命令气泡 / 对话回复在前端是同一条
 	*  展示链路，所以共用一个叶子。配图开关开启时从表情包池随机抽 1 张。
-	*  失败带回真实 reason（含 unknown-pet），成功带回生成的文本——调用方不必再拉一拍 /state。 */
-	const publishWhisper = async (petId) => {
+	*  失败带回真实 reason（含 unknown-pet / unknown-image），成功带回生成的文本——调用方不必再拉一拍 /state。
+	*
+	*  @param petId - 目标宠物实例 id。
+	*  @param image - 指定配图的名称：给了就只用这张（不受 whisperImageEnabled 门控，手动点图是显式意图），
+	*  不在池内返回 unknown-image；缺省 = 按开关随机抽或纯文本。
+	*  @param voiceTo - 这一句该由哪一端念；缺省按它自己的 display 推导（桌面优先，见 {@link pickVoiceSurface}）。
+	*  路由层带 `?surface=` 的会显式传请求面，其余调用点留空即可。
+	*  @param kind - 这次生成的来源：`whisper` = 周期调度，受 `voiceWhisperEnabled` 管；`manual` = 菜单、
+	*  斜杠命令、路由主动触发，不看那个开关（用户主动点的就是这一句）。缺省 `manual`。
+	*/
+	const publishWhisper = async (petId, image, voiceTo, kind = "manual") => {
 		const cfg = readAllConfig(configPaths);
 		const found = findPetInstance(cfg, petId);
 		if (!found) return {
@@ -8147,23 +9691,64 @@ function createChatMemory(deps) {
 			reason: "unknown-pet",
 			message: "没有这只桌宠：" + petId
 		};
+		const whisperVoiceOn = cfg.main?.voiceWhisperEnabled === true;
+		const manualVoiceOn = cfg.main?.voiceEnabled === true;
+		const voiceOff = kind === "whisper" ? !whisperVoiceOn : !manualVoiceOn;
+		const target = voiceOff ? void 0 : voiceTo ?? voiceTargetFor(found.pet);
 		const system = petSystemPrompt(found);
-		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
-		const result = await generateWhisper(ctx, system, meme, configuredModel(found.conf, "whisperModel"));
+		const pool = readMemePool(found.conf.memes, memeDirsFor(found.entry));
+		const forced = image === void 0 ? void 0 : matchMeme(pool, image);
+		if (image !== void 0 && forced === void 0) return {
+			ok: false,
+			reason: "unknown-image",
+			message: "表情包不在池内：" + image
+		};
+		const memeAllowed = found.conf.bubbleImageEnabled !== false && found.conf.whisperImageEnabled === true;
+		const meme = forced ?? (memeAllowed ? pickMeme(pool) : void 0);
+		const result = await generateWhisper(ctx, {
+			system,
+			meme,
+			preferred: configuredModel(found.conf, "whisperModel")
+		});
 		if (!result.ok) {
 			log.warn("[dsh-zdd-pet] 碎碎念生成失败 pet=" + petId + " reason=" + result.reason + (result.message ? " " + result.message : ""));
 			return result;
 		}
-		state.publishSay(petId, result.image ? {
+		state.publishSay(petId, {
 			text: result.text,
-			image: result.image
-		} : { text: result.text }, { source: "whisper" });
+			...result.image ? { image: result.image } : {},
+			...target ? { voiceTo: target } : {}
+		}, { source: "whisper" });
 		log.info(`[dsh-zdd-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` + (result.image ? `，配图=${result.image}` : ""));
 		return {
 			ok: true,
 			text: result.text,
 			...result.image ? { image: result.image } : {}
 		};
+	};
+	/** 生成并写一句梦话：system 只用人设，功能指令在 whisper（与碎碎念同属代码常量）；不配图、不念、不换动画。
+	*  睡着时「换动画」本身就是打扰，所以写 `say` 显式 `anim: false`，也不写 `voiceTo`。
+	*  @returns 是否真的生成并写进了 S；失败只留一行日志，调度下一拍再试。 */
+	const publishSleepTalk = async (petId) => {
+		const cfg = readAllConfig(configPaths);
+		const found = findPetInstance(cfg, petId);
+		if (!found) return false;
+		const system = petSystemPrompt(found);
+		const result = await generateWhisper(ctx, {
+			system,
+			preferred: configuredModel(found.conf, "whisperModel"),
+			instruction: SLEEP_TALK_INSTRUCTION
+		});
+		if (!result.ok) {
+			log.warn("[dsh-zdd-pet] 梦话生成失败 pet=" + petId + " reason=" + result.reason + (result.message ? " " + result.message : ""));
+			return false;
+		}
+		state.publishSay(petId, {
+			text: result.text,
+			anim: false
+		}, { source: "sleep-talk" });
+		log.info(`[dsh-zdd-pet] 梦话生成成功 pet=${petId}，${result.text.length} 字`);
+		return true;
 	};
 	/** 与某只宠物对话：截取最近记忆 → 生成回复 → 写入记忆 → 写进 S 的 pets.<id>.say。
 	*  供 POST /chat 与 /chat 命令共用（锁内读写，防两端交错写盘）；成功带回回复文本。 */
@@ -8176,24 +9761,35 @@ function createChatMemory(deps) {
 			message: "没有这只桌宠：" + petId
 		};
 		const rounds = memoryRounds(found.conf);
-		const baseSystem = petSystemPrompt(found);
 		const facts = longMemoryEnabled(found.conf) ? await readFacts(petId) : [];
 		const factsSection = factsPromptSection(facts);
-		const system = factsSection ? baseSystem + "\n" + factsSection : baseSystem;
-		const pool = found.conf.bubbleImageEnabled !== false ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit)) : [];
+		const pool = found.conf.bubbleImageEnabled !== false && found.conf.chatImageEnabled === true ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit)) : [];
+		const actions = found.conf.chatAnimationEnabled === true ? chatActionNames(found.conf.animations) : [];
 		const mem = await readMemory();
 		const bucket = mem[found.entry] && typeof mem[found.entry] === "object" && !Array.isArray(mem[found.entry]) ? mem[found.entry] : mem[found.entry] = {};
 		const existing = bucket[petId];
 		if (existing !== void 0 && (!existing || !Array.isArray(existing.messages))) log.error(`[dsh-zdd-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按新会话处理：${memoryPath}`);
 		const entry = existing && Array.isArray(existing.messages) ? existing : bucket[petId] = { messages: [] };
 		const list = sliceMemoryRounds(entry.messages, rounds);
+		const baseSystem = petSystemPrompt(found, { historyTimes: list.length > 0 });
+		const system = factsSection ? baseSystem + "\n" + factsSection : baseSystem;
 		if (image !== void 0) log.info(`[dsh-zdd-pet] 对话附带图片 pet=${petId}，${image.width}x${image.height}，${image.bytes} 字节（模型不支持读图时内核会以占位文本代替）`);
+		const patch = await recallPatch(petId, {
+			system,
+			history: list.map(({ role, content, ts }) => ({
+				role,
+				content,
+				ts
+			})),
+			userText: text
+		});
 		const generated = await generateChat({
 			ctx,
-			system,
-			history: list,
-			userText: text,
+			system: patch?.system ?? system,
+			history: patch?.history ?? list,
+			userText: patch?.userText ?? text,
 			pool,
+			actions,
 			preferred: configuredModel(found.conf, "chatModel"),
 			image
 		});
@@ -8209,17 +9805,35 @@ function createChatMemory(deps) {
 			role: "assistant",
 			content: generated.text,
 			ts: now,
-			...generated.image ? { meme: generated.image } : {}
+			...generated.image ? { meme: generated.image } : {},
+			...generated.action ? { action: generated.action } : {}
 		});
 		await writeMemory(mem);
 		if (longMemoryEnabled(found.conf)) {
 			const extractSystem = petSystemPrompt(found);
 			extractFacts(petId, extractSystem, text, generated.text, configuredModel(found.conf, "whisperModel")).catch(() => {});
 		}
-		state.publishSay(petId, generated.image ? {
+		captureTurn(petId, {
+			userText: text,
+			replyText: generated.text,
+			ts: now,
+			...generated.action !== void 0 ? { action: generated.action } : {},
+			...generated.image !== void 0 ? { image: generated.image } : {}
+		});
+		if (generated.action !== void 0) {
+			const record = playback.create(petId, generated.action);
+			state.writePet(petId, "anim", {
+				name: generated.action,
+				playbackId: record.playbackId
+			});
+		}
+		const replyVoiceTo = cfg.main?.voiceEnabled === true ? voiceTargetFor(found.pet) : void 0;
+		if (generated.text !== "") state.publishSay(petId, {
 			text: generated.text,
-			image: generated.image
-		} : { text: generated.text }, { source: "chat" });
+			...generated.image ? { image: generated.image } : {},
+			...generated.action !== void 0 ? { anim: false } : {},
+			...replyVoiceTo ? { voiceTo: replyVoiceTo } : {}
+		}, { source: "chat" });
 		return {
 			ok: true,
 			text: generated.text,
@@ -8278,6 +9892,7 @@ function createChatMemory(deps) {
 		readMemory,
 		memoryRounds,
 		publishWhisper,
+		publishSleepTalk,
 		chatWithPet,
 		deleteHistory,
 		orphanHistory,
@@ -8393,7 +10008,7 @@ function createMemoryFacts(deps) {
 //#endregion
 //#region src/host/plugin/proactive.ts
 /** 检查间隔（ms）：主动关心是低频事件，5 分钟一拍足够，开销可忽略。 */
-const TICK_MS = 5 * 60 * 1e3;
+const TICK_MS$1 = 5 * 60 * 1e3;
 /** 触发原因对应的生成指令。 */
 function promptFor(reason) {
 	switch (reason) {
@@ -8478,9 +10093,9 @@ function createProactive(deps) {
 				} catch (e) {
 					log.warn("[dsh-zdd-pet] 主动关心检查失败：" + (e instanceof Error ? e.message : String(e)));
 				}
-				timer = setTimeout(tick, TICK_MS);
+				timer = setTimeout(tick, TICK_MS$1);
 			};
-			timer = setTimeout(tick, TICK_MS);
+			timer = setTimeout(tick, TICK_MS$1);
 			return () => {
 				disposed = true;
 				if (timer !== null) clearTimeout(timer);
@@ -9131,6 +10746,11 @@ function createSessionNotify(deps) {
 	*/
 	const lastTodoText = new Map();
 	/**
+	* 每会话最后一段回复文本：完成通知的正文靠它。排活动门定时器时取用即出队——活动门会把它延后
+	* 1.5s，但待确认期间文本不会再变；留到定时器里再删，遇到「判定还有活」提前返回就成了长期残留。
+	*/
+	const lastReplyText = new Map();
+	/**
 	* 每会话在途调用的详情：键为调用标识（缺标识时用临时 `Symbol`），值为气泡文案。
 	* 结果事件只删自己那一条，并行调用因此不会互相顶掉，全部删完才回落 todo 文案。
 	*/
@@ -9174,13 +10794,15 @@ function createSessionNotify(deps) {
 	};
 	/** 排一个活动门定时器：到点确认空闲才推这一帧 */
 	const scheduleCompletionNotify = (sessionId, event) => {
+		const replyText = lastReplyText.get(sessionId);
+		lastReplyText.delete(sessionId);
 		const prev = notifyActivityTimers.get(sessionId);
 		if (prev !== void 0) clearTimeout(prev);
 		notifyActivityTimers.set(sessionId, setTimeout(() => {
 			notifyActivityTimers.delete(sessionId);
 			(async () => {
 				if (await sessionHasRunningWork(sessionId)) return;
-				const frame = reduceNotifyFrame(event);
+				const frame = reduceNotifyFrame(event, replyText);
 				if (frame) pushNotifyFrame(withSessionId(frame, sessionId));
 			})();
 		}, NOTIFY_ACTIVITY_DELAY_MS));
@@ -9190,6 +10812,7 @@ function createSessionNotify(deps) {
 		turnFlags,
 		terminalTimers,
 		lastTodoText,
+		lastReplyText,
 		toolsInFlight,
 		cancelTerminalCleanup,
 		scheduleTerminalCleanup,
@@ -9445,9 +11068,37 @@ var LockStore = class {
 //#endregion
 //#region src/host/plugin/pet-lookup.ts
 function createPetLookup(deps) {
-	const { state } = deps;
+	const { configPaths, state } = deps;
 	const lock = new LockStore({ onChange: (petId, data) => state.writePet(petId, "lock", data) });
 	const pose = new PoseStore();
+	const sleep = new SleepStore({ onChange: (petId, data) => state.writePet(petId, "sleep", data) });
+	/** 该条目的睡觉拒绝台词。台词只有配置一个来源（默认值在 assets/config.jsonc，合并层负责回落）；
+	*  池为空说明配置损坏，这时返回 undefined，宁可不说话也不在代码里另抄一份文案。 */
+	const refuseText = (petId) => {
+		try {
+			const found = findPetInstance(readAllConfig(configPaths), petId);
+			return pickSleepText(sleepTextsOf(found?.conf ?? {}).refuse);
+		} catch {
+			return void 0;
+		}
+	};
+	/**
+	* 睡觉闸门（手动触发与第三方调用共用）：在睡 → 弹一句拒绝台词并返回 `sleeping`；否则放行回 null。
+	*
+	* 持锁时让路：取锁时会先把宠物叫醒，正常情况下走不到这里；留着它是「锁叶子回到渲染端之前」
+	* 那一小段竞态的兜底（宿主已受理锁、渲染端状态还没跟上）。
+	* 拒绝台词写进 `say` 且 `anim: false`——睡觉期间不换动画，只弹气泡。
+	*/
+	const sleepBlocked = (petId) => {
+		if (!sleep.sleeping(petId)) return null;
+		if (lock.locked(petId)) return null;
+		const text = refuseText(petId);
+		if (text !== void 0) state.writePet(petId, "say", {
+			text,
+			anim: false
+		});
+		return failResult("sleeping", "桌宠正在睡觉，先叫醒它");
+	};
 	/**
 	* `?surface=` 的参数级校验（缺省 / 非法 → `bad-request`）。放在读盘之前：必然失败的请求不碰磁盘；
 	* 通过则给出收窄后的取值。
@@ -9540,6 +11191,9 @@ function createPetLookup(deps) {
 	return {
 		lock,
 		pose,
+		sleep,
+		sleepBlocked,
+		sleepRefusalText: refuseText,
 		surfaceBlocked,
 		requirePet,
 		lockBlocked
@@ -9589,7 +11243,7 @@ function createDownloadReport(deps) {
 //#endregion
 //#region src/host/plugin/work-status-bridge.ts
 function createWorkStatusBridge(deps) {
-	const { state, workStatus } = deps;
+	const { state, workStatus, EXTERNAL_WORK_SESSION } = deps;
 	const WORK_STATE_GAP_MS = 5e3;
 	let publishedWork = "\0";
 	let publishedState = null;
@@ -9598,7 +11252,7 @@ function createWorkStatusBridge(deps) {
 	const publishWorkStatus = () => {
 		const snap = workStatus.snapshot();
 		const progressKey = snap.progress ? `${snap.progress.done}/${snap.progress.total}` : "";
-		const key = String(snap.state) + "\0" + String(snap.task) + "\0" + progressKey;
+		const key = String(snap.state) + "\0" + String(snap.task) + "\0" + progressKey + "\0" + String(snap.sessionId ?? "");
 		if (key === publishedWork) return;
 		const busyFlip = publishedState === "working" && snap.state === "result";
 		const wait = WORK_STATE_GAP_MS - (Date.now() - publishedWorkAt);
@@ -9616,10 +11270,12 @@ function createWorkStatusBridge(deps) {
 		publishedWork = key;
 		publishedState = snap.state;
 		publishedWorkAt = Date.now();
+		const sessionId = snap.sessionId === null || snap.sessionId === EXTERNAL_WORK_SESSION ? null : snap.sessionId;
 		state.writeSection("workStatus", {
 			state: snap.state,
 			task: snap.task,
-			progress: snap.progress
+			progress: snap.progress,
+			sessionId
 		});
 	};
 	/** 停掉挂起的补写定时器（插件卸载时调用）。 */
@@ -9636,10 +11292,585 @@ function createWorkStatusBridge(deps) {
 }
 
 //#endregion
+//#region src/host/todo/policy.ts
+const MINUTE_MS = 60 * 1e3;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+/** 到期前的提醒档位：`[至少还剩多少毫秒, 提醒间隔]`，从宽到窄匹配。 */
+const AHEAD_STEPS = [
+	[3 * DAY_MS, DAY_MS],
+	[DAY_MS, 12 * HOUR_MS],
+	[6 * HOUR_MS, 4 * HOUR_MS],
+	[HOUR_MS, HOUR_MS],
+	[15 * MINUTE_MS, 20 * MINUTE_MS],
+	[0, 5 * MINUTE_MS]
+];
+/** 逾期后的提醒间隔：1 天内 30 分钟一次，一周内 6 小时一次，再久就不再打扰。 */
+const OVERDUE_FRESH_INTERVAL_MS = 30 * MINUTE_MS;
+const OVERDUE_OLD_INTERVAL_MS = 6 * HOUR_MS;
+/** 逾期超过这么久就不再提醒（待办仍留在清单里，等用户自己处理）。 */
+const OVERDUE_STOP_MS = 7 * DAY_MS;
+/** 距离到期还有这么久之前完全不提醒：一个月的远期事项不值得天天念。 */
+const AHEAD_START_MS = 7 * DAY_MS;
+/** 提醒文案里引用正文的长度上限（码点）：气泡放不下整条待办。 */
+const REMINDER_TEXT_MAX = 18;
+function reminderIntervalMs(remainingMs) {
+	if (remainingMs <= 0) {
+		const overdueBy = -remainingMs;
+		if (overdueBy >= OVERDUE_STOP_MS) return Number.POSITIVE_INFINITY;
+		return overdueBy >= DAY_MS ? OVERDUE_OLD_INTERVAL_MS : OVERDUE_FRESH_INTERVAL_MS;
+	}
+	if (remainingMs > AHEAD_START_MS) return Number.POSITIVE_INFINITY;
+	for (const [minRemaining, interval] of AHEAD_STEPS) if (remainingMs >= minRemaining) return interval;
+	return 5 * MINUTE_MS;
+}
+function nextReminderAt(todo, now) {
+	if (todo.done || todo.dueAt === null) return null;
+	const intervalNow = reminderIntervalMs(todo.dueAt - now);
+	if (!Number.isFinite(intervalNow)) return null;
+	if (todo.lastRemindedAt !== null) return todo.lastRemindedAt + intervalNow;
+	const remainingAtCreation = todo.dueAt - todo.createdAt;
+	if (remainingAtCreation > AHEAD_START_MS) return todo.createdAt + intervalNow;
+	const intervalAtCreation = reminderIntervalMs(remainingAtCreation);
+	const step = Math.min(Number.isFinite(intervalAtCreation) ? intervalAtCreation : 0, Math.max(0, remainingAtCreation));
+	return todo.createdAt + step;
+}
+function pickReminder(todos, now) {
+	let best = null;
+	for (const todo of todos) {
+		const at = nextReminderAt(todo, now);
+		if (at === null || at > now) continue;
+		if (best === null || at < best.at) {
+			best = {
+				todo,
+				at
+			};
+			continue;
+		}
+		if (at === best.at) {
+			const todoDue = todo.dueAt ?? Number.POSITIVE_INFINITY;
+			const bestDue = best.todo.dueAt ?? Number.POSITIVE_INFINITY;
+			if (todoDue < bestDue) best = {
+				todo,
+				at
+			};
+		}
+	}
+	return best;
+}
+function spanText(ms) {
+	const minutes = Math.max(1, Math.round(Math.abs(ms) / MINUTE_MS));
+	if (minutes < 60) return `${minutes}分钟`;
+	const hours = Math.max(1, Math.round(minutes / 60));
+	if (hours < 24) return `${hours}小时`;
+	return `${Math.max(1, Math.round(hours / 24))}天`;
+}
+function truncateTodoText(text, max) {
+	const chars = Array.from(text);
+	return chars.length <= max ? text : chars.slice(0, max).join("") + "…";
+}
+function reminderText(todo, now) {
+	const label = truncateTodoText(todo.text, REMINDER_TEXT_MAX);
+	const dueAt = todo.dueAt ?? now;
+	if (dueAt <= now) {
+		if (now - dueAt < MINUTE_MS) return `「${label}」到点啦，记得处理`;
+		return `「${label}」已经逾期${spanText(now - dueAt)}啦，记得处理`;
+	}
+	return `「${label}」还有${spanText(dueAt - now)}就到点啦`;
+}
+
+//#endregion
+//#region src/host/plugin/todo-reminders.ts
+/** 巡检查找间隔（ms）：比最短提醒间隔（5 分钟）小一档即可，不必更密。 */
+const TICK_MS = 60 * 1e3;
+/** 提醒气泡停留时长（ms）：比默认 10 秒久一点，欠着的事值得多看两眼。 */
+const BUBBLE_DURATION_MS = 15 * 1e3;
+function pickReminderSpeaker(pets, isLocked, isSleeping = () => false) {
+	let desktopOnly = null;
+	for (const pet of pets) {
+		const petId = String(pet.id ?? "");
+		if (petId === "") continue;
+		if (pet.display === "none") continue;
+		if (isLocked(petId)) continue;
+		if (isSleeping(petId)) continue;
+		if (pet.display === "web" || pet.display === "both") return petId;
+		desktopOnly ??= petId;
+	}
+	return desktopOnly;
+}
+async function tickTodoReminders(deps) {
+	if (deps.hasListener !== void 0 && !deps.hasListener()) return;
+	const now = deps.now?.() ?? Date.now();
+	const due = pickReminder(await deps.todos.list(), now);
+	if (due === null) return;
+	const pets = deps.effectivePetList();
+	const speaker = pickReminderSpeaker(pets, (petId) => deps.lock.locked(petId), (petId) => deps.isSleeping?.(petId) ?? false);
+	if (speaker === null) return;
+	const display = String(pets.find((pet) => String(pet.id ?? "") === speaker)?.display ?? "");
+	const voiceTo = deps.isVoiceTodoEnabled() ? pickVoiceSurface(display) : null;
+	deps.state.writePet(speaker, "say", {
+		text: reminderText(due.todo, now),
+		duration: BUBBLE_DURATION_MS,
+		...voiceTo ? { voiceTo } : {}
+	});
+	await deps.todos.markReminded(due.todo.id, now);
+	const remainingSec = due.todo.dueAt === null ? 0 : Math.round((due.todo.dueAt - now) / 1e3);
+	deps.log.info(`[dsh-zdd-pet] 待办提醒 todo=${due.todo.id} pet=${speaker} 剩余=${remainingSec}s`);
+}
+function registerTodoReminders(deps) {
+	const { ctx, effectivePetList, isVoiceTodoEnabled, lock, log, sleep, state, todos, waiterCount } = deps;
+	/** 一拍：失败只打日志，不让循环停摆。 */
+	const tick = async () => {
+		try {
+			await tickTodoReminders({
+				effectivePetList,
+				hasListener: () => waiterCount() > 0,
+				isSleeping: (petId) => sleep.sleeping(petId),
+				isVoiceTodoEnabled,
+				lock,
+				log,
+				state,
+				todos
+			});
+		} catch (error) {
+			log.warn("[dsh-zdd-pet] 待办提醒失败：" + (error instanceof Error ? error.message : String(error)));
+		}
+	};
+	ctx.effect(() => {
+		let disposed = false;
+		let timer = null;
+		/** 排下一拍；已卸载就不再排。 */
+		function arm() {
+			if (disposed) return;
+			timer = setTimeout(() => void run$1(), TICK_MS);
+		}
+		/** 跑一拍再排下一拍：启动即检查一次，不等第一个周期。 */
+		async function run$1() {
+			timer = null;
+			await tick();
+			arm();
+		}
+		run$1();
+		return () => {
+			disposed = true;
+			if (timer !== null) clearTimeout(timer);
+		};
+	}, "dsh-zdd-pet: todo reminders");
+}
+
+//#endregion
+//#region src/host/voice/cache.ts
+const CACHE_MAX_BYTES = 20 * 1024 * 1024;
+const CACHE_MAX_FILES = 200;
+function cachePath(userRoot, key) {
+	return join(userRoot, "voice-cache", `${key}.mp3`);
+}
+function cacheKey(source, voice, rate, text) {
+	return createHash("sha1").update(`${source}\n${voice}\n${rate}\n${text}`).digest("hex");
+}
+async function ensureCacheDir(userRoot) {
+	const dir = join(userRoot, "voice-cache");
+	await mkdir(dir, { recursive: true });
+	return dir;
+}
+async function pruneCache(dir, limits = {}) {
+	const maxBytes = limits.maxBytes ?? CACHE_MAX_BYTES;
+	const maxFiles = limits.maxFiles ?? CACHE_MAX_FILES;
+	let names;
+	try {
+		names = await readdir(dir);
+	} catch {
+		return 0;
+	}
+	const entries = [];
+	for (const name of names) {
+		if (!name.endsWith(".mp3")) continue;
+		const file = join(dir, name);
+		try {
+			const info = await stat(file);
+			entries.push({
+				file,
+				size: info.size,
+				mtimeMs: info.mtimeMs
+			});
+		} catch {}
+	}
+	entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
+	let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+	let totalFiles = entries.length;
+	let removed = 0;
+	for (const entry of entries) {
+		if (totalBytes <= maxBytes && totalFiles <= maxFiles) break;
+		try {
+			await rm(entry.file, { force: true });
+			removed += 1;
+			totalBytes -= entry.size;
+			totalFiles -= 1;
+		} catch {}
+	}
+	return removed;
+}
+
+//#endregion
+//#region src/host/voice/edge.ts
+/** 单次合成超时（ms）：上游长时间无响应就判失败，不拖住串行队列。 */
+const SYNTHESIS_TIMEOUT_MS = 15e3;
+var VoiceSynthError = class extends Error {
+	constructor(message) {
+		super(message);
+		this.name = "VoiceSynthError";
+	}
+};
+async function synthesize({ signal, text, voice, rate, target }) {
+	const staging = `${target}.part`;
+	try {
+		const mod = await import("@andresaya/edge-tts");
+		const EdgeTTS = mod.EdgeTTS ?? mod.default?.EdgeTTS;
+		if (!EdgeTTS) throw new VoiceSynthError("依赖未导出 EdgeTTS");
+		const tts = new EdgeTTS();
+		const result = await tts.generate(text, voice, {
+			rate,
+			signal,
+			timeout: SYNTHESIS_TIMEOUT_MS
+		});
+		await writeFile(staging, result.audio);
+		await rename(staging, target);
+	} catch (error) {
+		await rm(staging, { force: true }).catch(() => void 0);
+		throw new VoiceSynthError(error instanceof Error ? error.message : String(error));
+	}
+}
+
+//#endregion
+//#region src/host/voice/speak.ts
+const MAX_TEXT_CHARS = 500;
+const MAX_QUEUE = 3;
+/** 语速表达式：`+N%` 或 `-N%`。 */
+const RATE_PATTERN = /^[+-]\d{1,3}%$/;
+/** 语速下界（百分比）。 */
+const RATE_MIN_PERCENT = -50;
+/** 语速上界（百分比）。 */
+const RATE_MAX_PERCENT = 100;
+/** 第三方实现的单次合成上限（ms）：与内置同口径，避免一句卡住串行队列。 */
+const PROVIDER_TIMEOUT_MS = 15e3;
+/** 内置 edge 合成的总时限（ms）：依赖自带的 15s 只是「静默」超时，每来一帧就重置，不能当总时限用。 */
+const BUILTIN_TIMEOUT_MS = 28e3;
+/** 排队超过这么久还没轮到就丢弃（ms）：等得比一次合成还久，客户端早已放弃，再合成只是白烧上游。 */
+const STALE_WAIT_MS = BUILTIN_TIMEOUT_MS;
+/** 校验请求体；只认 `text` / `voice` / `rate` 三个字段，其余忽略。 */
+function parseSpeakInput(raw) {
+	const body = raw && typeof raw === "object" ? raw : {};
+	const text = typeof body.text === "string" ? body.text.trim() : "";
+	if (!text) return {
+		ok: false,
+		message: "text is required"
+	};
+	if (text.length > MAX_TEXT_CHARS) return {
+		ok: false,
+		message: `text too long (max ${MAX_TEXT_CHARS} chars)`
+	};
+	const voice = body.voice === void 0 ? DEFAULT_VOICE : body.voice;
+	if (typeof voice !== "string" || !isKnownVoice(voice)) return {
+		ok: false,
+		message: `unknown voice; allowed: ${VOICES.map((item) => item.id).join(", ")}`
+	};
+	const rate = body.rate === void 0 ? "+0%" : body.rate;
+	if (typeof rate !== "string" || !RATE_PATTERN.test(rate)) return {
+		ok: false,
+		message: "rate must look like +0% or -10%"
+	};
+	const percent = Number(rate.slice(1, -1));
+	if (!Number.isFinite(percent) || percent < RATE_MIN_PERCENT || percent > RATE_MAX_PERCENT) return {
+		ok: false,
+		message: `rate out of range (${RATE_MIN_PERCENT}%..+${RATE_MAX_PERCENT}%)`
+	};
+	return {
+		ok: true,
+		value: {
+			text,
+			voice,
+			rate
+		}
+	};
+}
+/** 断言用：`SpeakResult` 的构造点都经过这里，避免各处手写同一句文案。 */
+function dropped() {
+	return {
+		ok: false,
+		reason: "voice-busy",
+		message: "queued too long, dropped"
+	};
+}
+function isQueueStale(queuedMs, nowMs, waitMs = STALE_WAIT_MS) {
+	return nowMs - queuedMs > waitMs;
+}
+function createVoiceService(options) {
+	const { userRoot, log } = options;
+	const synthesizeImpl = options.synthesize ?? synthesize;
+	const staleWaitMs = options.staleWaitMs ?? STALE_WAIT_MS;
+	/** 已占用的队列名额（含正在跑的那个）。 */
+	let queueUsed = 0;
+	/** 串行链：上一件事收尾（成功或失败）后才轮到下一件。 */
+	let chain = Promise.resolve();
+	/** 把一次合成排进串行链；无论成败都释放名额。 */
+	function enqueue(task) {
+		queueUsed += 1;
+		const run$1 = chain.then(task, task);
+		chain = run$1.then(() => void 0, () => void 0);
+		return run$1.finally(() => {
+			queueUsed -= 1;
+		});
+	}
+	/** 缓存命中返回文件路径；不存在或空文件返回 undefined。 */
+	async function findCached(target) {
+		try {
+			const info = await stat(target);
+			return info.isFile() && info.size > 0 ? target : void 0;
+		} catch {
+			return void 0;
+		}
+	}
+	async function speak(raw) {
+		const parsed = parseSpeakInput(raw);
+		if (!parsed.ok) return {
+			ok: false,
+			reason: "bad-request",
+			message: parsed.message
+		};
+		const { text, voice, rate } = parsed.value;
+		const provider = activeVoiceProvider();
+		const source = provider ? provider.id : BUILTIN_VOICE_ID;
+		const target = cachePath(userRoot, cacheKey(source, provider ? "" : voice, rate, text));
+		const startedMs = Date.now();
+		const cached$2 = await findCached(target);
+		if (cached$2) {
+			log?.info?.(`[dsh-zdd-pet] voice speak: cache=hit chars=${text.length} voice=${source}`);
+			return {
+				ok: true,
+				file: cached$2
+			};
+		}
+		if (queueUsed >= MAX_QUEUE) {
+			log?.warn?.(`[dsh-zdd-pet] voice speak: queue full (max ${MAX_QUEUE}) chars=${text.length} voice=${source}`);
+			return {
+				ok: false,
+				reason: "voice-busy",
+				message: "voice queue is full, retry later"
+			};
+		}
+		const queue = { dropped: false };
+		const queuedMs = Date.now();
+		try {
+			await enqueue(async () => {
+				if (isQueueStale(queuedMs, Date.now(), staleWaitMs)) {
+					queue.dropped = true;
+					return;
+				}
+				const dir = await ensureCacheDir(userRoot);
+				if (provider) await synthesizeWithProvider(provider, {
+					text,
+					voice,
+					rate,
+					target
+				});
+				else await synthesizeImpl({
+					signal: AbortSignal.timeout(BUILTIN_TIMEOUT_MS),
+					target,
+					text,
+					voice,
+					rate
+				});
+				await pruneCache(dir);
+			});
+		} catch (error) {
+			log?.warn?.(`[dsh-zdd-pet] voice speak: failed chars=${text.length} voice=${source} ms=${Date.now() - startedMs} reason=${error instanceof VoiceSynthError ? error.message : String(error)}`);
+			return {
+				ok: false,
+				reason: "generate-error",
+				message: "voice synthesis failed"
+			};
+		}
+		if (queue.dropped) {
+			log?.warn?.(`[dsh-zdd-pet] voice speak: dropped chars=${text.length} voice=${source} queued=${Date.now() - queuedMs}ms`);
+			return dropped();
+		}
+		log?.info?.(`[dsh-zdd-pet] voice speak: cache=miss chars=${text.length} voice=${source} ms=${Date.now() - startedMs}`);
+		return {
+			ok: true,
+			file: target
+		};
+	}
+	return {
+		listVoices: () => VOICES,
+		speak
+	};
+}
+/** 给一个 Promise 套超时；超时 reject，原 Promise 不被取消（provider 自己该处理放弃）。 */
+function withTimeout(task, timeoutMs) {
+	return new Promise((resolve$1, reject) => {
+		const timer = setTimeout(() => reject(new Error("voice provider timed out")), timeoutMs);
+		timer.unref?.();
+		task.then((value) => {
+			clearTimeout(timer);
+			resolve$1(value);
+		}, (error) => {
+			clearTimeout(timer);
+			reject(error);
+		});
+	});
+}
+/**
+* 用第三方实现合成并落盘。
+*
+* 空字节按失败处理：0 字节文件会被 {@link findCached} 的 `size > 0` 跳过，
+* 于是每次请求都重新合成、每次又得到空文件，白烧上游。
+*/
+async function synthesizeWithProvider(provider, input) {
+	let bytes;
+	try {
+		bytes = await withTimeout(provider.synthesize({
+			text: input.text,
+			rate: input.rate
+		}), PROVIDER_TIMEOUT_MS);
+	} catch (error) {
+		throw new VoiceSynthError(error instanceof Error ? error.message : String(error));
+	}
+	if (bytes.length === 0) throw new VoiceSynthError("voice provider returned empty audio");
+	await writeFile(input.target, bytes);
+}
+
+//#endregion
+//#region src/host/voice/hear.ts
+const MAX_AUDIO_BYTES = 768 * 1024;
+const TRANSCRIBE_TIMEOUT_MS = 3e4;
+/** base64 字面量：`Buffer.from` 解码很宽松，先按字母表与补齐规则挡掉脏数据。 */
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+/**
+* 校验请求体；只认 `audio` 与 `language` 两个字段，其余忽略。
+*
+* @param raw - 已解析的请求体。
+* @returns 已解码的音频字节；任何字段不合法时给出可直接回给调用方的说明。
+*/
+function parseHearInput(raw) {
+	const body = raw && typeof raw === "object" ? raw : {};
+	const encoded = typeof body.audio === "string" ? body.audio.trim() : "";
+	if (encoded === "") return {
+		ok: false,
+		message: "audio is required"
+	};
+	if (!BASE64_PATTERN.test(encoded) || encoded.replace(/=+$/, "").length % 4 === 1) return {
+		ok: false,
+		message: "audio must be base64"
+	};
+	const audio = new Uint8Array(Buffer.from(encoded, "base64"));
+	if (audio.byteLength === 0) return {
+		ok: false,
+		message: "audio is empty"
+	};
+	if (audio.byteLength > MAX_AUDIO_BYTES) return {
+		ok: false,
+		message: `audio too large (max ${MAX_AUDIO_BYTES} bytes)`
+	};
+	const language = body.language;
+	if (language !== void 0 && (typeof language !== "string" || language.trim() === "")) return {
+		ok: false,
+		message: "language must be a non-empty string"
+	};
+	return {
+		ok: true,
+		value: {
+			audio,
+			...language === void 0 ? {} : { language: language.trim() }
+		}
+	};
+}
+/**
+* 给一次识别套上超时与调用方中止，把结论收敛成「值或一句说明」。
+*
+* 两个来源（第三方、宿主）都只认一个 signal，所以在这里合并，调用方不必各写一遍。
+*
+* @param signal - 调用方中止信号（连接断开）。
+* @param timeoutMs - 超时上限。
+* @param task - 真正执行识别的函数。
+* @returns 成功给任务的值；超时或抛错给原始错误说明。
+*/
+async function withDeadline(signal, timeoutMs, task) {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	timer.unref();
+	const onAbort = () => controller.abort();
+	signal?.addEventListener("abort", onAbort, { once: true });
+	try {
+		return {
+			ok: true,
+			value: await task(controller.signal)
+		};
+	} catch (error) {
+		return {
+			ok: false,
+			message: error instanceof Error ? error.message : String(error)
+		};
+	} finally {
+		clearTimeout(timer);
+		signal?.removeEventListener("abort", onAbort);
+	}
+}
+function createHearService(options) {
+	const timeoutMs = options.timeoutMs ?? TRANSCRIBE_TIMEOUT_MS;
+	return { async hear(raw, signal) {
+		const parsed = parseHearInput(raw);
+		if (!parsed.ok) return {
+			ok: false,
+			reason: "bad-request",
+			message: parsed.message
+		};
+		const provider = activeSpeechProvider();
+		if (provider !== null) {
+			const run$2 = await withDeadline(signal, timeoutMs, (inner) => provider.transcribe(parsed.value, inner));
+			if (!run$2.ok) return {
+				ok: false,
+				reason: "generate-error",
+				message: run$2.message
+			};
+			if (typeof run$2.value !== "string") return {
+				ok: false,
+				reason: "generate-error",
+				message: "invalid transcript from provider"
+			};
+			return {
+				ok: true,
+				text: run$2.value
+			};
+		}
+		const speech = options.speechToText();
+		if (speech === void 0 || typeof speech.transcribe !== "function") return {
+			ok: false,
+			reason: "unsupported",
+			message: "host has no speech-to-text service"
+		};
+		if (speech.listProviders().length === 0) return {
+			ok: false,
+			reason: "unsupported",
+			message: "host has no speech provider enabled"
+		};
+		const run$1 = await withDeadline(signal, timeoutMs, async (inner) => (await speech.transcribe(speech.resolve(parsed.value), inner)).text);
+		if (!run$1.ok) return {
+			ok: false,
+			reason: "generate-error",
+			message: run$1.message
+		};
+		return {
+			ok: true,
+			text: run$1.value
+		};
+	} };
+}
+
+//#endregion
 //#region src/host/index.ts
 function apply(ctx) {
 	const setup = createHostSetup(ctx);
-	const { userRoot, log, configPaths, thumbUserRoot, memeDirsFor, standaloneAiPolicy, state, playback, workStatus, EXTERNAL_WORK_SESSION, nextExternalWorkSeq } = setup;
+	const { userRoot, log, configPaths, thumbUserRoot, memeDirsFor, standaloneAiPolicy, standaloneAiBalance, state, playback, workStatus, EXTERNAL_WORK_SESSION, nextExternalWorkSeq } = setup;
 	const extras = createExtras({
 		configPaths,
 		memeDirsFor,
@@ -9647,7 +11878,8 @@ function apply(ctx) {
 	});
 	const workStatusBridge = createWorkStatusBridge({
 		state,
-		workStatus
+		workStatus,
+		EXTERNAL_WORK_SESSION
 	});
 	const { publishWorkStatus, stopWorkStatusFlush } = workStatusBridge;
 	const downloadReport = createDownloadReport({
@@ -9657,15 +11889,18 @@ function apply(ctx) {
 		workStatus
 	});
 	const { reportDownload, stopDownloadSlotTimer } = downloadReport;
-	const petLookup = createPetLookup({ state });
-	const { lock } = petLookup;
+	const petLookup = createPetLookup({
+		state,
+		configPaths
+	});
+	const { lock, sleep, sleepRefusalText } = petLookup;
 	const sessionNotify = createSessionNotify({
 		ctx,
 		publishWorkStatus,
 		state,
 		workStatus
 	});
-	const { pushNotifyFrame, turnFlags, terminalTimers, lastTodoText, toolsInFlight, cancelTerminalCleanup, scheduleTerminalCleanup, notifyActivityTimers, scheduleCompletionNotify } = sessionNotify;
+	const { pushNotifyFrame, turnFlags, terminalTimers, lastTodoText, lastReplyText, toolsInFlight, cancelTerminalCleanup, scheduleTerminalCleanup, notifyActivityTimers, scheduleCompletionNotify } = sessionNotify;
 	const memoryFacts = createMemoryFacts({
 		userRoot,
 		ctx,
@@ -9676,6 +11911,7 @@ function apply(ctx) {
 		configPaths,
 		log,
 		memeDirsFor,
+		playback,
 		state,
 		userRoot,
 		readFacts: memoryFacts.readFacts,
@@ -9683,7 +11919,7 @@ function apply(ctx) {
 		extractFacts: memoryFacts.extractFacts,
 		longMemoryEnabled: (conf) => readProactiveParams(conf.proactive).longMemory
 	});
-	const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
+	const { lastWhisperAt, publishWhisper, publishSleepTalk, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
 	const proactive = createProactive({
 		ctx,
 		configPaths,
@@ -9717,9 +11953,14 @@ function apply(ctx) {
 		getActivePetId,
 		log,
 		memeValid: extras.memeValid,
-		state
+		state,
+		standaloneAiBalance
 	});
 	const { effectivePetList, balancePeriodSec, whisperPeriodSec, refreshBalance, resolveActivePetId, petDisplayName } = balancePoll;
+	const todos = new TodoStore({
+		file: join(userRoot, TODO_FILE_NAME),
+		log
+	});
 	const desktopHelper = createDesktopHelper({
 		ctx,
 		configPaths,
@@ -9740,7 +11981,13 @@ function apply(ctx) {
 		...desktopHelper,
 		...sessionNotify,
 		ctx,
-		chatWithPet: chatWithPetTracked
+		chatWithPet: chatWithPetTracked,
+		todos,
+		voice: createVoiceService({
+			userRoot,
+			log
+		}),
+		speech: createHearService({ speechToText: () => setup.optionalService("speechToText") })
 	};
 	const httpRoute = createHttpRoute(deps);
 	registerHttpRoute(ctx, httpRoute.handlePetRoute);
@@ -9753,6 +12000,7 @@ function apply(ctx) {
 		deliverEasterEgg: extras.deliverEasterEgg,
 		lastTodoText,
 		log,
+		lastReplyText,
 		notifyActivityTimers,
 		publishWorkStatus,
 		pushNotifyFrame,
@@ -9765,7 +12013,10 @@ function apply(ctx) {
 	});
 	registerBalanceCommand({
 		ctx,
-		refreshBalance
+		effectivePetList,
+		refreshBalance,
+		sleep,
+		sleepRefusalText
 	});
 	registerLoops({
 		ctx,
@@ -9777,7 +12028,9 @@ function apply(ctx) {
 		log,
 		pickPetMeme: extras.pickPetMeme,
 		publishWhisper,
+		publishSleepTalk,
 		refreshBalance,
+		sleep,
 		standaloneAiPolicy,
 		whisperPeriodSec
 	});
@@ -9794,7 +12047,20 @@ function apply(ctx) {
 		chatWithPet: chatWithPetTracked,
 		log,
 		publishWhisper,
-		resolveActivePetId
+		resolveActivePetId,
+		sleep,
+		sleepRefusalText
+	});
+	registerTodoReminders({
+		ctx,
+		effectivePetList,
+		isVoiceTodoEnabled: () => readAllConfig(configPaths).main?.voiceTodoEnabled === true,
+		lock,
+		log,
+		sleep,
+		state,
+		todos,
+		waiterCount: () => state.waiterCount()
 	});
 	registerLifecycle({
 		ctx,
@@ -9861,9 +12127,9 @@ const settingsSchema = z.object({
 	protocol: z.enum(["openai-compatible", "anthropic"]).optional(),
 	baseUrl: endpoint.optional(),
 	model: z.string().max(200).optional(),
+	balanceProvider: z.string().max(40).optional(),
 	apiKey: z.string().max(8192).optional(),
 	clearApiKey: z.boolean().optional(),
-	enabled: z.boolean().optional(),
 	automaticWhispers: z.boolean().optional(),
 	whisperIntervalSec: z.number().int().min(60).max(86400).optional(),
 	maxTokens: z.number().int().min(128).max(4096).optional(),
@@ -9879,7 +12145,7 @@ const publicNames = [
 	"protocol",
 	"baseUrl",
 	"model",
-	"enabled",
+	"balanceProvider",
 	"automaticWhispers",
 	"whisperIntervalSec",
 	"maxTokens",
@@ -9902,19 +12168,56 @@ function rejectRequest(res, status, error) {
 	res.end(JSON.stringify({ error }));
 	return false;
 }
+/** 插件路由段前缀：/dsh-zdd-pet-<端口>。 */
+const PLUGIN_ROUTE = /^\/dsh-zdd-pet-\d+\//;
+/** 插件路由里必须带令牌的子路径：碎碎念与对话。 */
+const PLUGIN_PRIVATE = /^\/dsh-zdd-pet-\d+\/(?:whisper|chat)(?:\/|$)/;
 /** 无需令牌的只读路径；写操作与敏感路径必须带令牌。 */
 function publicRead(req) {
 	const path = decodeURIComponent(new URL(req.url ?? "/", "http://127.0.0.1").pathname);
 	if (req.method !== "GET" && req.method !== "HEAD") return false;
 	if (["/standalone-ai/settings", "/shutdown"].includes(path)) return false;
-	if (/^\/dsh-zdd-pet-\d+\/(?:whisper|chat)(?:\/|$)/.test(path)) return false;
+	if (PLUGIN_PRIVATE.test(path)) return false;
 	return [
 		"/",
 		"/health",
 		"/standalone-ai/",
 		"/standalone-ai/settings.js",
-		"/standalone-ai/settings.css"
-	].includes(path) || /^\/dsh-zdd-pet-\d+\//.test(path);
+		"/standalone-ai/settings.css",
+		"/standalone-ai/chat-panel.js",
+		"/standalone-ai/icon.png"
+	].includes(path) || PLUGIN_ROUTE.test(path);
+}
+/** 设置页凭据 cookie：首次带令牌访问后下发，刷新时替代已从地址栏清掉的令牌。 */
+const TOKEN_COOKIE = "dsh_pet_token";
+/** 令牌的固定形状：32 字节 base64url。形状校验先跑，定时安全比较才有等长前提。 */
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+/** 从 Cookie 头里取出本服务的凭据；没有则返回空串。 */
+function readTokenCookie(req) {
+	const raw = req.headers.cookie;
+	if (typeof raw !== "string") return "";
+	for (const part of raw.split(";")) {
+		const separator = part.indexOf("=");
+		if (separator < 0) continue;
+		if (part.slice(0, separator).trim() !== TOKEN_COOKIE) continue;
+		return part.slice(separator + 1).trim();
+	}
+	return "";
+}
+/**
+* 令牌头的名字。
+*
+* 插件自己的拼写是 x-dsh-zdd-pet-token；上游原来的拼写也一并认，
+* 这样还没换到会话 cookie 的老脚本与旧页面不会一律 403。两个名字都要过形状校验与定时安全比较。
+*/
+const TOKEN_HEADER_PATTERN = /^x-dsh-(?:zdd-)?pet-token$/i;
+/** 从请求头里取本服务的令牌；没有或形状不对就返回空串。 */
+function readTokenHeader(req) {
+	for (const [name, value] of Object.entries(req.headers)) {
+		if (!TOKEN_HEADER_PATTERN.test(name)) continue;
+		if (typeof value === "string" && TOKEN_SHAPE.test(value)) return value;
+	}
+	return "";
 }
 function createRequestSecurity() {
 	const token = randomBytes(32).toString("base64url");
@@ -9929,15 +12232,18 @@ function createRequestSecurity() {
 			const host = req.headers.host;
 			const port = req.socket.localPort;
 			if (!port || host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return rejectRequest(res, 403, "仅允许当前本机地址");
-			const fileOrigin = allowFileOrigin && (req.headers.origin === "null" || req.headers.origin === void 0);
+			const fileOrigin = allowFileOrigin && (req.headers.origin === "null" || req.headers.origin === void 0 || req.headers.origin === "file://");
 			if (!fileOrigin && (req.headers.origin !== void 0 && req.headers.origin !== `http://${host}` || req.headers["sec-fetch-site"] === "cross-site")) return rejectRequest(res, 403, "不允许跨站请求");
 			try {
 				if (publicRead(req) && !fileOrigin) return true;
 			} catch {
 				return rejectRequest(res, 400, "请求地址无效");
 			}
-			const supplied = req.headers["x-dsh-zdd-pet-token"];
-			if (typeof supplied !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(supplied) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))) return rejectRequest(res, 403, "请从桌宠菜单重新打开设置");
+			const header = readTokenHeader(req);
+			const fromHeader = header !== "";
+			const supplied = fromHeader ? header : readTokenCookie(req);
+			if (!TOKEN_SHAPE.test(supplied) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))) return rejectRequest(res, 403, "请从桌宠菜单重新打开设置");
+			if (fromHeader && readTokenCookie(req) !== token) res.setHeader("set-cookie", `${TOKEN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`);
 			return true;
 		}
 	};
@@ -9987,10 +12293,19 @@ function sendAsset(res, body, type) {
 	res.writeHead(200, {
 		"content-type": `${type}; charset=utf-8`,
 		"content-length": Buffer.byteLength(body),
-		"content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+		"content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'",
 		"x-frame-options": "DENY"
 	});
 	res.end(body);
+}
+function sendIcon(res, icon) {
+	res.writeHead(200, {
+		"content-type": "image/png",
+		"content-length": icon.length,
+		"cache-control": "no-store",
+		"x-content-type-options": "nosniff"
+	});
+	res.end(icon);
 }
 function fail(res, _error, logger) {
 	logger.error("独立模式路由处理失败（详细内容已省略以保护凭据）");
@@ -10000,6 +12315,21 @@ function fail(res, _error, logger) {
 
 //#endregion
 //#region src/standalone/server/handlers.ts
+/** 读完请求体并解析成 JSON；空体当作空对象。 */
+async function readJsonBody(req) {
+	const chunks = [];
+	await new Promise((resolve$1, reject) => {
+		req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+		req.once("end", resolve$1);
+		req.once("error", reject);
+	});
+	const text = Buffer.concat(chunks).toString("utf8");
+	return text ? JSON.parse(text) : {};
+}
+/** 只接受对象形态的草稿；数组、标量与 null 一律当未填。 */
+function asDraft(body) {
+	return body !== null && typeof body === "object" && !Array.isArray(body) ? body : {};
+}
 function settingsHandler(ai) {
 	let windowStart = Date.now();
 	let count = 0;
@@ -10030,13 +12360,7 @@ function settingsHandler(ai) {
 			return;
 		}
 		try {
-			const chunks = [];
-			await new Promise((resolve$1, reject) => {
-				req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-				req.once("end", resolve$1);
-				req.once("error", reject);
-			});
-			const input = validateSettings$1(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+			const input = validateSettings$1(await readJsonBody(req));
 			sendJson(res, 200, publicSettings(await ai.saveSettings(input)));
 		} catch {
 			rejectRequest(res, 400, "设置未保存：请检查接口地址、模型名称、密钥和数值范围");
@@ -10050,18 +12374,9 @@ function testHandler(ai) {
 			return;
 		}
 		try {
-			const chunks = [];
-			await new Promise((resolve$1, reject) => {
-				req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
-				req.once("end", resolve$1);
-				req.once("error", reject);
-			});
-			const bodyStr = Buffer.concat(chunks).toString("utf8");
-			const input = bodyStr ? JSON.parse(bodyStr) : {};
-			if (ai?.testConnection) {
-				const result = await ai.testConnection(input);
-				sendJson(res, 200, result);
-			} else sendJson(res, 200, {
+			const input = asDraft(await readJsonBody(req));
+			if (ai?.testConnection) sendJson(res, 200, await ai.testConnection(input));
+			else sendJson(res, 200, {
 				ok: false,
 				message: "当前环境未配置测试能力"
 			});
@@ -10073,155 +12388,2401 @@ function testHandler(ai) {
 		}
 	};
 }
+function modelsHandler(ai) {
+	return async (req, res) => {
+		if (req.method !== "POST") {
+			rejectRequest(res, 405, "仅支持 POST");
+			return;
+		}
+		if (!ai?.discoverModels) {
+			sendJson(res, 200, {
+				ok: false,
+				code: "input",
+				message: "当前环境未配置模型清单能力"
+			});
+			return;
+		}
+		try {
+			sendJson(res, 200, await ai.discoverModels(asDraft(await readJsonBody(req))));
+		} catch {
+			sendJson(res, 400, {
+				ok: false,
+				code: "input",
+				message: "请求格式无效"
+			});
+		}
+	};
+}
+function balanceHandler(ai) {
+	return async (req, res) => {
+		if (req.method !== "POST") {
+			rejectRequest(res, 405, "仅支持 POST");
+			return;
+		}
+		if (!ai?.queryBalance) {
+			sendJson(res, 200, {
+				ok: false,
+				provider: "",
+				reason: "unsupported"
+			});
+			return;
+		}
+		try {
+			sendJson(res, 200, await ai.queryBalance());
+		} catch {
+			sendJson(res, 200, {
+				ok: false,
+				provider: "",
+				reason: "fetch-error",
+				message: "余额查询失败"
+			});
+		}
+	};
+}
 
 //#endregion
-//#region src/standalone/settings-page.ts
-const settingsPage = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>桌宠 AI 设置</title><link rel="stylesheet" href="/standalone-ai/settings.css">
-<script src="/standalone-ai/settings.js" defer></script></head><body>
-<main><header><span class="fish" aria-hidden="true">🐾</span><p class="local">独立桌宠 / 本机设置</p>
-<h1>桌宠 AI 设置</h1><p class="intro">配置你的大模型 API 接口，开启桌面聊天与碎碎念。<br>所有设置仅保存在本机，支持即时测试连接。</p></header>
-<form id="settings" aria-describedby="privacy">
-<fieldset><legend>模型连接</legend>
-<label for="protocol">接口协议</label><select id="protocol" name="protocol"><option value="openai-compatible">OpenAI 兼容</option><option value="anthropic">Anthropic</option></select>
-<label for="baseUrl">接口地址（Base URL）</label><input id="baseUrl" name="baseUrl" type="url" placeholder="https://example.com/v1" maxlength="2048" spellcheck="false" aria-describedby="endpoint-note"><p class="hint" id="endpoint-note">填写服务商提供的基础接口地址（支持 HTTP 与 HTTPS，通常以 /v1 结尾）。不要把密钥放进地址。</p>
-<label for="model">模型名称</label><input id="model" name="model" type="text" maxlength="200" placeholder="填写服务商的模型 ID，例如 deepseek-chat" spellcheck="false">
-<div class="key-heading"><label for="apiKey">API 密钥</label><span id="key-state" class="hint">尚未读取</span></div>
-<input id="apiKey" name="apiKey" type="password" autocomplete="new-password" maxlength="8192" placeholder="留空保留已保存的密钥" aria-describedby="key-note">
-<p id="key-note" class="hint">密钥只写入本机配置，不会回显。留空不会删除旧密钥。</p>
-<label class="check clear"><input id="clearApiKey" type="checkbox">清除已保存的密钥，并关闭 AI</label>
-<label class="check enabled"><input id="enabled" type="checkbox">启用 AI 对话</label>
-<div class="test-row"><button id="test-btn" type="button">测试连接</button><span id="test-result" class="test-result" role="status" aria-live="polite"></span></div>
-</fieldset>
-<fieldset><legend>定时自动碎碎念</legend>
-<label class="check"><input id="automaticWhispers" type="checkbox" aria-describedby="cost">开启自动碎碎念</label>
-<p id="cost" class="notice">开启后，桌宠会按设定间隔定时调用模型并在桌面上说话冒泡（产生 API 费用）。默认关闭；右键菜单中的手动对话与手动碎碎念不受此开关限制。</p>
-<div class="pair"><div><label for="whisperIntervalSec">碎碎念间隔（秒）</label><input id="whisperIntervalSec" type="number" min="60" max="86400" step="1" value="300" required></div>
-<div><label for="maxTokens">单次输出上限（tokens）</label><input id="maxTokens" type="number" min="128" max="4096" step="1" value="1024" required></div></div>
-<p class="hint">间隔至少 60 秒，默认 300 秒。输出上限越小，单次回复越简短。</p>
-</fieldset>
-<footer><p id="privacy">所有配置与密钥仅保存在当前机器。<br>关闭 AI 后，桌宠仍可正常显示、移动与互动。</p><button id="save" type="submit" disabled>保存到本机</button></footer>
-<p id="status" role="status" aria-live="polite">正在读取本机设置…</p>
-</form><noscript>需要启用 JavaScript 才能保存设置。请从桌宠菜单打开本页。</noscript></main></body></html>`;
-const settingsStyle = `
-:root{color-scheme:light;--ink:#203b4b;--muted:#526a78;--blue:#12618b;--line:#cbdce5;--paper:#fff;--water:#edf5fa}
-*{box-sizing:border-box}body{margin:0;background:var(--water);color:var(--ink);font:16px/1.6 "Microsoft YaHei UI","PingFang SC",sans-serif}
-main{max-width:720px;margin:48px auto;padding:0 24px 32px}header{padding:0 12px 28px}.fish{display:block;font:700 29px/1.3 Georgia,serif;color:var(--blue);letter-spacing:2px;margin-bottom:24px}.local{font-size:13px;color:var(--muted);margin:0 0 10px}h1{font-size:32px;line-height:1.3;letter-spacing:-1px;margin:0 0 16px;font-weight:700}.intro{margin:0;color:var(--muted)}
-form{background:var(--paper);border:1px solid var(--line);border-radius:16px 16px 6px 6px;padding:28px 32px 20px}fieldset{padding:0 0 28px;margin:0 0 24px;border:0;border-bottom:1px solid var(--line);min-width:0}legend{font-size:19px;font-weight:700;margin-bottom:18px;padding:0}label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}input:not([type=checkbox]),select{display:block;width:100%;min-height:44px;border:1px solid #a5bdcb;border-radius:6px;background:#fff;color:var(--ink);padding:9px 12px;font:inherit;font-size:15px}input::placeholder{color:#6a7e8b}input[type=checkbox]{accent-color:var(--blue);width:18px;height:18px;flex-shrink:0;margin:0}.check{display:flex;align-items:center;gap:10px;min-height:32px;cursor:pointer}.enabled{margin-top:24px}.clear{font-weight:400;color:var(--muted);font-size:13px}.hint{font-size:12px;line-height:1.6;color:var(--muted);margin:7px 0 0}.key-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.key-heading label{margin:0 0 6px}.key-heading .hint{margin:0 0 6px}.notice{font-size:13px;color:#704b13;background:#fff7e7;border-left:3px solid #c18e36;margin:12px 0 16px;padding:12px 14px}.pair{display:grid;grid-template-columns:1fr 1fr;gap:20px}footer{display:flex;align-items:center;justify-content:space-between;gap:18px}footer p{font-size:12px;color:var(--muted);margin:0}button{border:0;border-radius:7px;min-height:44px;padding:10px 20px;background:var(--blue);color:#fff;font:600 15px/1.5 inherit;white-space:nowrap;cursor:pointer}button:hover{background:#0b4e73}button:disabled{opacity:.55;cursor:wait}:focus-visible{outline:3px solid #3a94c4;outline-offset:3px}#status{font-size:13px;min-height:24px;margin:18px 0 0;color:var(--blue)}#status[data-error=true]{color:#a13b30}
-.test-row{display:flex;align-items:center;gap:14px;margin:20px 0 6px;flex-wrap:wrap}#test-btn{background:#fff;color:var(--blue);border:1.5px solid var(--blue);min-height:38px;padding:6px 18px;font-size:14px;border-radius:6px;cursor:pointer;font-weight:600}#test-btn:hover{background:#edf5fa}#test-btn:disabled{opacity:.6;cursor:wait}.test-result{font-size:13px;line-height:1.5;min-height:22px;flex:1 1 200px}.test-success{color:#1a7f37;font-weight:600}.test-error{color:#cf222e}.reply-preview{display:block;color:var(--muted);font-weight:normal;font-size:12px;margin-top:4px;word-break:break-all}
-@media(max-width:560px){main{margin:24px auto;padding:0 14px 24px}header{padding:0 8px 24px}h1{font-size:28px}form{padding:24px 20px 16px}.pair{grid-template-columns:1fr;gap:0}footer{align-items:stretch;flex-direction:column}button{width:100%}.fish{margin-bottom:18px}}
-`;
-const settingsScript = `
-'use strict';
-(() => {
-  const token = new URLSearchParams(location.hash.slice(1)).get('token') || '';
-  history.replaceState(null, '', location.pathname);
-  const get = id => document.getElementById(id);
-  const form = get('settings');
-  const status = get('status');
-  const save = get('save');
-  const testBtn = get('test-btn');
-  const testResult = get('test-result');
-  function message(text, error = false) { status.textContent = text; status.dataset.error = String(error); }
-  async function request(method, body) {
-    const response = await fetch('/standalone-ai/settings', {
-      method, credentials: 'omit', cache: 'no-store', redirect: 'error',
-      headers: { 'X-DSH-Zdd-Pet-Token': token, ...(body ? {'Content-Type': 'application/json'} : {}) },
-      ...(body ? {body: JSON.stringify(body)} : {})
-    });
-    if (!response.ok) {
-      if (response.status === 403) throw new Error('打开凭据已失效。请从桌宠菜单重新打开设置。');
-      if (response.status === 429) throw new Error('保存过于频繁，请稍等一分钟再试。');
-      throw new Error('设置未保存。请检查接口地址、模型名称与密钥，再重试。');
-    }
-    return response.json();
+//#region src/shared/avatar.ts
+const LOGO_URL = ROUTE_PATH + "/logo";
+
+//#endregion
+//#region src/shared/physics/constants.ts
+const GRAVITY = 1400;
+const RESTITUTION = .78;
+const GROUND_FRICTION = 2.5;
+const DEFAULT_PHYSICS = {
+	gravity: GRAVITY,
+	restitution: RESTITUTION,
+	groundFriction: GROUND_FRICTION,
+	ceilingBounce: true,
+	throwPower: 1,
+	petCollision: true,
+	hapticEnabled: true,
+	tiltGravity: true,
+	shakeThrow: true
+};
+
+//#endregion
+//#region src/shared/weights.ts
+const DEFAULT_WEIGHTS = {
+	idle: 10,
+	turn: 5,
+	move: 5
+};
+
+//#endregion
+//#region src/standalone/settings-page/script/ai.ts
+function aiScript() {
+	return `
+const AI_SETTINGS_URL = '/standalone-ai/settings';
+const AI_TEST_URL = '/standalone-ai/test';
+const AI_BALANCE_URL = '/standalone-ai/balance';
+
+async function aiRequest(method, body) {
+  const response = await fetch(AI_SETTINGS_URL, {
+    method: method,
+    credentials: 'same-origin',
+    cache: 'no-store',
+    redirect: 'error',
+    headers: body
+      ? { 'X-DSH-Zdd-Pet-Token': TOKEN, 'Content-Type': 'application/json' }
+      : { 'X-DSH-Zdd-Pet-Token': TOKEN },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('打开凭据已失效。请从桌宠菜单重新打开设置。');
+    if (response.status === 429) throw new Error('保存过于频繁，请稍等一分钟再试。');
+    throw new Error('设置未保存。请检查接口地址、模型名称与密钥，再重试。');
   }
-  function populate(data) {
-    for (const id of ['protocol','baseUrl','model','whisperIntervalSec','maxTokens']) {
-      if (data[id] !== undefined) get(id).value = String(data[id]);
-    }
-    for (const id of ['enabled','automaticWhispers']) get(id).checked = data[id] === true;
-    get('key-state').textContent = data.hasKey ? '已保存 · 不回显' : '尚未设置';
-    get('apiKey').value = '';
-    get('clearApiKey').checked = false;
+  return response.json();
+}
+
+function populateAi(data) {
+  if (data.protocol !== undefined && protocolSelect) protocolSelect.setValue(String(data.protocol));
+  for (const id of ['baseUrl', 'model']) {
+    if (data[id] !== undefined && byId(id)) byId(id).value = String(data[id]);
   }
-  get('clearApiKey').addEventListener('change', () => {
-    get('apiKey').disabled = get('clearApiKey').checked;
-    if (get('clearApiKey').checked) {
-      get('apiKey').value = '';
-      get('enabled').checked = false;
-      get('automaticWhispers').checked = false;
+  if (data.balanceProvider !== undefined && balanceSelect) balanceSelect.setValue(String(data.balanceProvider));
+  byId('balance-btn').disabled = !balanceSelect || balanceSelect.getValue() === '';
+  byId('key-state').textContent = data.hasKey ? '已保存 · 不回显' : '尚未设置';
+  byId('key-actions').hidden = data.hasKey !== true;
+  byId('apiKey').value = '';
+  byId('apiKey').disabled = false;
+}
+
+/** 把余额结果翻成一行可读文案；失败一律说明原因，不显示伪造数字。 */
+function describeBalance(data) {
+  if (!data || data.ok !== true) {
+    if (data && data.reason === 'credential-missing') return '缺少密钥：请先保存所选服务商的 API 密钥。';
+    if (data && data.reason === 'unsupported') return '该服务商不提供余额查询。';
+    return data && data.message ? '查询失败：' + data.message : '查询失败，请稍后重试。';
+  }
+  const payload = data.data || {};
+  if (data.shape === 'money' && payload.wallets) {
+    return payload.wallets
+      .map(function (wallet) {
+        return wallet.currency + ' ' + wallet.total;
+      })
+      .join(' / ');
+  }
+  if (data.shape === 'points') return payload.total + ' ' + payload.unit;
+  if (data.shape === 'windows') return '月度已用 ' + payload.monthly + '%';
+  return '已取到余额数据。';
+}
+
+function wireBalanceQuery() {
+  const button = byId('balance-btn');
+  const result = byId('balance-result');
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    result.className = 'status';
+    result.dataset.ok = '';
+    result.dataset.error = '';
+    result.textContent = '正在查询余额…';
+    try {
+      const response = await fetch(AI_BALANCE_URL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'X-DSH-Zdd-Pet-Token': TOKEN },
+      });
+      if (!response.ok) throw new Error('查询被拒绝（HTTP ' + response.status + '）');
+      const data = await response.json();
+      const ok = data && data.ok === true;
+      if (ok) result.dataset.ok = 'true';
+      else result.dataset.error = 'true';
+      result.textContent = (ok ? '✓ ' : '✗ ') + describeBalance(data);
+    } catch (error) {
+      result.dataset.error = 'true';
+      result.textContent = '✗ ' + (error && error.message ? error.message : String(error));
+    } finally {
+      button.disabled = !balanceSelect || balanceSelect.getValue() === '';
     }
   });
-  if (testBtn && testResult) {
-    testBtn.addEventListener('click', async () => {
-      testBtn.disabled = true;
-      testResult.className = 'test-result';
-      testResult.textContent = '正在测试连接，请稍候…';
-      const input = {
-        protocol: get('protocol').value,
-        baseUrl: get('baseUrl').value.trim(),
-        model: get('model').value.trim(),
-        apiKey: get('apiKey').value.trim(),
-      };
-      try {
-        const response = await fetch('/standalone-ai/test', {
-          method: 'POST',
-          credentials: 'omit',
-          cache: 'no-store',
-          headers: {
-            'X-DSH-Zdd-Pet-Token': token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(input),
-        });
-        const data = await response.json();
-        if (data.ok) {
-          testResult.className = 'test-result test-success';
-          testResult.textContent = '✓ ' + data.message;
-          if (data.reply) {
-            const preview = document.createElement('span');
-            preview.className = 'reply-preview';
-            preview.textContent = '回复: ' + data.reply;
-            testResult.appendChild(preview);
-          }
-        } else {
-          testResult.className = 'test-result test-error';
-          testResult.textContent = '✗ ' + (data.message || data.error || '测试失败');
-        }
-      } catch (error) {
-        testResult.className = 'test-result test-error';
-        testResult.textContent = '✗ 请求异常：' + (error && error.message ? error.message : String(error));
-      } finally {
-        testBtn.disabled = false;
-      }
+}
+
+function wireKeyDelete(status) {
+  byId('key-delete').addEventListener('click', async () => {
+    const confirmed = await confirmDialog({
+      title: '删除已保存的密钥',
+      text: '删除后桌宠将无法再调用模型，需要重新填写密钥才能恢复。',
+      confirmLabel: '删除',
+      danger: true,
     });
-  }
-  form.addEventListener('submit', async event => {
+    if (!confirmed) return;
+    setStatus(status, '正在删除密钥…');
+    try {
+      populateAi(await aiRequest('POST', { clearApiKey: true }));
+      setStatus(status, '已删除保存的密钥。', 'ok');
+    } catch (error) {
+      setStatus(status, error && error.message ? error.message : String(error), 'error');
+    }
+  });
+}
+
+function wireTest(testBtn, testResult) {
+  testBtn.addEventListener('click', async () => {
+    testBtn.disabled = true;
+    testResult.className = 'status';
+    testResult.textContent = '正在测试连接，请稍候…';
+    const input = {
+      protocol: protocolSelect ? protocolSelect.getValue() : 'openai-compatible',
+      baseUrl: byId('baseUrl').value.trim(),
+      model: byId('model').value.trim(),
+      apiKey: byId('apiKey').value.trim(),
+    };
+    try {
+      const response = await fetch(AI_TEST_URL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'X-DSH-Zdd-Pet-Token': TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const data = await response.json();
+      if (data.ok) {
+        testResult.className = 'status';
+        testResult.dataset.ok = 'true';
+        testResult.textContent = '✓ ' + data.message;
+        if (data.reply) testResult.textContent += '；回复：' + data.reply;
+      } else {
+        testResult.className = 'status';
+        testResult.dataset.error = 'true';
+        testResult.textContent = '✗ ' + (data.message || data.error || '测试失败');
+      }
+    } catch (error) {
+      testResult.className = 'status';
+      testResult.dataset.error = 'true';
+      testResult.textContent = '✗ 请求异常：' + (error && error.message ? error.message : String(error));
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+}
+
+function wireSave(form, save, status) {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     save.disabled = true;
-    message('正在保存到本机…');
+    setStatus(status, '正在保存到本机…');
     const input = {
-      protocol: get('protocol').value, baseUrl: get('baseUrl').value.trim(), model: get('model').value.trim(),
-      apiKey: get('apiKey').value, clearApiKey: get('clearApiKey').checked,
-      enabled: get('enabled').checked, automaticWhispers: get('automaticWhispers').checked,
-      whisperIntervalSec: Number(get('whisperIntervalSec').value), maxTokens: Number(get('maxTokens').value)
+      protocol: protocolSelect ? protocolSelect.getValue() : 'openai-compatible',
+      baseUrl: byId('baseUrl').value.trim(),
+      model: byId('model').value.trim(),
+      balanceProvider: balanceSelect ? balanceSelect.getValue() : '',
+      apiKey: byId('apiKey').value,
     };
-    get('apiKey').value = '';
+    byId('apiKey').value = '';
     try {
-      populate(await request('POST', input));
-      get('apiKey').disabled = false;
-      message('已保存到本机。');
-    } catch (error) { message(error.message, true); }
-    finally { save.disabled = false; }
+      populateAi(await aiRequest('POST', input));
+      setStatus(status, '已保存到本机。', 'ok');
+    } catch (error) {
+      setStatus(status, error && error.message ? error.message : String(error), 'error');
+    } finally {
+      save.disabled = false;
+    }
   });
-  if (!token) { message('请从桌宠菜单或本机启动器打开设置，以获得本次运行的访问凭据。', true); return; }
-  request('GET').then(data => { populate(data); save.disabled = false; message('设置只在本机保存。'); })
-    .catch(error => message(error.message, true));
-})();
+}
+
+function wireAiPanel() {
+  wireModelPicker();
+  const status = byId('status');
+  wireKeyDelete(status);
+  wireTest(byId('test-btn'), byId('test-result'));
+  wireBalanceQuery();
+  wireSave(byId('settings'), byId('save'), status);
+}
 `;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/avatar.ts
+function avatarScript(consts) {
+	return `
+const AVATAR_LOGO_URL = ${JSON.stringify(consts.logoUrl)};
+const AVATAR_MAX_SIDE = ${consts.maxSide};
+let avatarVersion = Date.now();
+
+function avatarSrc(assetRoot) {
+  const root = String(assetRoot || '').trim();
+  const query = root === '' ? '' : 'root=' + encodeURIComponent(root) + '&';
+  return AVATAR_LOGO_URL + '?' + query + 'v=' + avatarVersion;
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result || '');
+      resolve(url.slice(url.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(new Error('读取图片失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function encodeAvatar(file) {
+  const bitmap = await createImageBitmap(file);
+  const longest = Math.max(bitmap.width, bitmap.height);
+  if (longest <= AVATAR_MAX_SIDE) return fileToBase64(file);
+  const scale = AVATAR_MAX_SIDE / longest;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('浏览器不支持缩放这张图');
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/png');
+  return dataUrl.slice(dataUrl.indexOf(',') + 1);
+}
+
+/**
+ * 取头像并渲染。
+ *
+ * 不能把地址直接放进 img src：同源图片请求不带 Origin，打包版会把它判成文件来源而要令牌，结果是 403 裂图。
+ * 所以带令牌 fetch 成 blob 再挂上去；取不到就留空白，预览失败不该挡住其它字段。
+ */
+async function loadAvatar(image, assetRoot) {
+  try {
+    const response = await fetch(avatarSrc(assetRoot), {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'X-DSH-Zdd-Pet-Token': TOKEN },
+    });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    const previous = image.dataset.blobUrl;
+    if (previous) URL.revokeObjectURL(previous);
+    const url = URL.createObjectURL(blob);
+    image.dataset.blobUrl = url;
+    image.src = url;
+  } catch {
+    // 预览失败保持空白。
+  }
+}
+
+async function uploadAvatar(assetRoot, file, result, image) {
+  setStatus(result, '正在上传…');
+  try {
+    const base64 = await encodeAvatar(file);
+    const response = await fetch(API + '/pet-avatar?root=' + encodeURIComponent(assetRoot), {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'X-DSH-Zdd-Pet-Token': TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64: base64 }),
+    });
+    if (response.status === 403) throw new Error('打开凭据已失效。请从桌宠菜单重新打开设置。');
+    const data = await response.json().catch(() => null);
+    if (!data) throw new Error('本机接口没有返回结果，请重试。');
+    if (data.ok !== true) throw new Error(data.message || '上传失败');
+    // 用自增而不是 Date.now()：同一毫秒内连着传两张时，版本号必须仍然变化。
+    avatarVersion += 1;
+    await loadAvatar(image, assetRoot);
+    setStatus(result, '头像已更新。', 'ok');
+  } catch (error) {
+    setStatus(result, error && error.message ? error.message : String(error), 'error');
+  }
+}
+
+function avatarRow(pet) {
+  // 条目名就是素材根（/config 的 pets 上没有 assetRoot，那是客户端拍平时补的）。
+  const assetRoot = pet.assetRoot || state.entry;
+  // pet/ 只归 pet pack：内置条目用包内 logo，只给预览不给上传，与服务端的拒绝保持一致。
+  const editable = assetRoot !== 'main';
+  const image = make('img', { class: 'avatarImg', alt: '头像' });
+  void loadAvatar(image, editable ? assetRoot : '');
+  const result = make('p', { class: 'status' });
+  const children = [
+    make('p', {
+      class: 'fieldHint',
+      text: editable
+        ? '头像按素材根保存，同一素材根的宠物共用一张；支持 PNG / JPEG / WebP / GIF，超过长边 ' + AVATAR_MAX_SIDE + ' 会自动缩小。'
+        : '内置条目固定用包里的 logo，不能单独换；要给文件宠物换头像，请切到它所在的条目。',
+    }),
+  ];
+  if (editable) {
+    const input = make('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true });
+    const upload = make('button', { class: 'btn', type: 'button', text: '上传头像' });
+    upload.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (file) void uploadAvatar(assetRoot, file, result, image);
+    });
+    children.push(upload, input);
+  }
+  children.push(result);
+  return make('div', { class: 'avatarRow' }, [image, make('div', { class: 'avatarBox' }, children)]);
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/boot.ts
+function bootScript() {
+	return `
+let protocolSelect = null;
+let balanceSelect = null;
+
+function mountProtocolSelect() {
+  const host = byId('protocol-host');
+  if (!host) return;
+  protocolSelect = createSelect(
+    [
+      { value: 'openai-compatible', label: 'OpenAI 兼容' },
+      { value: 'anthropic', label: 'Anthropic' },
+    ],
+    'openai-compatible',
+    () => forgetModelOptions(),
+  );
+  protocolSelect.root.firstElementChild.setAttribute('aria-labelledby', 'protocol-label');
+  host.append(protocolSelect.root);
+}
+
+function mountBalanceSelect() {
+  const host = byId('balance-provider-host');
+  if (!host) return;
+  balanceSelect = createSelect(
+    [
+      { value: '', label: '不查询余额' },
+      { value: 'deepseek-official', label: 'DeepSeek 官方' },
+      { value: 'opencode-go', label: 'opencode Go' },
+      { value: 'commandcode', label: 'commandcode' },
+    ],
+    '',
+    (picked) => {
+      const button = byId('balance-btn');
+      if (button) button.disabled = picked === '';
+      const result = byId('balance-result');
+      if (result) {
+        result.textContent = '';
+        result.dataset.ok = '';
+        result.dataset.error = '';
+      }
+    },
+  );
+  balanceSelect.root.firstElementChild.setAttribute('aria-labelledby', 'balance-provider-label');
+  host.append(balanceSelect.root);
+}
+
+function selectTab(name) {
+  for (const cell of document.querySelectorAll('[data-tab]')) {
+    const active = cell.dataset.tab === name;
+    cell.setAttribute('aria-selected', active ? 'true' : 'false');
+    const panel = byId('panel-' + cell.dataset.tab);
+    if (panel) panel.hidden = !active;
+    if (active && cell.dataset.title) {
+      const title = byId('page-title');
+      if (title) title.textContent = cell.dataset.title;
+    }
+  }
+}
+
+function wireTabs() {
+  const cells = Array.prototype.slice.call(document.querySelectorAll('.navCell'));
+  cells.forEach((cell, index) => {
+    cell.addEventListener('click', () => selectTab(cell.dataset.tab));
+    cell.addEventListener('keydown', (event) => {
+      const forward = event.key === 'ArrowDown' || event.key === 'ArrowRight';
+      const backward = event.key === 'ArrowUp' || event.key === 'ArrowLeft';
+      if (!forward && !backward) return;
+      event.preventDefault();
+      const step = forward ? 1 : -1;
+      const next = cells[(index + step + cells.length) % cells.length];
+      next.focus();
+      selectTab(next.dataset.tab);
+    });
+  });
+}
+
+async function loadPets() {
+  const status = byId('pet-status');
+  setStatus(status, '正在读取本机配置…');
+  try {
+    const config = await callApi('GET', '/config');
+    const meta = await callApi('GET', '/config/meta').catch(() => null);
+    if (!config || config.ok === false || !config.main) throw new Error('读取配置失败：宿主没有返回可用的配置。');
+    state.meta = meta;
+    initDrafts(config);
+    renderPetsPanel();
+    byId('pet-save').disabled = false;
+    setStatus(status, '');
+  } catch (error) {
+    setStatus(status, (error && error.message) || String(error), 'error');
+  }
+}
+
+async function loadAi() {
+  const status = byId('status');
+  try {
+    populateAi(await aiRequest('GET'));
+    byId('save').disabled = false;
+    setStatus(status, '设置只在本机保存。');
+  } catch (error) {
+    setStatus(status, (error && error.message) || String(error), 'error');
+  }
+}
+
+function boot() {
+  wireTabs();
+  selectTab('chat');
+  // 刷新后地址栏里的令牌已被清掉，此时靠首次访问换来的 HttpOnly cookie 继续；
+  // cookie 也没了的时候，各面板自己的请求会失败并显示重新打开设置的提示。
+  mountProtocolSelect();
+  mountBalanceSelect();
+  wireAiPanel();
+  byId('pet-save').addEventListener('click', savePets);
+  window.addEventListener('beforeunload', (event) => {
+    if (!state.dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  loadPets();
+  loadAi();
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/core.ts
+function coreScript(routePath, consts) {
+	return `
+const TOKEN = new URLSearchParams(location.hash.slice(1)).get('token') || '';
+history.replaceState(null, '', location.pathname);
+const API = ${JSON.stringify(routePath)};
+const VOICES = ${JSON.stringify(consts.voices)};
+const FONT_IDS = ${JSON.stringify(consts.fonts)};
+const DISPLAYS = ${JSON.stringify(consts.displays)};
+const CORNERS = ${JSON.stringify(consts.corners)};
+const FALLBACK_PHYSICS = ${JSON.stringify(consts.physics)};
+const FALLBACK_FONT = ${JSON.stringify(consts.font)};
+const FALLBACK_WEIGHTS = ${JSON.stringify(consts.weights)};
+const FALLBACK_INTERVAL_SEC = 300;
+const state = { config: null, meta: null, globals: null, pets: {}, prompts: {}, entry: 'main', petIndex: 0, dirty: false };
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function make(tag, props, kids) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const key of Object.keys(props)) {
+      const value = props[key];
+      if (value === undefined || value === null || value === false) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = value;
+      else if (key === 'value') node.value = value;
+      else if (key === 'checked' || key === 'disabled' || key === 'hidden') node[key] = value === true;
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2).toLowerCase(), value);
+      else node.setAttribute(key, String(value));
+    }
+  }
+  if (kids) {
+    for (const kid of kids) {
+      if (kid === null || kid === undefined || kid === false) continue;
+      node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    }
+  }
+  return node;
+}
+
+function setStatus(node, text, kind) {
+  if (!node) return;
+  node.textContent = text;
+  node.dataset.error = kind === 'error' ? 'true' : 'false';
+  node.dataset.ok = kind === 'ok' ? 'true' : 'false';
+}
+
+function markDirty(value) {
+  state.dirty = value;
+  const badge = byId('dirty');
+  if (badge) badge.hidden = !value;
+}
+
+async function callApi(method, path, body) {
+  const response = await fetch(API + path, {
+    method: method,
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: body
+      ? { 'X-DSH-Zdd-Pet-Token': TOKEN, 'Content-Type': 'application/json' }
+      : { 'X-DSH-Zdd-Pet-Token': TOKEN },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('打开凭据已失效，请从桌宠菜单重新打开设置。');
+    if (response.status === 429) throw new Error('保存过于频繁，请稍等一分钟再试。');
+    throw new Error((data && (data.message || data.error)) || '本机接口暂时无法处理请求');
+  }
+  return data;
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/globals.ts
+function globalsScript() {
+	return `
+function globalCards() {
+  return [globalFlagsCard, voiceCard, fontCard, physicsCard, motionCard, modelCard, advancedCard];
+}
+
+function setGlobal(key, value) {
+  state.globals[key] = value;
+}
+
+function globalFlagsCard() {
+  const g = state.globals;
+  return card('全局开关', '对所有宠物生效；保存后立即写盘。', [
+    toggleRow('g-notify', '系统通知', '对话完成、生成失败、权限申请等事件弹出系统通知。', g.notificationsEnabled, (value) => setGlobal('notificationsEnabled', value)),
+    toggleRow('g-click', '点击音效', '点击宠物时播放内置音效。', g.clickSoundEnabled, (value) => setGlobal('clickSoundEnabled', value)),
+    toggleRow('g-whisper-image', '碎碎念配图', '碎碎念时允许模型挑一张表情包。', g.whisperImageEnabled, (value) => setGlobal('whisperImageEnabled', value)),
+    toggleRow('g-chat-image', '对话配图', '对话时把表情包清单交给模型按语境选图。', g.chatImageEnabled, (value) => setGlobal('chatImageEnabled', value)),
+    toggleRow('g-chat-anim', '对话动作联动', '对话时让模型挑一个动作当场表演。', g.chatAnimationEnabled, (value) => setGlobal('chatAnimationEnabled', value)),
+    toggleRow('g-confine', '锁定在当前屏幕', '抛掷与自主漫游只在当前所在的这块屏幕里活动。', g.confineToScreen, (value) => setGlobal('confineToScreen', value)),
+    toggleRow('g-tray', '系统托盘图标', '桌面模式常驻托盘；关掉后只能从任务栏找回。', g.trayEnabled, (value) => setGlobal('trayEnabled', value)),
+  ]);
+}
+
+function voiceCard() {
+  const g = state.globals;
+  return card('语音', '四类语音各一个开关，互不从属；音色与音量共用。', [
+    toggleRow('g-voice', '手动播报', '右键菜单与斜杠命令触发的碎碎念、对话回复念出来。', g.voiceEnabled, (value) => setGlobal('voiceEnabled', value)),
+    selectField('g-voice-name', '音色', g.voiceName, VOICES.map((voice) => ({ value: voice.id, label: voice.name + ' · ' + voice.tag })), (value) => setGlobal('voiceName', value)),
+    numberField('g-voice-volume', '音量（0–1）', g.voiceVolume, (value) => setGlobal('voiceVolume', clampNumber(value, 0, 1, 1)), { min: 0, max: 1, step: 0.05 }),
+    toggleRow('g-voice-whisper', '周期碎碎念也念出来', '定时生成的那句碎碎念念出来。', g.voiceWhisperEnabled, (value) => setGlobal('voiceWhisperEnabled', value)),
+    toggleRow('g-voice-todo', '待办提醒也念出来', '到点的待办提醒念出来。', g.voiceTodoEnabled, (value) => setGlobal('voiceTodoEnabled', value)),
+    toggleRow('g-voice-notify', '通知播报', '任务完成、出错、等你确认时念一句配置的工作状态文案；页面被藏起来也照样念。', g.voiceNotifyEnabled, (value) => setGlobal('voiceNotifyEnabled', value)),
+  ]);
+}
+
+function fontCard() {
+  const g = state.globals;
+  return card('外观与字体', '气泡、悬浮提示与对话窗共用的字体。', [
+    selectField('g-font-family', '字体', g.font.family, FONT_IDS.map((id) => ({ value: id, label: id })), (value) => { g.font = Object.assign({}, g.font, { family: value }); }),
+    numberField('g-font-size', '字号（px）', g.font.size, (value) => { g.font = Object.assign({}, g.font, { size: clampNumber(value, 4, 200, 21) }); }, { min: 4, max: 200, step: 1, hint: '只影响气泡与悬浮提示，对话窗字号不变。' }),
+    toggleRow('g-font-follow', '字号随宠物大小缩放', '关掉后恒为上面的字号，不随窗口尺寸变化。', g.font.followPet, (value) => { g.font = Object.assign({}, g.font, { followPet: value }); }),
+  ]);
+}
+
+function physicsCard() {
+  const g = state.globals;
+  return card('拖拽与抛掷手感', '所有宠物共用；数值改动保存后生效。', [
+    make('div', { class: 'grid2' }, [
+      numberField('g-gravity', '重力加速度（px/s²）', g.physics.gravity, (value) => { g.physics = Object.assign({}, g.physics, { gravity: clampNumber(value, 0, 10000, 1400) }); }, { min: 0, max: 10000, step: 10 }),
+      numberField('g-restitution', '碰壁弹性（0–1）', g.physics.restitution, (value) => { g.physics = Object.assign({}, g.physics, { restitution: clampNumber(value, 0, 1, 0.78) }); }, { min: 0, max: 1, step: 0.01 }),
+    ]),
+    make('div', { class: 'grid2' }, [
+      numberField('g-friction', '接触面摩擦（/s）', g.physics.groundFriction, (value) => { g.physics = Object.assign({}, g.physics, { groundFriction: clampNumber(value, 0, 30, 2.5) }); }, { min: 0, max: 30, step: 0.1 }),
+      numberField('g-power', '总力度', g.physics.throwPower, (value) => { g.physics = Object.assign({}, g.physics, { throwPower: clampNumber(value, 0.1, 5, 1) }); }, { min: 0.1, max: 5, step: 0.1 }),
+    ]),
+    toggleRow('g-ceiling', '顶部反弹', '关掉后上方没有边界，抛掷可以飞出屏幕顶部。', g.physics.ceilingBounce !== false, (value) => { g.physics = Object.assign({}, g.physics, { ceilingBounce: value }); }),
+    toggleRow('g-collide', '宠物互相碰撞', '飞行中的宠物撞到其它宠物时按动量弹开。', g.physics.petCollision !== false, (value) => { g.physics = Object.assign({}, g.physics, { petCollision: value }); }),
+  ]);
+}
+
+function motionCard() {
+  const g = state.globals;
+  const weights = g.animationWeights;
+  const actionId = 'g-motion-action';
+  const actionValue = () => String(Math.max(0, 100 - weights.idle - weights.turn - weights.move));
+  const syncAction = () => {
+    const node = byId(actionId);
+    if (node) node.value = actionValue();
+  };
+  const weightField = (key, label) =>
+    numberField('g-motion-' + key, label, weights[key], (value) => {
+      const others = weights.idle + weights.turn + weights.move - weights[key];
+      const max = Math.max(0, 100 - others);
+      weights[key] = Math.round(Math.min(Math.max(value, 0), max));
+      syncAction();
+    }, { min: 0, max: 100, step: 1 });
+  return card('动作频率', '四个框：待机 / 转向 / 移动可改，随机动作自动算（= 100 − 其余三项）。所有宠物共用；pet pack 可在自己种类文件里覆盖。', [
+    make('div', { class: 'grid2' }, [
+      weightField('idle', '待机（%）'),
+      weightField('turn', '转向（%）'),
+      weightField('move', '移动（%）'),
+      numberField(actionId, '随机动作（%，自动）', actionValue(), () => {}, { min: 0, max: 100, step: 1, readOnly: true }),
+    ]),
+  ]);
+}
+
+function modelCard() {
+  const g = state.globals;
+  return card('对话上下文', '模型与接入方式在「AI 服务商」页配置；这里只管对话保留多少上下文。', [
+    make('div', { class: 'grid2' }, [
+      numberField('g-memory', '对话记忆轮数', g.chatMemoryRounds, (value) => setGlobal('chatMemoryRounds', Math.round(clampNumber(value, 0, 100, 0))), { min: 0, max: 100, step: 1, hint: '0 表示不带历史。' }),
+      numberField('g-image-limit', '配图张数上限', g.chatImageLimit, (value) => setGlobal('chatImageLimit', Math.round(clampNumber(value, 0, 50, 0))), { min: 0, max: 50, step: 1, hint: '0 表示不限制。' }),
+    ]),
+  ]);
+}
+
+function pathRows() {
+  const meta = state.meta || {};
+  const rows = [];
+  const pairs = [['用户配置', meta.user], ['内置默认', meta.default], ['动画配置', meta.animations], ['表情包', meta.memes], ['待办数据', meta.todos], ['日志', meta.logs]];
+  for (const pair of pairs) {
+    if (!pair[1]) continue;
+    rows.push(make('div', { class: 'pathRow' }, [
+      make('span', { class: 'pathKey', text: pair[0] }),
+      make('span', { class: 'pathValue', text: String(pair[1]), title: String(pair[1]) }),
+    ]));
+  }
+  if (Array.isArray(meta.storage)) {
+    for (const item of meta.storage) {
+      if (!item || !item.path) continue;
+      rows.push(make('div', { class: 'pathRow' }, [
+        make('span', { class: 'pathKey', text: item.exists === false ? '未生成' : '已存在' }),
+        make('span', { class: 'pathValue', text: String(item.path), title: String(item.path) }),
+      ]));
+    }
+  }
+  return rows.length ? rows : [make('p', { class: 'empty', text: '读不到落盘位置信息。' })];
+}
+
+function advancedCard() {
+  return card('高级', '手改配置文件时可以从这里找到位置；「同步」会用内置默认覆盖用户配置。', [
+    make('div', {}, pathRows()),
+    make('div', { class: 'testRow' }, [button('用内置默认覆盖用户配置', syncFromDefault)]),
+  ]);
+}
+
+async function syncFromDefault() {
+  const confirmed = await confirmDialog({
+    title: '用内置默认覆盖用户配置',
+    text: '现有的用户配置会被整份替换，这个操作不能撤销。',
+    confirmLabel: '覆盖',
+    danger: true,
+  });
+  if (!confirmed) return;
+  const status = byId('pet-status');
+  setStatus(status, '正在同步…');
+  try {
+    const merged = await callApi('POST', '/config');
+    initDrafts(merged);
+    markDirty(false);
+    renderPetsPanel();
+    setStatus(status, '已用内置默认覆盖用户配置。', 'ok');
+  } catch (error) {
+    setStatus(status, error && error.message ? error.message : String(error), 'error');
+  }
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/model-picker.ts
+function modelPickerScript() {
+	return `
+const AI_MODELS_URL = '/standalone-ai/models';
+
+/** 上一次拉到的候选；null 表示还没拉过，需要先请求。 */
+let modelOptions = null;
+
+function modelLabel(model) {
+  return model.name && model.name !== model.id ? model.name + '（' + model.id + '）' : model.id;
+}
+
+function openModelMenu(trigger) {
+  if (!modelOptions) return;
+  openSelectMenu(
+    trigger,
+    modelOptions,
+    byId('model').value.trim(),
+    (picked) => {
+      byId('model').value = picked;
+      markDirty(true);
+      setStatus(byId('model-result'), '已填入模型名称，记得保存。', 'ok');
+    },
+    byId('model-combo'),
+  );
+}
+
+function forgetModelOptions() {
+  modelOptions = null;
+  setStatus(byId('model-result'), '');
+}
+
+async function fetchModelOptions(trigger) {
+  const result = byId('model-result');
+  trigger.disabled = true;
+  setStatus(result, '正在向端点请求模型列表…');
+  try {
+    const response = await fetch(AI_MODELS_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'X-DSH-Zdd-Pet-Token': TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        protocol: protocolSelect ? protocolSelect.getValue() : 'openai-compatible',
+        baseUrl: byId('baseUrl').value.trim(),
+        apiKey: byId('apiKey').value,
+      }),
+    });
+    if (response.status === 403) throw new Error('打开凭据已失效。请从桌宠菜单重新打开设置。');
+    const data = await response.json().catch(() => null);
+    if (!data) throw new Error('本机接口没有返回结果，请重试。');
+    if (!data.ok) throw new Error(data.message || '拉取失败');
+    const models = data.models || [];
+    if (!models.length) {
+      setStatus(result, '端点没有返回任何模型，请手动填写。', 'error');
+      return;
+    }
+    modelOptions = models.map((model) => ({ value: model.id, label: modelLabel(model) }));
+    setStatus(result, '已拉取 ' + models.length + ' 个模型，选中即可填入。', 'ok');
+    openModelMenu(trigger);
+  } catch (error) {
+    setStatus(result, error && error.message ? error.message : String(error), 'error');
+  } finally {
+    trigger.disabled = false;
+  }
+}
+
+function wireModelPicker() {
+  const toggle = byId('model-toggle');
+  if (!toggle) return;
+  toggle.append(chevron());
+  toggle.addEventListener('click', () => {
+    if (modelOptions) openModelMenu(toggle);
+    else void fetchModelOptions(toggle);
+  });
+  byId('baseUrl').addEventListener('input', forgetModelOptions);
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/overlay.ts
+function overlayScript() {
+	return `
+let openMenu = null;
+
+function closeMenu() {
+  if (!openMenu) return;
+  const dispose = openMenu;
+  openMenu = null;
+  dispose();
+}
+
+function chevron() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('class', 'selectChevron');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M4 6.5 8 10.5 12 6.5');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.4');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.append(path);
+  return svg;
+}
+
+function placeMenu(menu, trigger, widthOf) {
+  const rect = trigger.getBoundingClientRect();
+  const span = widthOf ? widthOf.getBoundingClientRect() : rect;
+  const below = window.innerHeight - rect.bottom;
+  const height = Math.min(260, Math.max(120, below > 200 ? below - 16 : rect.top - 16));
+  menu.style.left = Math.round(span.left) + 'px';
+  menu.style.width = Math.round(span.width) + 'px';
+  menu.style.maxHeight = Math.round(height) + 'px';
+  if (below > 200 || rect.top < 220) menu.style.top = Math.round(rect.bottom + 4) + 'px';
+  else menu.style.top = Math.round(rect.top - height - 4) + 'px';
+}
+
+/**
+ * 打开一个下拉菜单。
+ * @param trigger - 触发按钮，用来定位、判断「点外面」与标记展开状态。
+ * @param options - 候选项，每项 { value, label }。
+ * @param current - 当前值。
+ * @param onPick - 选中回调。
+ * @param widthOf - 菜单对齐宽度的参照元素；缺省与 trigger 同宽，用于触发按钮比菜单窄的组合框。
+ */
+function openSelectMenu(trigger, options, current, onPick, widthOf) {
+  closeMenu();
+  const menu = make('ul', { class: 'selectMenu' });
+  menu.setAttribute('role', 'listbox');
+  const items = [];
+  for (const option of options) {
+    const item = make('li', { class: 'selectItem', text: option.label });
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', option.value === current ? 'true' : 'false');
+    item.addEventListener('click', () => pick(option.value));
+    menu.append(item);
+    items.push({ node: item, value: option.value });
+  }
+  document.body.append(menu);
+  placeMenu(menu, trigger, widthOf);
+  trigger.setAttribute('aria-expanded', 'true');
+  let active = Math.max(0, options.findIndex((option) => option.value === current));
+  highlight(active);
+
+  function highlight(index) {
+    active = (index + items.length) % items.length;
+    items.forEach((entry, position) => {
+      const on = position === active;
+      entry.node.classList.toggle('active', on);
+      if (on) entry.node.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function pick(value) {
+    dispose();
+    onPick(value);
+  }
+
+  function onKey(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      dispose();
+      trigger.focus();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      highlight(active + (event.key === 'ArrowDown' ? 1 : -1));
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      pick(items[active].value);
+      trigger.focus();
+    } else if (event.key === 'Tab') {
+      dispose();
+    }
+  }
+
+  function onPointer(event) {
+    if (menu.contains(event.target) || trigger.contains(event.target)) return;
+    dispose();
+  }
+
+  function onReflow() {
+    placeMenu(menu, trigger, widthOf);
+  }
+
+  function dispose() {
+    if (!menu.isConnected) return;
+    menu.remove();
+    trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('pointerdown', onPointer, true);
+    window.removeEventListener('scroll', onReflow, true);
+    window.removeEventListener('resize', onReflow);
+    if (openMenu === dispose) openMenu = null;
+  }
+
+  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('pointerdown', onPointer, true);
+  window.addEventListener('scroll', onReflow, true);
+  window.addEventListener('resize', onReflow);
+  openMenu = dispose;
+}
+
+/**
+ * 造一个下拉选择器。
+ * @param options - 候选项，每项 { value, label }。
+ * @param value - 初始值。
+ * @param onChange - 用户选择后回调。
+ * @returns 根节点与读写当前值的方法。
+ */
+function createSelect(options, value, onChange) {
+  const root = make('div', { class: 'select' });
+  const trigger = make('button', { type: 'button', class: 'selectTrigger' });
+  trigger.setAttribute('aria-haspopup', 'listbox');
+  trigger.setAttribute('aria-expanded', 'false');
+  const label = make('span', { class: 'selectValue' });
+  trigger.append(label, chevron());
+  root.append(trigger);
+  let current = value;
+
+  function paint() {
+    const hit = options.find((option) => option.value === current);
+    label.textContent = hit ? hit.label : current;
+    trigger.disabled = options.length <= 1;
+  }
+
+  trigger.addEventListener('click', () => {
+    if (openMenu) {
+      closeMenu();
+      return;
+    }
+    openSelectMenu(trigger, options, current, (picked) => {
+      current = picked;
+      paint();
+      onChange(picked);
+    });
+  });
+
+  paint();
+  return {
+    root: root,
+    getValue: () => current,
+    setValue: (next) => {
+      current = next;
+      paint();
+    },
+    redraw: paint,
+  };
+}
+
+/**
+ * 弹出确认框。
+ * @param options - 标题、正文、按钮文案与是否危险操作。
+ * @returns 用户确认时为 true。
+ */
+function confirmDialog(options) {
+  const config = options || {};
+  return new Promise((resolve) => {
+    const mask = make('div', { class: 'dialogMask' });
+    const panel = make('div', { class: 'dialog' });
+    panel.setAttribute('role', 'alertdialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', config.title || '确认');
+    const text = make('p', { class: 'dialogText', text: config.text || '' });
+    // cancelLabel 传 null 表示只提示、不给取消：用于「不能删除最后一只」这类纯说明。
+    const cancel =
+      config.cancelLabel === null
+        ? null
+        : make('button', { type: 'button', class: 'btn', text: config.cancelLabel || '取消' });
+    const confirm = make('button', {
+      type: 'button',
+      class: 'btn ' + (config.danger ? 'danger' : 'primary'),
+      text: config.confirmLabel || '确定',
+    });
+    const actions = make('div', { class: 'dialogActions' }, cancel ? [cancel, confirm] : [confirm]);
+    panel.append(make('h2', { class: 'dialogTitle', text: config.title || '确认' }), text, actions);
+    mask.append(panel);
+    document.body.append(mask);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey, true);
+      mask.remove();
+      resolve(result);
+    }
+
+    function onKey(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        close(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !cancel) return;
+      event.preventDefault();
+      (document.activeElement === confirm ? cancel : confirm).focus();
+    }
+
+    if (cancel) cancel.addEventListener('click', () => close(false));
+    confirm.addEventListener('click', () => close(true));
+    mask.addEventListener('pointerdown', (event) => {
+      if (event.target === mask) close(false);
+    });
+    document.addEventListener('keydown', onKey, true);
+    confirm.focus();
+  });
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/pet-card.ts
+function petCardScript() {
+	return `
+function petBar() {
+  const list = currentPets();
+  const options = list.map((pet, index) => ({ value: String(index), label: (pet.name || pet.id) + '（' + pet.id + '）' }));
+  const picker = createSelect(options, String(state.petIndex), (value) => {
+    state.petIndex = Number(value);
+    renderPetsPanel();
+  });
+  picker.root.id = 'pet-picker';
+  picker.root.firstElementChild.setAttribute('aria-label', '选择宠物');
+  return make('div', { class: 'petBar' }, [
+    picker.root,
+    button('新增', addPet),
+    button('删除', removePet, { danger: true }),
+  ]);
+}
+
+function addPet() {
+  const list = currentPets();
+  let index = list.length + 1;
+  let id = (state.entry === 'main' ? 'pet-' : '') + index;
+  while (list.some((pet) => pet.id === id)) {
+    index += 1;
+    id = (state.entry === 'main' ? 'pet-' : '') + index;
+  }
+  list.push({
+    id: id,
+    name: '新宠物',
+    size: 462,
+    display: 'none',
+    balanceEnabled: true,
+    whisperEnabled: true,
+    workStatusEnabled: true,
+    fixedEnabled: false,
+    position: { corner: 'bottom-right', marginX: 40, marginY: 40 },
+  });
+  state.petIndex = list.length - 1;
+  markDirty(true);
+  renderPetsPanel();
+}
+
+async function removePet() {
+  const list = currentPets();
+  const pet = list[state.petIndex];
+  if (!pet) return;
+  if (list.length <= 1) {
+    await confirmDialog({
+      title: '不能删除最后一只',
+      text:
+        state.entry === 'main'
+          ? '默认条目至少要留一只宠物：删到 0 会被宿主按非法拒绝，重开时还会退回内置的默认列表。'
+          : '每个条目至少要留一只宠物：删到 0 会被宿主按非法拒绝。',
+      confirmLabel: '知道了',
+      cancelLabel: null,
+    });
+    return;
+  }
+  const confirmed = await confirmDialog({
+    title: '删除宠物',
+    text: '删除「' + (pet.name || pet.id) + '」？点保存后才会写盘。',
+    confirmLabel: '删除',
+    danger: true,
+  });
+  if (!confirmed) return;
+  list.splice(state.petIndex, 1);
+  state.petIndex = Math.max(0, Math.min(state.petIndex, list.length - 1));
+  markDirty(true);
+  renderPetsPanel();
+}
+
+function petCard() {
+  const list = currentPets();
+  const pet = list[state.petIndex];
+  if (!pet) {
+    return card('宠物', null, [
+      make('p', { class: 'empty', text: '这个条目下还没有实例，点「新增」加一只。' }),
+      make('div', { class: 'testRow' }, [button('新增', addPet)]),
+    ]);
+  }
+  if (!pet.position) pet.position = { corner: 'bottom-right', marginX: 40, marginY: 40 };
+  const sizePercent = typeof pet.sizePercent === 'number' ? String(pet.sizePercent) : '';
+  const children = [
+    petBar(),
+    avatarRow(pet),
+    textField('pet-name', '显示名', pet.name || '', (value) => { pet.name = value; }),
+    textField('pet-id', '标识（id）', pet.id, (value) => { pet.id = value.trim(); }, { disabled: true, hint: '标识决定素材目录与记忆文件，建好之后不能在这里改。' }),
+    make('div', { class: 'grid2' }, [
+      numberField('pet-size', '画框大小（px）', pet.size, (value) => { pet.size = value; }, { min: 1, step: 1 }),
+      textField('pet-size-percent', '占屏宽度（%）', sizePercent, (value) => {
+        if (value.trim() === '') delete pet.sizePercent;
+        else pet.sizePercent = Number(value);
+      }, { hint: '留空表示按 px 显示。' }),
+    ]),
+    selectField('pet-display', '显示位置', pet.display, DISPLAYS.map((value) => ({ value: value, label: displayLabel(value) })), (value) => { pet.display = value; }, 'web=仅浏览器 / desktop=仅桌面 / both=两者都显示 / none=都不显示'),
+    make('div', { class: 'grid2' }, [
+      selectField('pet-corner', '停靠角落', pet.position.corner, CORNERS.map((value) => ({ value: value, label: cornerLabel(value) })), (value) => { pet.position.corner = value; }),
+      numberField('pet-margin-x', '水平边距（px）', pet.position.marginX, (value) => { pet.position.marginX = value; }, { step: 1 }),
+    ]),
+    numberField('pet-margin-y', '垂直边距（px）', pet.position.marginY, (value) => { pet.position.marginY = value; }, { step: 1 }),
+    toggleRow('pet-balance', '余额功能', '开启后这只宠物会在余额变化时播动画并显示气泡。', pet.balanceEnabled !== false, (value) => { pet.balanceEnabled = value; }),
+    toggleRow('pet-whisper', '碎碎念', '按周期让模型生成一句话并播放；不需要就关掉，省调用额度。', pet.whisperEnabled !== false, (value) => { pet.whisperEnabled = value; }),
+    toggleRow('pet-work', '工作状态联动', '跟随会话状态切换动画与气泡，不调用模型。', pet.workStatusEnabled !== false, (value) => { pet.workStatusEnabled = value; }),
+    toggleRow('pet-fixed', '固定不动', '开启后随机链不再抽转向与移动；手动点播与拖拽照常。', pet.fixedEnabled === true, (value) => { pet.fixedEnabled = value; }),
+    make('div', { class: 'field' }, [
+      make('label', { for: 'pet-persona', text: '这只的人设（可选）' }),
+      personaWrap(pet),
+      make('p', { class: 'fieldHint', text: personaHint() }),
+      make('p', { class: 'fieldHint', text: '发给模型的 system = 这段 + 自动追加的名字与时间背景，别在这里重复写。' }),
+    ]),
+  ];
+  return card('宠物', '这里编辑的是 ' + (state.entry === 'main' ? '默认条目' : state.entry) + ' 的实例；改动在点保存后写盘。', children);
+}
+
+/** 条目人设提示：占位符里放的就是条目人设正文，这里只说规则。 */
+function personaHint() {
+  if (state.prompts[state.entry]) return '留空 = 跟随所属条目的人设，输入框里的灰色文字就是那份内容。';
+  return '这个条目还没写人设；留空表示这只宠物没有系统提示词。';
+}
+
+/** 人设输入框连同右下角的字数统计；占位符用条目人设全文。 */
+function personaWrap(pet) {
+  const wrap = make('div', { class: 'personaWrap' });
+  const area = make('textarea', { id: 'pet-persona' });
+  area.value = typeof pet.whisperPrompt === 'string' ? pet.whisperPrompt : '';
+  area.maxLength = 4000;
+  area.rows = 4;
+  const entryPrompt = state.prompts[state.entry] || '';
+  area.placeholder = entryPrompt || '留空则没有系统提示词';
+  const count = make('span', { class: 'personaCount', text: area.value.length + ' 字' });
+  area.addEventListener('input', () => {
+    const text = area.value.trim();
+    if (text) pet.whisperPrompt = area.value;
+    else delete pet.whisperPrompt;
+    count.textContent = area.value.length + ' 字';
+    markDirty(true);
+  });
+  wrap.append(area, count);
+  return wrap;
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/pets.ts
+function petsScript() {
+	return `
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/** 原配置里的 physics 段，用来判断哪些可选键「本来就有」。 */
+let physicsSource = null;
+
+/** 动作频率权重：缺字段或非法项回落到内置默认，三项各自独立判定。 */
+function pickWeights(raw) {
+  const base = Object.assign({}, FALLBACK_WEIGHTS);
+  if (!raw || typeof raw !== 'object') return base;
+  for (const key of ['idle', 'turn', 'move']) {
+    const value = Number(raw[key]);
+    if (Number.isFinite(value) && value >= 0) base[key] = value;
+  }
+  return base;
+}
+
+function pickGlobals(main) {
+  const source = main || {};
+  const physics = source.physics && typeof source.physics === 'object' ? source.physics : null;
+  physicsSource = physics;
+  return {
+    notificationsEnabled: source.notificationsEnabled !== false,
+    clickSoundEnabled: source.clickSoundEnabled !== false,
+    whisperImageEnabled: source.whisperImageEnabled === true,
+    chatImageEnabled: source.chatImageEnabled === true,
+    chatAnimationEnabled: source.chatAnimationEnabled === true,
+    confineToScreen: source.confineToScreen === true,
+    trayEnabled: source.trayEnabled !== false,
+    voiceEnabled: source.voiceEnabled === true,
+    voiceName: typeof source.voiceName === 'string' && source.voiceName ? source.voiceName : (VOICES[1] ? VOICES[1].id : ''),
+    voiceVolume: typeof source.voiceVolume === 'number' ? source.voiceVolume : 1,
+    voiceWhisperEnabled: source.voiceWhisperEnabled !== false,
+    voiceTodoEnabled: source.voiceTodoEnabled !== false,
+    // 与 voiceTodo/voiceWhisper 的 !== false 写法不同：本项默认关，字段缺失时不能显示成已勾选，
+    // 否则设置页显示「开」而播放端拿到 undefined 当成「关」，两边打架。
+    voiceNotifyEnabled: source.voiceNotifyEnabled === true,
+    physics: Object.assign({}, FALLBACK_PHYSICS, source.physics || {}),
+    font: Object.assign({}, FALLBACK_FONT, source.font || {}),
+    chatMemoryRounds: Number.isFinite(Number(source.chatMemoryRounds)) ? Number(source.chatMemoryRounds) : 0,
+    chatImageLimit: Number.isFinite(Number(source.chatImageLimit)) ? Number(source.chatImageLimit) : 0,
+    animationWeights: pickWeights(source.animationWeights),
+  };
+}
+
+function initDrafts(config) {
+  state.config = config;
+  state.globals = pickGlobals(config.main);
+  state.pets = {};
+  state.prompts = {};
+  for (const key of Object.keys(config)) {
+    const conf = config[key];
+    if (!conf || !Array.isArray(conf.pets)) continue;
+    state.pets[key] = cloneJson(conf.pets);
+    if (typeof conf.whisperPrompt === 'string') state.prompts[key] = conf.whisperPrompt;
+  }
+  if (!state.pets.main) state.pets.main = [];
+  if (!state.pets[state.entry]) state.entry = 'main';
+}
+
+function currentPets() {
+  return state.pets[state.entry] || [];
+}
+
+function currentPet() {
+  return currentPets()[state.petIndex];
+}
+
+function entryTabs(keys) {
+  const tabs = keys.map((key) => tabButton(key === 'main' ? '默认条目' : key, key === state.entry, () => {
+    state.entry = key;
+    state.petIndex = 0;
+    renderPetsPanel();
+  }));
+  return make('div', { class: 'tabs' }, tabs);
+}
+
+function packNote() {
+  return card('条目说明', null, [
+    make('p', { class: 'cardHint', text: '这个条目来自文件宠物，只保存它自己的实例；全局开关与语音外观在「默认条目」里改。' }),
+  ]);
+}
+
+function renderPetsPanel() {
+  const host = byId('pet-cards');
+  if (!host) return;
+  host.textContent = '';
+  const keys = Object.keys(state.pets);
+  if (keys.length > 1) host.append(entryTabs(keys));
+  host.append(petCard());
+  if (state.entry === 'main') {
+    for (const builder of globalCards()) host.append(builder());
+  } else {
+    host.append(packNote());
+  }
+}
+
+/** 提交用的 physics 段：原配置没写过的可选键不带出去，避免保存时凭空补键。 */
+function physicsBody() {
+  const out = Object.assign({}, state.globals.physics);
+  for (const key of ['tiltGravity', 'shakeThrow', 'hapticEnabled']) {
+    if (!physicsSource || !(key in physicsSource)) delete out[key];
+  }
+  return out;
+}
+
+function petsBody() {
+  return Object.assign({ pets: state.pets.main }, {
+    notificationsEnabled: state.globals.notificationsEnabled,
+    clickSoundEnabled: state.globals.clickSoundEnabled,
+    whisperImageEnabled: state.globals.whisperImageEnabled,
+    chatImageEnabled: state.globals.chatImageEnabled,
+    chatAnimationEnabled: state.globals.chatAnimationEnabled,
+    confineToScreen: state.globals.confineToScreen,
+    trayEnabled: state.globals.trayEnabled,
+    voiceEnabled: state.globals.voiceEnabled,
+    voiceName: state.globals.voiceName,
+    voiceVolume: state.globals.voiceVolume,
+    voiceWhisperEnabled: state.globals.voiceWhisperEnabled,
+    voiceTodoEnabled: state.globals.voiceTodoEnabled,
+    voiceNotifyEnabled: state.globals.voiceNotifyEnabled,
+    physics: physicsBody(),
+    font: state.globals.font,
+    chatMemoryRounds: state.globals.chatMemoryRounds,
+    chatImageLimit: state.globals.chatImageLimit,
+    animationWeights: state.globals.animationWeights,
+  });
+}
+
+async function savePets() {
+  const status = byId('pet-status');
+  const saveBtn = byId('pet-save');
+  if (state.entry === 'main' && currentPets().length === 0) {
+    setStatus(status, '默认条目至少要保留一只宠物，否则宿主会拒绝保存。', 'error');
+    return;
+  }
+  saveBtn.disabled = true;
+  setStatus(status, '正在保存…');
+  try {
+    let merged;
+    if (state.entry === 'main') {
+      merged = await callApi('PUT', '/config', petsBody());
+      if (merged && merged.ok === false && merged.reason === 'user-config-unparsable') {
+        const file = merged.userFile ? String(merged.userFile) : '用户配置';
+        const confirmed = await confirmDialog({
+          title: '配置文件无法解析',
+          text: file + '\\n继续保存会按白名单重建这个文件，里面其它内容会丢失。',
+          confirmLabel: '覆盖保存',
+          danger: true,
+        });
+        if (!confirmed) {
+          setStatus(status, '已取消保存。', 'error');
+          return;
+        }
+        merged = await callApi('PUT', '/config?force=1', petsBody());
+      }
+    } else {
+      merged = await callApi('POST', '/pet-config', { entry: state.entry, pets: currentPets() });
+    }
+    if (!merged || merged.ok === false) {
+      setStatus(status, (merged && (merged.message || merged.reason)) || '宿主拒绝了这次保存。', 'error');
+      return;
+    }
+    initDrafts(merged);
+    markDirty(false);
+    renderPetsPanel();
+    setStatus(status, '已保存到本机。', 'ok');
+  } catch (error) {
+    setStatus(status, error && error.message ? error.message : String(error), 'error');
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/script/widgets.ts
+function widgetsScript() {
+	return `
+function fieldRow(id, label, control, hint) {
+  return make('div', { class: 'field' }, [
+    make('label', { for: id, text: label }),
+    control,
+    hint ? make('p', { class: 'fieldHint', text: hint }) : null,
+  ]);
+}
+
+function textField(id, label, value, onChange, opts) {
+  const input = make('input', { type: 'text', id: id, value: value });
+  if (opts && opts.maxLength) input.maxLength = opts.maxLength;
+  if (opts && opts.disabled) input.disabled = true;
+  if (opts && opts.placeholder) input.placeholder = opts.placeholder;
+  input.addEventListener('input', () => {
+    onChange(input.value);
+    markDirty(true);
+  });
+  return fieldRow(id, label, input, opts && opts.hint);
+}
+
+function numberField(id, label, value, onChange, opts) {
+  const input = make('input', { type: 'number', id: id, value: String(value) });
+  if (opts) {
+    if (opts.min !== undefined) input.min = String(opts.min);
+    if (opts.max !== undefined) input.max = String(opts.max);
+    if (opts.step !== undefined) input.step = String(opts.step);
+    if (opts.disabled) input.disabled = true;
+    if (opts.readOnly) {
+      input.readOnly = true;
+      input.tabIndex = -1;
+    }
+  }
+  input.addEventListener('input', () => {
+    const parsed = Number(input.value);
+    if (input.value === '' || !Number.isFinite(parsed)) return;
+    onChange(parsed);
+    markDirty(true);
+  });
+  return fieldRow(id, label, input, opts && opts.hint);
+}
+
+function selectField(id, label, value, options, onChange, hint) {
+  const select = createSelect(options, value, (picked) => {
+    onChange(picked);
+    markDirty(true);
+  });
+  select.root.id = id;
+  const labelId = id + '-label';
+  select.root.firstElementChild.setAttribute('aria-labelledby', labelId);
+  return make('div', { class: 'field' }, [
+    make('span', { class: 'fieldLabel', id: labelId, text: label }),
+    select.root,
+    hint ? make('p', { class: 'fieldHint', text: hint }) : null,
+  ]);
+}
+
+function toggleRow(id, title, hint, checked, onChange) {
+  const box = make('input', { type: 'checkbox', id: id, checked: checked });
+  box.addEventListener('change', () => {
+    onChange(box.checked);
+    markDirty(true);
+  });
+  return make('label', { class: 'rowCheck' }, [
+    box,
+    make('span', { class: 'rowCheckText' }, [
+      make('span', { class: 'rowCheckTitle', text: title }),
+      hint ? make('span', { class: 'rowCheckHint', text: hint }) : null,
+    ]),
+  ]);
+}
+
+function card(title, hint, kids) {
+  return make('div', { class: 'card' }, [
+    make('div', { class: 'cardHead' }, [make('h2', { class: 'cardTitle', text: title })]),
+    hint ? make('p', { class: 'cardHint', text: hint }) : null,
+  ].concat(kids || []));
+}
+
+function button(text, onClick, opts) {
+  const node = make('button', { type: 'button', class: opts && opts.danger ? 'btn ghost' : 'btn', text: text });
+  node.addEventListener('click', onClick);
+  return node;
+}
+
+function tabButton(text, selected, onClick) {
+  const node = make('button', { type: 'button', class: 'tab', text: text });
+  node.setAttribute('role', 'tab');
+  node.setAttribute('aria-selected', selected ? 'true' : 'false');
+  node.addEventListener('click', onClick);
+  return node;
+}
+
+function cornerLabel(corner) {
+  if (corner === 'top-left') return '左上角';
+  if (corner === 'top-right') return '右上角';
+  if (corner === 'bottom-left') return '左下角';
+  return '右下角';
+}
+
+function displayLabel(display) {
+  if (display === 'web') return '仅浏览器';
+  if (display === 'desktop') return '仅桌面';
+  if (display === 'both') return '两者都显示';
+  return '都不显示';
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+`;
+}
+
+//#endregion
+//#region src/standalone/settings-page/chrome.ts
+const settingsPage = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><base href="/"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>桌宠设置</title><link rel="icon" type="image/png" href="/standalone-ai/icon.png"><link rel="stylesheet" href="/standalone-ai/settings.css">
+<script src="/standalone-ai/settings.js" defer></script><script src="/standalone-ai/chat-panel.js" defer></script></head><body>
+<main class="shell">
+<aside class="side">
+<div class="brand"><img class="brandLogo" src="/standalone-ai/icon.png" alt=""><span>桌宠</span></div>
+<nav class="nav" aria-label="设置分区"><div class="navList" role="tablist">
+<button type="button" class="navCell" role="tab" id="tab-chat" data-tab="chat" data-title="对话" aria-controls="panel-chat" aria-selected="true"><svg class="navGlyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.4h10a1.1 1.1 0 0 1 1.1 1.1v5.6A1.1 1.1 0 0 1 13 11.2H8.2L5 13.6v-2.4H3a1.1 1.1 0 0 1-1.1-1.1V4.5A1.1 1.1 0 0 1 3 3.4Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg><span class="navLabel">对话</span></button>
+<button type="button" class="navCell" role="tab" id="tab-config" data-tab="config" data-title="配置" aria-controls="panel-config" aria-selected="false"><svg class="navGlyph" viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M2.6 4.6h10.8M2.6 11.4h10.8"/><circle cx="6.2" cy="4.6" r="1.6" fill="currentColor" stroke="none"/><circle cx="9.8" cy="11.4" r="1.6" fill="currentColor" stroke="none"/></g></svg><span class="navLabel">配置</span></button>
+</div></nav>
+<div class="sideFoot">独立模式</div>
+</aside>
+<div class="main">
+<div class="topbar"><h1 class="pageTitle" id="page-title">对话</h1><span class="dirty" id="dirty" hidden>有未保存的改动</span></div>
+<div class="options">
+<section class="panel" id="panel-config" role="tabpanel" aria-labelledby="tab-config" hidden>
+<div class="scroll">
+<div id="pet-cards"><p class="empty">正在读取本机配置…</p></div>
+<div class="footer"><p class="status" id="pet-status" role="status" aria-live="polite"></p><button class="btn primary" id="pet-save" type="button" disabled>保存</button></div>
+<form id="settings" aria-describedby="privacy">
+<div class="card"><div class="cardHead"><h2 class="cardTitle">模型连接</h2></div>
+<p class="cardHint">独立模式自己连服务商，不经过 DSH；所有配置只保存在当前机器。</p>
+<div class="field"><span class="fieldLabel" id="protocol-label">接口协议</span><div id="protocol-host"></div></div>
+<div class="field"><label for="baseUrl">接口地址（Base URL）</label><input id="baseUrl" name="baseUrl" type="url" placeholder="https://example.com/v1" maxlength="2048" spellcheck="false" aria-describedby="endpoint-note"><p class="fieldHint" id="endpoint-note">服务商提供的基础接口地址，支持 HTTP 与 HTTPS，通常以 /v1 结尾。不要把密钥放进地址。</p></div>
+<div class="field"><label for="model">模型名称</label><div class="combo" id="model-combo"><input id="model" name="model" type="text" maxlength="200" placeholder="填写或拉取服务商的模型 ID，例如 deepseek-chat" spellcheck="false" aria-describedby="model-note"><button id="model-toggle" class="comboToggle" type="button" aria-label="拉取并选择模型" aria-haspopup="listbox" aria-expanded="false"></button></div><p class="fieldHint" id="model-note">可以直接手填；点右侧箭头向端点拉取可用列表后选择。拉取只用本次填写的地址与密钥，不会保存。</p><p class="status" id="model-result" role="status" aria-live="polite"></p></div>
+<div class="field"><label for="apiKey">API 密钥 <span class="hintInline" id="key-state">尚未读取</span></label><input id="apiKey" name="apiKey" type="password" autocomplete="new-password" maxlength="8192" placeholder="留空保留已保存的密钥" aria-describedby="key-note"><div class="keyActions" id="key-actions" hidden><button id="key-delete" class="btn ghost" type="button">删除已保存的密钥</button></div><p id="key-note" class="fieldHint">密钥只写入本机配置，不会回显。留空会保留旧密钥，要彻底删除请点上面的按钮。</p></div>
+<div class="field"><span class="fieldLabel" id="balance-provider-label">余额查询服务商</span><div id="balance-provider-host"></div><p class="fieldHint" id="balance-provider-note">可选：选定后可用上面保存的密钥查询余额，不选则不查询。余额接口只有 DeepSeek 官方、opencode Go 与 commandcode 提供，且密钥必须属于所选服务商。</p><div class="testRow"><button id="balance-btn" class="btn ghost" type="button" disabled>查询余额</button><span id="balance-result" class="status" role="status" aria-live="polite"></span></div></div>
+<div class="testRow"><button id="test-btn" class="btn" type="button">测试连接</button><span id="test-result" class="status" role="status" aria-live="polite"></span></div>
+</div>
+<p id="privacy" class="fineprint">所有配置与密钥仅保存在当前机器。</p>
+<div class="footer"><p class="status" id="status" role="status" aria-live="polite">正在读取本机设置…</p><button id="save" class="btn primary" type="submit" disabled>保存</button></div>
+</form>
+</div>
+</section>
+<section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat">
+<div class="pet-chat-host" id="pet-chat-root"></div>
+</section>
+</div>
+</div>
+</main>
+<noscript>需要启用 JavaScript 才能保存设置。请从桌宠右键菜单打开本页。</noscript>
+</body></html>`;
+
+//#endregion
+//#region src/client/chat/metrics.ts
+const SIZE = {
+	pad: 12,
+	padBottom: 10,
+	gap: 8,
+	gapTight: 6,
+	gapWide: 10,
+	listGap: 20,
+	avatar: 28,
+	imgMaxW: 220,
+	imgMaxH: 180,
+	preview: 48,
+	hairline: 2,
+	spinner: 12,
+	tabPadY: 3,
+	tabPadX: 12,
+	toolPadY: 2,
+	toolPadX: 10,
+	bubblePadY: 8,
+	bubblePadX: 12,
+	composerPad: 10,
+	composerPadBottom: 6,
+	inputMinH: 44,
+	inputMaxH: 140,
+	send: 34,
+	pillPadY: 4,
+	pill: 999,
+	tipPadY: 6,
+	tipPadX: 10,
+	tipMaxW: 260,
+	personaMaxH: 200
+};
+const INPUT_MAX_HEIGHT = SIZE.inputMaxH;
+const px = (value) => value + "px";
+
+//#endregion
+//#region src/client/chat/panel-css.ts
+const PANEL_CSS = `
+.pet-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: ${px(SIZE.gapWide)};
+  padding: ${px(SIZE.pad)} ${px(SIZE.pad)} ${px(SIZE.padBottom)};
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-14);
+}
+
+.pet-chat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: ${px(SIZE.gapTight)};
+  flex: 0 0 auto;
+}
+
+.pet-chat-tab {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  border-radius: var(--dsw-radius-md);
+  padding: ${px(SIZE.tabPadY)} ${px(SIZE.tabPadX)};
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pet-chat-tab[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-multi-select);
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.pet-chat-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: ${px(SIZE.gapTight)};
+  flex: 0 0 auto;
+}
+
+/* 人设卷帘：展开时把消息列表顶下去，而不是浮在对话上——人设可以很长，浮层会挡住内容。
+   0fr → 1fr 是唯一不用量高度的展开过渡；夹层负责裁剪，正文层才放内边距与边框，
+   否则收起时 padding 与 border 仍在，留下一道缝。 */
+.pet-chat-persona {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex: 0 0 auto;
+  transition: grid-template-rows var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-persona.is-open {
+  grid-template-rows: 1fr;
+}
+
+.pet-chat-persona-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pet-chat-persona-body {
+  max-height: ${px(SIZE.personaMaxH)};
+  overflow-y: auto;
+  padding: ${px(SIZE.bubblePadY)} ${px(SIZE.bubblePadX)};
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-14);
+  line-height: 1.6;
+  /* 人设正文自己带换行与缩进：保留排版，长单词与 URL 也要能断开 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pet-chat-orphans {
+  display: flex;
+  align-items: center;
+  gap: ${px(SIZE.gap)};
+  flex: 0 0 auto;
+  padding: ${px(SIZE.gapTight)} ${px(SIZE.tabPadX)};
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-bg-multi-select);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.pet-chat-confirm {
+  display: flex;
+  align-items: center;
+  gap: ${px(SIZE.gap)};
+  flex: 0 0 auto;
+  padding: ${px(SIZE.gapTight)} ${px(SIZE.tabPadX)};
+  border-radius: var(--dsw-radius-md);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.pet-chat-danger {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  padding: ${px(SIZE.toolPadY)} ${px(SIZE.tabPadX)};
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-danger:hover {
+  background: var(--dsw-alias-state-error-secondary);
+}
+
+.pet-chat-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: ${px(SIZE.gap)};
+}
+
+/* 指南页卡片图标：框架给的槽位只按图标尺寸排版，所以让 logo 铺满它 */
+.pet-chat-guide-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: var(--dsw-radius-xs);
+  display: block;
+}
+
+.pet-chat-tool {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  border-radius: var(--dsw-radius-sm);
+  padding: ${px(SIZE.toolPadY)} ${px(SIZE.toolPadX)};
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+}
+
+.pet-chat-tool:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pet-chat-tool[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-multi-select);
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.pet-chat-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pet-chat-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: ${px(SIZE.listGap)};
+  padding-right: ${px(SIZE.hairline)};
+}
+
+.pet-chat-older {
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.pet-chat-older-btn {
+  border: none;
+  border-radius: ${px(SIZE.pill)};
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  padding: ${px(SIZE.pillPadY)} ${px(SIZE.tabPadX)};
+  font: var(--dsw-font-xxs-12);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-older-btn:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.pet-chat-older-note {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxs-12);
+  padding: ${px(SIZE.pillPadY)} 0;
+}
+
+.pet-chat-memory {
+  display: flex;
+  align-items: center;
+  gap: ${px(SIZE.gap)};
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-xxxs-11);
+}
+
+/* 线本身用伪元素画，文字居中：视觉上是「一条带说明的分隔线」 */
+.pet-chat-memory::before,
+.pet-chat-memory::after {
+  content: '';
+  flex: 1 1 auto;
+  border-top: 1px dashed var(--dsw-alias-border-l3);
+}
+
+.pet-chat-memory-note {
+  flex: 0 0 auto;
+}
+
+.pet-chat-round {
+  display: flex;
+  align-items: flex-start;
+  gap: ${px(SIZE.gap)};
+}
+
+/* 多选模式：整轮是一张可点卡片；选中给浅底，未选中透明（与豆包的选中样式一致） */
+.pet-chat-round.is-selecting {
+  padding: ${px(SIZE.gapTight)} ${px(SIZE.gapWide)};
+  border-radius: var(--dsw-radius-md);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-round.is-selecting:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pet-chat-round.is-selected {
+  background: var(--dsw-alias-bg-multi-select);
+}
+
+.pet-chat-pick {
+  flex: 0 0 auto;
+  padding-top: ${px(SIZE.gapTight)};
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.pet-chat-pick:hover {
+  opacity: 1;
+}
+
+.pet-chat-round-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: ${px(SIZE.gap)};
+}
+
+.pet-chat-msg {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: ${px(SIZE.gap)};
+  max-width: 92%;
+}
+
+.pet-chat-msg.is-me {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.pet-chat-msg.is-pet {
+  align-self: flex-start;
+}
+
+.pet-chat-avatar {
+  flex: 0 0 auto;
+  width: ${px(SIZE.avatar)};
+  height: ${px(SIZE.avatar)};
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.pet-chat-msg.is-pet .pet-chat-avatar {
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+
+.pet-chat-bubble {
+  padding: ${px(SIZE.bubblePadY)} ${px(SIZE.bubblePadX)};
+  border-radius: var(--dsw-radius-md);
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.pet-chat-text {
+  white-space: pre-wrap;
+}
+
+.pet-chat-msg.is-me .pet-chat-bubble {
+  background: var(--dsw-specific-bubble);
+  color: var(--dsw-alias-label-primary);
+}
+
+.pet-chat-msg.is-pet .pet-chat-bubble {
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+}
+
+.pet-chat-img-btn {
+  display: block;
+  margin-top: ${px(SIZE.gapTight)};
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+}
+
+.pet-chat-img {
+  display: block;
+  max-width: ${px(SIZE.imgMaxW)};
+  max-height: ${px(SIZE.imgMaxH)};
+  border-radius: var(--dsw-radius-sm);
+  object-fit: contain;
+}
+
+.pet-chat-time {
+  display: inline-flex;
+  align-items: center;
+  gap: ${px(SIZE.gap)};
+  margin-top: ${px(SIZE.hairline)};
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 时间右边的播报 / 动作按钮：与时间同字号，靠透明度与颜色表意，不占额外行高 */
+.pet-chat-speak,
+.pet-chat-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: ${px(SIZE.hairline * 12)};
+  height: ${px(SIZE.hairline * 12)};
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
+}
+
+.pet-chat-speak:hover,
+.pet-chat-action:hover {
+  opacity: 1;
+}
+
+/* 动作键图标：内联 SVG 单色三角，颜色跟行内文字走。
+   换成 emoji（▶️）会渲染成一块彩色方块，和喇叭放在一起就是两种风格。 */
+.pet-chat-action-icon {
+  display: block;
+  width: ${px(SIZE.hairline * 5)};
+  height: ${px(SIZE.hairline * 5)};
+}
+
+/* 生成中：只有上半圈带色的细环，靠旋转表达「在生成」。
+   尺寸与时间文字同高；border-box + flex:none 是必须的：默认 content-box 会把描边算在尺寸外，
+   而在 flex 行里被压缩时环会变成椭圆，看着就是个「奇怪的圆角方块」。 */
+.pet-chat-speak.is-loading {
+  opacity: 0.9;
+  cursor: default;
+}
+
+.pet-chat-speak.is-loading::before {
+  content: '';
+  box-sizing: border-box;
+  flex: none;
+  width: ${px(SIZE.spinner)};
+  height: ${px(SIZE.spinner)};
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-label-secondary);
+  border-radius: 50%;
+  animation: pet-chat-spin 0.8s linear infinite;
+}
+
+/* 播放中：主色 + 满不透明，和「可播放」明显区分 */
+.pet-chat-speak.is-playing {
+  opacity: 1;
+  color: var(--dsw-alias-state-business-primary);
+  cursor: default;
+}
+
+/* 失败：压暗表示没成，但仍可点（重试），所以指针保持手型 */
+.pet-chat-speak.is-failed {
+  opacity: 0.5;
+}
+
+@keyframes pet-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pet-chat-time.is-pet {
+  align-self: flex-start;
+  /* 与宠物气泡左沿对齐：让时间明显属于这一轮的回答，而不是下一轮提问的开头 */
+  margin-left: ${px(SIZE.avatar + SIZE.gap)};
+}
+
+.pet-chat-time.is-me {
+  align-self: flex-end;
+}
+
+.pet-chat-hint {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.pet-chat-error {
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.pet-chat-composer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: ${px(SIZE.gapTight)};
+  padding: ${px(SIZE.composerPad)} ${px(SIZE.pad)} ${px(SIZE.composerPadBottom)};
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-specific-input-major);
+  transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-composer:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.pet-chat-composer.is-drop-target {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.pet-chat-preview {
+  display: flex;
+  align-items: center;
+  gap: ${px(SIZE.gap)};
+}
+
+.pet-chat-preview-img {
+  width: ${px(SIZE.preview)};
+  height: ${px(SIZE.preview)};
+  object-fit: cover;
+  border-radius: var(--dsw-radius-sm);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+
+.pet-chat-preview-meta {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.pet-chat-input {
+  width: 100%;
+  resize: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  padding: 0;
+  min-height: ${px(SIZE.inputMinH)};
+  max-height: ${px(SIZE.inputMaxH)};
+  overflow-y: auto;
+  font: var(--dsw-font-s-14);
+  outline: none;
+}
+
+.pet-chat-input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.pet-chat-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: ${px(SIZE.gap)};
+}
+
+.pet-chat-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: ${px(SIZE.hairline)};
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: ${px(SIZE.pill)};
+  padding: ${px(SIZE.pillPadY)} ${px(SIZE.tabPadX)};
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-attach:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pet-chat-file {
+  display: none;
+}
+
+.pet-chat-composer-spacer {
+  flex: 1 1 auto;
+}
+
+.pet-chat-send {
+  flex: 0 0 auto;
+  width: ${px(SIZE.send)};
+  height: ${px(SIZE.send)};
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-send:hover:not(:disabled) {
+  background: var(--dsw-alias-button-info-hover);
+}
+
+.pet-chat-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 生成中：输入的文字压成三级色，与转圈一起说明「这句已经发出去了，在等回复」。
+   输入框本身仍可编辑（可以先把下一句打好），所以只改颜色、不 pointer-events: none。 */
+.pet-chat-composer.is-busy .pet-chat-input {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 发送键里的转圈：与播报按钮共用 pet-chat-spin，只画半圈弧。
+   box-sizing 必须 border-box，否则 1.5px 描边会把 12px 撑大，在 34px 的圆钮里显得偏大。 */
+.pet-chat-send-spinner {
+  box-sizing: border-box;
+  width: ${px(SIZE.spinner)};
+  height: ${px(SIZE.spinner)};
+  border: 1.5px solid transparent;
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  border-radius: 50%;
+  animation: pet-chat-spin 0.8s linear infinite;
+}
+
+/* 悬浮提示气泡：挂在 body 上按光标定位（见 ./tooltip），不在 .pet-chat 里，
+   所以字体与颜色全部自带——气泡是深色底，两种主题下都靠白字与背景的对比度读。 */
+.pet-chat-tip {
+  position: fixed;
+  z-index: 2147483000;
+  max-width: ${px(SIZE.tipMaxW)};
+  padding: ${px(SIZE.tipPadY)} ${px(SIZE.tipPadX)};
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-tooltip-bg);
+  color: var(--dsw-static-neutral-00);
+  font: var(--dsw-font-xxs-12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pet-chat-tip.is-on {
+  opacity: 1;
+}
+`;
+
+//#endregion
+//#region src/standalone/settings-page/style.ts
+const settingsStyle = `:root{
+  color-scheme:light;
+  --dsw-static-neutral-bluish-00:#fff;--dsw-static-neutral-bluish-50:#f9fafb;--dsw-static-neutral-bluish-75:#f1f3f5;
+  --dsw-static-neutral-bluish-100:#ebeef2;--dsw-static-neutral-bluish-200:#e1e5ee;--dsw-static-neutral-bluish-300:#cfd3d6;
+  --dsw-static-neutral-bluish-600:#81858c;--dsw-static-neutral-bluish-700:#61666b;--dsw-static-neutral-bluish-1000:#0f1115;
+  --dsw-static-blue-500:#3b82f6;--dsw-static-red-500:#ef4444;--dsw-static-green-600:#15803d;
+  --dsw-alias-bg-base:var(--dsw-static-neutral-bluish-50);--dsw-alias-bg-layer-2:var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-primary:var(--dsw-static-neutral-bluish-1000);--dsw-alias-label-secondary:var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-label-tertiary:var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-border-l1:#0000000a;--dsw-alias-border-l2:#0000001a;--dsw-alias-border-l3:#0000001f;--dsw-alias-border-l4:#00000029;
+  --dsw-alias-interactive-bg-hover:#2631480f;--dsw-alias-interactive-bg-active:#2631481a;
+  --dsw-alias-settings-card-fill:var(--dsw-alias-bg-layer-2);--dsw-alias-settings-card-stroke:var(--dsw-alias-border-l4);
+  --dsw-specific-sidebar-nav-item-active:var(--dsw-static-neutral-bluish-100);
+  --dsw-elevation-prominent:0 0 0 .5px var(--dsw-alias-border-l4),0 3px 8px 0 #0000000a,0 0 20px 0 #0000000d;
+  --dsw-alias-bg-mask-1:#0000003d;
+  --dsw-radius-xs:4px;--dsw-radius-sm:8px;--dsw-radius-md:12px;--dsw-radius-lg:16px;--dsw-radius-panel:28px;
+  --dsw-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei UI",sans-serif;
+  --dsh-scrollbar-thumb:var(--dsw-alias-border-l4);--dsh-scrollbar-thumb-hover:var(--dsw-alias-border-l3);
+  --dsh-sidebar-width:208px;--dsh-content-width:880px;
+  --dsw-static-neutral-00:#fff;--dsw-alias-bg-layer-1:var(--dsw-static-neutral-bluish-00);
+  --dsw-font-s-14:14px/1.55 var(--dsw-font-family);--dsw-font-xxs-12:12px/1.55 var(--dsw-font-family);
+  --dsw-font-xxxs-11:11px/1.45 var(--dsw-font-family);
+  --dsw-radius-xl:20px;
+  --dsw-specific-bubble:#e8f0fe;--dsw-specific-input-major:var(--dsw-alias-bg-layer-2);
+  --dsw-alias-bg-module-platform:var(--dsw-static-neutral-bluish-75);--dsw-alias-bg-multi-select:#3b82f61a;
+  --dsw-alias-button-info-fill:var(--dsw-static-blue-500);--dsw-alias-button-info-hover:#2f6fe0;
+  --dsw-alias-interactive-bg-hover-danger:#ef44441a;
+  --dsw-alias-label-caption:var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-label-primary-foreground:var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-state-business-primary:var(--dsw-static-blue-500);
+  --dsw-alias-state-error-primary:var(--dsw-static-red-500);--dsw-alias-state-error-secondary:var(--dsw-static-red-500);
+  --dsw-alias-tooltip-bg:#1f2329;
+  --ds-ease-in-out:cubic-bezier(.4,0,.2,1);--ds-transition-duration-fast:.12s;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:14px/1.55 var(--dsw-font-family);-webkit-font-smoothing:antialiased}
+a{color:var(--dsw-static-blue-500)}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--dsh-scrollbar-thumb);border-radius:99px;border:3px solid transparent;background-clip:content-box}::-webkit-scrollbar-thumb:hover{background:var(--dsh-scrollbar-thumb-hover);background-clip:content-box}
+.shell{display:grid;grid-template-columns:var(--dsh-sidebar-width) minmax(0,1fr);width:100vw;height:100vh;overflow:hidden;background:var(--dsw-alias-bg-base)}
+.side{display:flex;flex-direction:column;min-width:0;min-height:0;padding:14px 10px 10px;background:var(--dsw-alias-bg-layer-2);border-right:1px solid var(--dsw-alias-border-l2)}
+.brand{display:flex;align-items:center;gap:9px;padding:2px 8px 14px;font-size:14px;font-weight:600;line-height:22px;color:var(--dsw-alias-label-primary)}
+.brandLogo{flex:none;width:24px;height:24px;border-radius:var(--dsw-radius-sm);object-fit:cover;background:var(--dsw-alias-bg-layer-1)}
+.nav{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+.navList{display:flex;flex-direction:column;gap:2px;min-height:0;overflow-y:auto}
+.navCell{display:flex;align-items:center;gap:9px;height:36px;padding:0 10px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer}
+.navCell:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.navCell[aria-selected=true]{background:var(--dsw-specific-sidebar-nav-item-active);color:var(--dsw-alias-label-primary);font-weight:500}
+.navGlyph{flex:none;width:16px;height:16px;display:block}
+.navLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sideFoot{flex:none;margin-top:10px;padding:9px 10px 2px;border-top:1px solid var(--dsw-alias-border-l1);font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:16px;height:56px;padding:0 30px;background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1)}
+.pageTitle{margin:0;font-size:15px;font-weight:600;line-height:24px;color:var(--dsw-alias-label-primary)}
+.dirty{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.options{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+.panel{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden}
+.scroll{flex:1;min-height:0;overflow-y:auto;padding:22px 30px 4px}
+.scroll>*{width:100%;max-width:var(--dsh-content-width);margin-left:auto;margin-right:auto}
+/* 对话面板自己管内边距与滚动，这里只负责给它一个确定高度的容器；宽度与配置页对齐。 */
+.pet-chat-host{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden;width:100%;max-width:var(--dsh-content-width);margin-left:auto;margin-right:auto}
+.card{background:var(--dsw-alias-settings-card-fill);border:1px solid var(--dsw-alias-settings-card-stroke);border-radius:var(--dsw-radius-lg);padding:18px 20px;margin-bottom:14px}
+.card:first-child{margin-top:2px}
+.cardHead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 4px}
+.cardTitle{margin:0;font-size:15px;font-weight:600;line-height:22px}
+.cardHint{margin:0 0 12px;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}
+.field{margin:12px 0 0}
+.field>label,.fieldLabel{display:block;margin:0 0 6px;font-size:13px;font-weight:500;color:var(--dsw-alias-label-secondary)}
+.fieldHint{margin:6px 0 0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}
+input[type=text],input[type=url],input[type=password],input[type=number],select,textarea{display:block;width:100%;min-height:36px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px}
+textarea{min-height:72px;resize:vertical;line-height:1.6}
+input:hover,select:hover,textarea:hover{border-color:var(--dsw-static-neutral-bluish-300)}
+/* :where() 把元素选择器权重降到 0：对话面板用「外层容器 focus-within 变色」代替逐控件焦点环，
+   保持 input:focus-visible 的 (0,1,1) 会压过面板里的 .pet-chat-input{outline:none}，把焦点环画进输入框。 */
+:where(input,select,textarea,button):focus-visible,.navCell:focus-visible{outline:2px solid var(--dsw-static-blue-500);outline-offset:1px}
+input:disabled,select:disabled,textarea:disabled{background:var(--dsw-static-neutral-bluish-50);color:var(--dsw-alias-label-tertiary);cursor:not-allowed}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.rowCheck{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--dsw-alias-border-l1);cursor:pointer}
+.rowCheck:first-of-type{border-top:0}
+.rowCheck input{width:16px;height:16px;margin:3px 0 0;accent-color:var(--dsw-static-blue-500);flex:none}
+.rowCheckText{min-width:0}
+.rowCheckTitle{display:block;font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary);line-height:1.5}
+.rowCheckHint{display:block;font-size:12px;line-height:1.55;color:var(--dsw-alias-label-tertiary)}
+.btn{height:32px;padding:0 14px;border:1px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:500 13px/1 var(--dsw-font-family);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.btn:active{background:var(--dsw-alias-interactive-bg-active)}
+.btn.primary{background:var(--dsw-alias-label-primary);border-color:transparent;color:#fff}
+.btn.primary:hover{opacity:.88}
+.btn.ghost{border-color:transparent;color:var(--dsw-alias-label-secondary)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 12px}
+.tab{height:30px;padding:0 12px;border:0;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);font:500 13px/1 var(--dsw-font-family);cursor:pointer}
+.tab:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.tab[aria-selected=true]{background:var(--dsw-specific-sidebar-nav-item-active);color:var(--dsw-alias-label-primary)}
+.footer{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-top:1px solid var(--dsw-alias-border-l1)}
+.status{margin:0;min-height:20px;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}
+.status[data-error=true]{color:var(--dsw-static-red-500)}
+.status[data-ok=true]{color:var(--dsw-static-green-600)}
+.pathRow{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;color:var(--dsw-alias-label-secondary);border-top:1px solid var(--dsw-alias-border-l1)}
+.pathRow:first-child{border-top:0}
+.pathKey{flex:none;width:80px;color:var(--dsw-alias-label-tertiary)}
+.pathValue{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:11.5px}
+.hintInline{font-weight:400;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.testRow{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+.combo{position:relative;display:flex;align-items:center}
+.combo input{padding-right:40px}
+.comboToggle{position:absolute;right:4px;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:var(--dsw-radius-xs);background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+.comboToggle:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.comboToggle:disabled{opacity:.45;cursor:not-allowed}
+.keyActions{display:flex;justify-content:flex-end;margin-top:8px}
+.keyActions .btn{height:26px;padding:0 10px;font-size:12px}
+.avatarRow{display:flex;align-items:center;gap:12px;margin:0 0 14px}
+.avatarImg{flex:none;width:56px;height:56px;border-radius:var(--dsw-radius-md);border:1px solid var(--dsw-alias-border-l2);object-fit:cover;background:var(--dsw-alias-bg-layer-1)}
+.avatarBox{display:flex;flex-direction:column;gap:6px;min-width:0;align-items:flex-start}
+.avatarBox .fieldHint{margin:0}
+.avatarBox .status{margin:0;min-height:0}
+.gridTight{margin-top:14px}
+.fieldTight{margin:0}
+.fineprint{margin:8px 0 0;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.petBar{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.select{position:relative}
+.selectTrigger{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:36px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;text-align:left;cursor:pointer}
+.selectTrigger:hover:not(:disabled){border-color:var(--dsw-static-neutral-bluish-300)}
+.selectTrigger:disabled{background:var(--dsw-static-neutral-bluish-50);color:var(--dsw-alias-label-tertiary);cursor:not-allowed}
+.selectValue{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selectChevron{flex:none;width:16px;height:16px;color:var(--dsw-alias-label-tertiary);transition:transform .1s ease}
+.selectTrigger[aria-expanded=true] .selectChevron{transform:rotate(180deg)}
+.selectMenu{position:fixed;z-index:60;margin:0;padding:4px;list-style:none;overflow-y:auto;background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-md);box-shadow:var(--dsw-elevation-prominent)}
+.selectItem{padding:7px 10px;border-radius:var(--dsw-radius-sm);font-size:14px;line-height:20px;color:var(--dsw-alias-label-primary);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.selectItem:hover,.selectItem.active{background:var(--dsw-alias-interactive-bg-hover)}
+.selectItem[aria-selected=true]{background:var(--dsw-specific-sidebar-nav-item-active);font-weight:500}
+.dialogMask{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--dsw-alias-bg-mask-1)}
+.dialog{width:min(420px,100%);padding:20px 22px 16px;border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-prominent)}
+.dialogTitle{margin:0 0 8px;font-size:15px;font-weight:600;line-height:22px}
+.dialogText{margin:0;font-size:13px;line-height:1.65;color:var(--dsw-alias-label-secondary);white-space:pre-line;word-break:break-word}
+.dialogActions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.personaWrap{position:relative}
+.personaCount{position:absolute;right:10px;bottom:8px;padding:2px 5px;border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-layer-2);font-size:11px;line-height:1.2;color:var(--dsw-alias-label-tertiary);pointer-events:none}
+.btn.danger{background:var(--dsw-static-red-500);border-color:transparent;color:#fff}
+.btn.danger:hover{opacity:.9}
+.petBar .select{flex:1;min-width:0}
+.empty{padding:16px 0;font-size:13px;color:var(--dsw-alias-label-tertiary)}
+@media(max-width:767px){
+  .shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .side{padding:10px 8px 8px;border-right:0;border-bottom:1px solid var(--dsw-alias-border-l2)}
+  .brand{padding:0 6px 10px}
+  .nav{flex:none}
+  .navList{flex-direction:row;gap:4px;padding-bottom:2px;overflow-x:auto;overflow-y:hidden}
+  .navCell{flex:0 0 auto;padding:0 12px}
+  .navLabel{flex:none}
+  .sideFoot{display:none}
+  .topbar{height:48px;padding:0 16px}
+  .scroll{padding:16px 16px 4px}
+  .grid2,.grid3{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:no-preference){.navCell,.btn,.tab{transition:background-color .1s ease}}
+${PANEL_CSS}
+`;
+
+//#endregion
+//#region src/standalone/settings-page.ts
+const AVATAR_MAX_SIDE_PX = 512;
+const settingsScript = [
+	"(function () {",
+	coreScript(ROUTE_SEGMENT, {
+		voices: VOICES.map((voice) => ({
+			id: voice.id,
+			name: voice.name,
+			tag: voice.tag
+		})),
+		fonts: FONT_PRESETS.map((preset) => preset.id),
+		displays: PET_DISPLAYS,
+		corners: [...CORNER_SET],
+		physics: DEFAULT_PHYSICS,
+		font: DEFAULT_FONT,
+		weights: DEFAULT_WEIGHTS
+	}),
+	widgetsScript(),
+	overlayScript(),
+	avatarScript({
+		logoUrl: LOGO_URL,
+		maxSide: AVATAR_MAX_SIDE_PX
+	}),
+	petCardScript(),
+	petsScript(),
+	globalsScript(),
+	modelPickerScript(),
+	aiScript(),
+	bootScript(),
+	"boot();",
+	"})();"
+].join("\n");
+
+//#endregion
+//#region src/standalone/chat-panel-asset.ts
+let cached$1;
+function readChatPanelScript() {
+	if (cached$1 !== void 0) return cached$1;
+	try {
+		cached$1 = readFileSync(join(PACKAGE_ROOT, "lib", "chat-panel.js"), "utf8");
+		return cached$1;
+	} catch {
+		return void 0;
+	}
+}
+
+//#endregion
+//#region src/standalone/icon.ts
+let cached;
+function readSettingsIcon() {
+	if (cached) return cached;
+	try {
+		cached = readFileSync(join(PACKAGE_ROOT, "assets", "logo.png"));
+		return cached;
+	} catch {
+		return void 0;
+	}
+}
 
 //#endregion
 //#region src/standalone/request-body.ts
@@ -10280,6 +14841,8 @@ async function boundedRequest(req, res, limit, timeoutMs = BODY_TIMEOUT_MS) {
 function dispatch(options, shutdownSecurity) {
 	const settings = settingsHandler(options.ai);
 	const tester = testHandler(options.ai);
+	const models = modelsHandler(options.ai);
+	const balance = balanceHandler(options.ai);
 	return (req, res, pathname) => {
 		const method = req.method ?? "GET";
 		if (method === "OPTIONS") {
@@ -10319,6 +14882,32 @@ function dispatch(options, shutdownSecurity) {
 			"/standalone-ai/settings.js": [settingsScript, "text/javascript"],
 			"/standalone-ai/settings.css": [settingsStyle, "text/css"]
 		};
+		if (pathname === "/standalone-ai/icon.png") {
+			if (method !== "GET" && method !== "HEAD") {
+				rejectRequest(res, 405, "仅支持 GET");
+				return;
+			}
+			const icon = readSettingsIcon();
+			if (!icon) {
+				rejectRequest(res, 404, "图标缺失");
+				return;
+			}
+			sendIcon(res, icon);
+			return;
+		}
+		if (pathname === "/standalone-ai/chat-panel.js") {
+			if (method !== "GET" && method !== "HEAD") {
+				rejectRequest(res, 405, "仅支持 GET");
+				return;
+			}
+			const chatPanel = readChatPanelScript();
+			if (chatPanel === void 0) {
+				rejectRequest(res, 404, "对话面板脚本缺失，请重新构建（npm run bundle）");
+				return;
+			}
+			sendAsset(res, chatPanel, "text/javascript");
+			return;
+		}
 		const asset = assets[pathname];
 		if (asset) {
 			if (method !== "GET" && method !== "HEAD") {
@@ -10334,6 +14923,14 @@ function dispatch(options, shutdownSecurity) {
 		}
 		if (pathname === "/standalone-ai/test") {
 			tester(req, res).catch((error) => fail(res, error, options.logger));
+			return;
+		}
+		if (pathname === "/standalone-ai/models") {
+			models(req, res).catch((error) => fail(res, error, options.logger));
+			return;
+		}
+		if (pathname === "/standalone-ai/balance") {
+			balance(req, res).catch((error) => fail(res, error, options.logger));
 			return;
 		}
 		const route = options.routes.find((candidate) => matches(candidate, pathname));
@@ -10618,11 +15215,18 @@ function writePrivateJson(path, settings) {
 
 //#endregion
 //#region src/standalone/ai-config.ts
+const BALANCE_PROVIDERS = [
+	"",
+	"deepseek-official",
+	"opencode-go",
+	"commandcode"
+];
 const DEFAULT_AI_SETTINGS = Object.freeze({
 	protocol: "openai-compatible",
 	baseUrl: "",
 	model: "",
-	enabled: false,
+	balanceProvider: "",
+	enabled: true,
 	automaticWhispers: false,
 	whisperIntervalSec: 300,
 	maxTokens: 1024,
@@ -10654,6 +15258,7 @@ const fields = {
 	protocol: z.enum(["openai-compatible", "anthropic"]),
 	baseUrl: z.string().max(2048).refine(safeEndpoint),
 	model: z.string().trim().max(200).refine((s) => !containsControlChar(s)),
+	balanceProvider: z.enum(BALANCE_PROVIDERS),
 	enabled: z.boolean(),
 	automaticWhispers: z.boolean(),
 	whisperIntervalSec: z.number().int().min(60).max(86400),
@@ -10671,20 +15276,19 @@ function validateSettings(input, previous) {
 		if (patch.clearApiKey && patch.apiKey) throw new Error("Conflicting key changes");
 		const { clearApiKey,...values } = patch;
 		const apiKey = clearApiKey ? "" : values.apiKey || previous.apiKey;
-		const next = persistedSchema.parse({
+		return persistedSchema.parse({
 			...previous,
 			...values,
-			apiKey
+			apiKey,
+			enabled: true
 		});
-		if (next.enabled && (!next.model || !next.baseUrl || !next.apiKey)) throw new Error("Incomplete settings");
-		return next;
 	} catch {
 		throw new Error("Invalid standalone AI settings.");
 	}
 }
-/** 去掉密钥，只保留是否已保存。 */
+/** 去掉密钥与启用位，只保留是否已保存密钥。 */
 function redact(settings) {
-	const { apiKey,...publicFields } = settings;
+	const { apiKey, enabled,...publicFields } = settings;
 	return {
 		...publicFields,
 		hasKey: apiKey.length > 0
@@ -10694,7 +15298,10 @@ function createAiConfig(home) {
 	let settings = DEFAULT_AI_SETTINGS;
 	try {
 		const loaded = readAiSettings(home);
-		if (loaded !== void 0) settings = Object.freeze(validateSettings(persistedSchema.parse(loaded), DEFAULT_AI_SETTINGS));
+		if (loaded !== void 0) settings = Object.freeze(validateSettings(persistedSchema.parse({
+			...DEFAULT_AI_SETTINGS,
+			...loaded
+		}), DEFAULT_AI_SETTINGS));
 	} catch {
 		throw new Error("Cannot securely load standalone AI settings.");
 	}
@@ -10720,8 +15327,6 @@ const PROVIDER = "standalone";
 const MAX_INPUT_CHARS = 32768;
 const MAX_OUTPUT_CHARS = 16384;
 const MAX_EVENTS = 4096;
-const REQUESTS_PER_MINUTE = 6;
-const RATE_WINDOW_MS = 6e4;
 const textBlock = z.object({
 	type: z.literal("text"),
 	text: z.string().max(MAX_INPUT_CHARS)
@@ -10738,6 +15343,179 @@ const inputSchema = z.object({
 	messages: z.array(messageSchema).min(1).max(64),
 	signal: z.custom((value) => value instanceof AbortSignal).optional()
 });
+
+//#endregion
+//#region src/standalone/ai-provider/list-models.ts
+/** 发现请求的封顶时长：比正式通道短，用户在设置页等着看结果。 */
+const DISCOVERY_TIMEOUT_MS = 1e4;
+/** 响应体上限：OpenRouter 的全量清单约 300KB，留出余量又不至于被超大响应拖住。 */
+const MAX_DISCOVERY_BYTES = 1e6;
+/** 单页条数上限；Anthropic 的 limit 参数上限就是 1000。 */
+const PAGE_LIMIT = 1e3;
+/** 失败分类对应的可操作说明；响应正文与密钥一律不进文案。 */
+const FAILURE_TEXT = {
+	input: "请先填写接口地址与 API 密钥",
+	auth: "身份验证失败 (HTTP 401/403)：请检查 API 密钥是否正确",
+	"rate-limit": "请求受限或配额超限 (HTTP 429)：请检查账户余额或调用频率",
+	"not-found": "该地址下没有模型列表 (HTTP 404)：请检查地址是否以 /v1 结尾",
+	contract: "端点返回的不是模型列表：请确认协议选择与服务商一致",
+	timeout: "连接超时（10 秒未响应）：请检查网络连通性或服务器状态",
+	network: "无法连接到目标服务器：请检查地址与端口是否正确",
+	http: "接口返回了错误状态：请检查地址与凭据"
+};
+/** 判定一个值是不是普通对象。 */
+function isRecord(value) {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+/** 组一份失败结果；文案只来自分类表或调用方给出的固定说明。 */
+function failure(code, message) {
+	return {
+		ok: false,
+		code,
+		message: message ?? FAILURE_TEXT[code] ?? FAILURE_TEXT.http ?? ""
+	};
+}
+/** 解析并校验端点：只接受不带账号、查询与片段的 HTTP(S) 地址，返回去掉结尾斜杠的前缀。 */
+function parseEndpoint(value) {
+	if (/[\s\\]/.test(value)) return void 0;
+	try {
+		const url = new URL(value);
+		if (url.username || url.password || url.search || url.hash) return void 0;
+		if (!["http:", "https:"].includes(url.protocol)) return void 0;
+		return (url.origin + url.pathname).replace(/\/+$/, "");
+	} catch {
+		return void 0;
+	}
+}
+/**
+* 候选清单地址：先按协议惯例，再按「地址里有没有带版本号」容错一次。
+* @param protocol - 已归一的协议。
+* @param base - 已校验的端点前缀，不含结尾斜杠。
+* @returns 按尝试顺序排列的地址。
+*/
+function candidateUrls(protocol, base) {
+	const versioned = /\/v\d+$/.test(base);
+	if (protocol === "anthropic") return [`${versioned ? base : `${base}/v1`}/models?limit=${PAGE_LIMIT}`];
+	return versioned ? [`${base}/models`] : [`${base}/models`, `${base}/v1/models`];
+}
+/** 两个协议各自的鉴权头；明文密钥只在这一层出现，错误文案不会带它。 */
+function authHeaders(protocol, apiKey) {
+	if (protocol === "anthropic") return {
+		"x-api-key": apiKey,
+		"anthropic-version": "2023-06-01",
+		accept: "application/json"
+	};
+	return {
+		authorization: `Bearer ${apiKey}`,
+		accept: "application/json"
+	};
+}
+/** 把数组或「键 → 条目」映射统一成数组，两者都是兼容网关的常见写法。 */
+function asList(value) {
+	if (Array.isArray(value)) return value;
+	if (isRecord(value)) {
+		const values = Object.values(value);
+		return values.length > 0 ? values : void 0;
+	}
+	return void 0;
+}
+/** 从一页响应里找出条目数组，认 `data`、`data.models` 与 `models` 三种位置。 */
+function findListing(payload) {
+	if (!isRecord(payload)) return void 0;
+	const direct = asList(payload.data);
+	if (direct) return direct;
+	if (isRecord(payload.data)) {
+		const nested = asList(payload.data.models);
+		if (nested) return nested;
+	}
+	return asList(payload.models);
+}
+/** 归一成「id + 展示名」，丢掉没有 id 的条目并按 id 去重，保持端点给出的顺序。 */
+function normalize$1(entries) {
+	const seen = new Set();
+	const models = [];
+	for (const entry of entries) {
+		if (!isRecord(entry) || typeof entry.id !== "string") continue;
+		const id = entry.id.trim();
+		if (id === "" || seen.has(id)) continue;
+		seen.add(id);
+		const label = [entry.name, entry.display_name].find((value) => typeof value === "string" && value.trim() !== "");
+		models.push({
+			id,
+			name: typeof label === "string" ? label.trim() : id
+		});
+	}
+	return models;
+}
+/** 问一个地址要清单；非 404 的失败直接定型，404 交给调用方换下一个候选。 */
+async function requestList(fetcher, url, headers, controller) {
+	let response;
+	try {
+		response = await fetcher(url, {
+			method: "GET",
+			headers,
+			signal: controller.signal,
+			redirect: "error"
+		});
+	} catch {
+		return failure(controller.signal.aborted ? "timeout" : "network");
+	}
+	if (!response.ok) {
+		const code = response.status === 401 || response.status === 403 ? "auth" : "http";
+		return failure(response.status === 404 ? "not-found" : code);
+	}
+	let text;
+	try {
+		text = await response.text();
+	} catch {
+		return failure("contract");
+	}
+	if (text.length > MAX_DISCOVERY_BYTES) return failure("contract", "端点返回的模型列表过大，请改用支持分页的地址");
+	let payload;
+	try {
+		payload = JSON.parse(text);
+	} catch {
+		return failure("contract");
+	}
+	const entries = findListing(payload);
+	return entries ? {
+		ok: true,
+		models: normalize$1(entries)
+	} : failure("contract");
+}
+async function discoverModels(fetcher, current$3, input) {
+	const protocol = input.protocol === "anthropic" || input.protocol === "openai-compatible" ? input.protocol : current$3.protocol;
+	const rawBase = (input.baseUrl !== void 0 ? input.baseUrl : current$3.baseUrl).trim();
+	const apiKey = (input.apiKey !== void 0 && input.apiKey !== "" ? input.apiKey : current$3.apiKey).trim();
+	if (rawBase === "") return failure("input", "请先填写接口地址（Base URL）");
+	if (apiKey === "") return failure("input", "请先填写 API 密钥");
+	const base = parseEndpoint(rawBase);
+	if (base === void 0) return failure("input", "接口地址必须是 HTTP(S) 地址，且不能含账号、查询参数或片段");
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
+	try {
+		let last = failure("http");
+		for (const url of candidateUrls(protocol, base)) {
+			const attempt = await requestList(fetcher, url, authHeaders(protocol, apiKey), controller);
+			if (attempt.ok || attempt.code !== "not-found") return attempt;
+			last = attempt;
+		}
+		return last;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+//#endregion
+//#region src/standalone/ai-provider/balance.ts
+async function queryStandaloneBalance(provider, apiKey) {
+	if (!provider) return {
+		ok: false,
+		provider: "",
+		reason: "unsupported"
+	};
+	return queryBalance(provider, async () => apiKey ? apiKey : void 0);
+}
 
 //#endregion
 //#region src/standalone/ai-transport.ts
@@ -10908,9 +15686,6 @@ function createTextStream(runtime) {
 		const { request, signal: callerSignal } = parseRequest(options, settings.model);
 		if (callerSignal?.aborted) throw new Error("Standalone AI request cancelled.");
 		if (runtime.active) throw new Error("Standalone AI is busy. Please wait.");
-		const recent = runtime.requests.filter((time) => runtime.now() - time < RATE_WINDOW_MS);
-		if (recent.length >= REQUESTS_PER_MINUTE) throw new Error("Standalone AI rate limit reached. Please wait.");
-		runtime.requests = [...recent, runtime.now()];
 		const controller = new AbortController();
 		runtime.active = controller;
 		const abort = () => controller.abort();
@@ -10971,24 +15746,22 @@ function describeFailure(error, controller) {
 	if (raw.includes("ECONNREFUSED") || raw.includes("fetch failed")) return "无法连接到目标服务器：请检查地址与端口是否正确、服务器是否正在运行";
 	return `连接失败：${raw}`;
 }
-async function testAiConnection(fetcher, current, input) {
-	const protocol = input.protocol === "anthropic" ? "anthropic" : input.protocol ?? current.protocol;
-	const baseUrl = (input.baseUrl !== void 0 ? input.baseUrl : current.baseUrl).trim();
-	const model = (input.model !== void 0 ? input.model : current.model).trim();
-	const apiKey = (input.apiKey !== void 0 && input.apiKey !== "" ? input.apiKey : current.apiKey).trim();
+async function testAiConnection(fetcher, current$3, input) {
+	const protocol = input.protocol === "anthropic" ? "anthropic" : input.protocol ?? current$3.protocol;
+	const baseUrl = (input.baseUrl !== void 0 ? input.baseUrl : current$3.baseUrl).trim();
+	const model = (input.model !== void 0 ? input.model : current$3.model).trim();
+	const apiKey = (input.apiKey !== void 0 && input.apiKey !== "" ? input.apiKey : current$3.apiKey).trim();
 	const missing = missingField(baseUrl, model, apiKey);
 	if (missing !== null) return {
 		ok: false,
 		message: missing
 	};
 	const settings = {
+		...DEFAULT_AI_SETTINGS,
 		protocol,
 		baseUrl,
 		model,
 		apiKey,
-		enabled: true,
-		automaticWhispers: false,
-		whisperIntervalSec: 300,
 		maxTokens: 32,
 		timeoutMs: PROBE_TIMEOUT_MS
 	};
@@ -11065,14 +15838,12 @@ function createStandaloneAi(home, logger, dependencies = {}) {
 		store,
 		logger,
 		fetcher: dependencies.fetch ?? globalThis.fetch.bind(globalThis),
-		now: dependencies.now ?? Date.now,
 		disposed: false,
 		paused: false,
 		saving: false,
-		requests: [],
 		active: void 0,
 		ready() {
-			return !runtime.disposed && !runtime.paused && !runtime.saving && store.current().enabled && !!store.current().model && !!store.current().baseUrl && !!store.current().apiKey;
+			return !runtime.disposed && !runtime.paused && !runtime.saving && !!store.current().model && !!store.current().baseUrl && !!store.current().apiKey;
 		}
 	};
 	const modelOf = () => store.current().model;
@@ -11097,11 +15868,24 @@ function createStandaloneAi(home, logger, dependencies = {}) {
 		getSettings: () => store.publicSettings(),
 		saveSettings: (input) => saveSettings(runtime, store, input),
 		isReady: () => runtime.ready(),
+		balanceAuth: () => ({
+			provider: store.current().balanceProvider,
+			apiKey: store.current().apiKey
+		}),
 		testConnection: (input) => runtime.disposed ? Promise.resolve({
 			ok: false,
 			message: "服务已关闭"
 		}) : testAiConnection(runtime.fetcher, store.current(), input),
-		canWhisper: () => runtime.ready() && store.current().automaticWhispers,
+		discoverModels: (input) => runtime.disposed ? Promise.resolve({
+			ok: false,
+			code: "input",
+			message: "服务已关闭"
+		}) : discoverModels(runtime.fetcher, store.current(), input),
+		queryBalance: async () => runtime.disposed ? {
+			ok: false,
+			provider: "",
+			reason: "unsupported"
+		} : queryStandaloneBalance(store.current().balanceProvider, store.current().apiKey),
 		dispose() {
 			runtime.disposed = true;
 			runtime.active?.abort();
@@ -11130,8 +15914,8 @@ function writeStandaloneRuntime(home, details) {
 		if (released) return;
 		released = true;
 		try {
-			const current = JSON.parse(readFileSync(file, "utf8"));
-			if (current.pid === process.pid && current.token === details.token) unlinkSync(file);
+			const current$3 = JSON.parse(readFileSync(file, "utf8"));
+			if (current$3.pid === process.pid && current$3.token === details.token) unlinkSync(file);
 		} catch (error) {
 			if (error.code === "ENOENT") return;
 			throw new Error("清理桌宠运行状态失败；请检查数据目录，未删除其他进程的状态。", { cause: error });
@@ -11247,8 +16031,7 @@ function createStandaloneContext(options) {
 		connection: { authenticatedUrl: options.authenticatedUrl ?? ((baseUrl) => baseUrl) },
 		...ai ? { standaloneAi: {
 			isReady: () => ai.isReady(),
-			canWhisper: () => ai.canWhisper(),
-			whisperIntervalSec: () => ai.getSettings().whisperIntervalSec
+			balanceAuth: () => ai.balanceAuth()
 		} } : {},
 		...options.shutdown ? { shutdownApp: options.shutdown } : {},
 		commands: { register: () => () => {} },
@@ -11391,12 +16174,13 @@ async function run(logger, options) {
 		"",
 		"===== dsh-zdd-pet 独立模式（不需要 DSH）=====",
 		`  插件        dsh-zdd-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
-		`  路由        http://127.0.0.1:${server.port}${ROUTE_PATH}/`,
+		`  路由        http://127.0.0.1:${server.port}${ROUTE_SEGMENT}/`,
 		`  配置        ${configSource}`,
 		`  宠物        ${describePets(pets)}`,
 		desktopVisible.length === 0 ? "  桌面小窗    0 只：display 需要 desktop 或 both 才会出现透明小窗（服务仍在运行）" : `  桌面小窗    ${desktopVisible.length} 只`,
 		ai.isReady() ? "  AI          本机 API 已启用；自动碎碎念遵循设置页开关" : "  AI          未配置或未启用，不发送模型请求；右键“打开 AI 设置”后在本机填写",
-		"  不可用      余额 / 会话工作状态 / DSH 系统通知",
+		ai.getSettings().balanceProvider ? `  余额        已选 ${ai.getSettings().balanceProvider}，设置页点「查询余额」取数` : "  余额        未选服务商；设置页「AI 服务商」→「余额查询服务商」里选一家",
+		"  不可用      会话工作状态 / DSH 系统通知",
 		"  退出        Ctrl+C、POST /shutdown，或桌面托盘菜单的「退出」",
 		""
 	]) logger.info(line);

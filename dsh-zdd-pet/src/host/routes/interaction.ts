@@ -6,12 +6,14 @@
  * @module dsh-zdd-pet/src/host/routes/interaction
  */
 import { readAllConfig } from '../config.ts';
+import { normalizeSurface, voiceTargetOfSurface } from '../surface.ts';
 import {
   decideBroadcast,
   decideBubbleClear,
   normalizeBroadcastAnim,
   normalizeBroadcastDuration,
   normalizeBroadcastText,
+  normalizeBroadcastVoice,
 } from '../broadcast.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
@@ -19,7 +21,8 @@ import { failResult, invalidJson, methodNotAllowed, okResult } from './result.ts
 
 /** 会话交互领域：未命中返回 undefined，命中返回应答。 */
 export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
-  const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, state, surfaceBlocked } = deps;
+  const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, sleep, state, surfaceBlocked } =
+    deps;
   const { body, method, rest, url } = input;
 
   // 占用锁：POST /lock?pet= 取锁 / 续期二合一（lockId 给了 = 续期，续期即心跳，丢了回 lock-lost），
@@ -58,6 +61,9 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
         if (d.reason === 'lock-lost') extra.cause = d.cause;
         return failResult(d.reason, d.message, extra);
       }
+      // 锁 = 第三方接管，所以取锁就把睡着的宠物叫醒：否则它会带着睡姿被指挥，
+      // 而且每条指令都要再走一次「持锁让路」的特判。唤醒只写一次叶子，渲染端照常播「起来」。
+      sleep.wake(petId);
       return okResult({ ok: true, lockId: d.lockId, petId: d.petId, expiresAt: d.expiresAt });
     } catch (e) {
       // 配置读取失败等（安装损坏）→ 显式失败，不静默（与其他动作端点同一口径）
@@ -68,6 +74,8 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
   // 碎碎念：POST /whisper?pet= 立即让桌宠新说一句，返回 {ok,text,image?}。文本照旧写进 S 的
   // pets.<id>.say（与命令气泡、对话回复同一个叶子），同时随响应带回。
   // 手动语义不受 whisperEnabled 门控：那个字段只关自动周期。
+  // ?image= 指定这一次用哪张图（右键「配图」菜单点了具体某张）：不在池内 → unknown-image，
+  // 由 publishWhisper 判定，这里只搬运。
   if (rest === 'whisper') {
     if (method !== 'POST') return methodNotAllowed();
     try {
@@ -75,7 +83,14 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
       // `pets[""].say`，还回 ok:true（钱花了、话丢了、调用方以为成功）。
       const who = requirePet(url.searchParams, () => readAllConfig(configPaths), { surface: true });
       if (!who.ok) return who.res;
-      const r = await publishWhisper(who.petId);
+      // 谁点的谁念：请求面在 requirePet 里已被 displayCovers 校验过，具体到一端就用它；
+      // both / any 不足以指定一端，留空交给生成函数按 display 推导。
+      const want = normalizeSurface(url.searchParams.get('surface'));
+      const r = await publishWhisper(
+        who.petId,
+        url.searchParams.get('image') ?? undefined,
+        want === null ? undefined : voiceTargetOfSurface(want),
+      );
       if (r.ok) return okResult({ ok: true, text: r.text, ...(r.image ? { image: r.image } : {}) });
       // 真实 reason 原样透出（独立模式是 `provider-missing`，见 ./whisper 的联合体）——
       // 不再把一切失败糊成 generate-error，调用方据此能分清「没配模型」与「生成炸了」。
@@ -106,6 +121,7 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
     const duration = normalizeBroadcastDuration(o.duration);
     if (duration === null) return failResult('bad-request', 'duration 必须是 ≥0 的有限数字（毫秒）');
     const anim = normalizeBroadcastAnim(o.anim);
+    const speak = normalizeBroadcastVoice(o.speak);
     try {
       const cfg = readAllConfig(configPaths);
       const d = decideBroadcast({
@@ -129,7 +145,18 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
       // 实际生效的时长与联动开关，调用方不用自己猜缺省是多少。
       // 配图两种形态二选一（判定层保证）：url 形态写 url，名称形态写池内规范名，都没有则纯文本。
       const pic = d.url !== undefined ? { url: d.url } : d.image !== undefined ? { image: d.image } : {};
-      state.publishSay(d.petId, { text: d.text, ...pic, duration: d.duration, anim: d.anim }, { source: 'broadcast' });
+      // 与手动碎碎念同一口径：调用方用 ?surface= 明说了「我希望这句显示在哪一端」，就由那一端念；
+      // both / any 不足以指定一端，留空不写（消费端据此不念）。
+      // speak 是第二道门：投喂默认只弹气泡，调用方显式要了才出声（见 normalizeBroadcastVoice）。
+      const want = normalizeSurface(url.searchParams.get('surface'));
+      const voiceTo = want === null ? undefined : voiceTargetOfSurface(want);
+      // 走 publishSay（而不是直接 writePet）：气泡要进宿主侧的单槽调度器，
+      // 才能与确认 / 任务完成等其它来源按优先级排队，且能被 /bubble/clear 精确清掉。
+      state.publishSay(
+        d.petId,
+        { text: d.text, ...pic, duration: d.duration, anim: d.anim, ...(speak && voiceTo ? { voiceTo } : {}) },
+        { source: 'broadcast' },
+      );
       return okResult({ ok: true });
     } catch (e) {
       // 配置读取失败等（安装损坏）→ 显式失败，不静默

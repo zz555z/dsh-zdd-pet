@@ -1,5 +1,5 @@
-import type { Speak } from './hub.ts';
-import type { CardHub } from './hub.ts';
+import type { SleepState } from '../../../shared/state.ts';
+import type { CardHub, Speak } from './hub.ts';
 import type { EndedCue } from '../animation/cues.ts';
 import type { WorkStatusSnapshot } from '../../../shared/work-status.ts';
 import type * as ReactNS from 'react';
@@ -11,8 +11,15 @@ export interface AnimationFlow {
     pickNext(): void;
     /** 非终态工作状态回到档位循环；没有可恢复状态时返回 false。 */
     resumeWorkStatusAnim(): boolean;
-    /** 说一句：抽碎碎念动画并弹气泡，动画与气泡时长互相独立。 */
+    /** 说一句：抽碎碎念动画并弹气泡，动画与气泡时长互相独立。
+     *  hold / holdKind / messageId 是 fork 的常驻气泡参数（见 hub 的 Speak）。 */
     speak: Speak;
+    /** 应用宿主写的睡觉状态：进入 → 播开始；退出 → 播起来。 */
+    applySleep(state: SleepState): void;
+    /** 此刻是否在睡（含入睡与醒来两段过渡）。 */
+    sleeping(): boolean;
+    /** 当前睡觉阶段；醒着为 null。点击路径要区分「入睡过渡」与「真睡着」。 */
+    sleepPhase(): 'start' | 'loop' | 'end' | null;
 }
 /** 注入的 react 能力。 */
 export interface AnimationFlowRuntime {

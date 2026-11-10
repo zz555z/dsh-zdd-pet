@@ -26,8 +26,14 @@ export interface NotifyFrame {
     sessionId?: string;
     [key: string]: unknown;
 }
-/** 帧 → toast 文案；不认识的类型或 turn/end 的非弹分支（aborted 等）返回 null。 */
-export declare function frameToToast(frame: NotifyFrame): {
+/**
+ * 帧 → toast 文案；不认识的类型或 turn/end 的非弹分支（aborted 等）返回 null。
+ *
+ * @param frame - 宿主半侧转发的通知帧。
+ * @param sessionTitle - 这条帧所属会话的显示名；有它时标题带上会话名，用户同时开着多个会话也能认出是哪一条。
+ *   取不到就传 undefined，标题回落固定文案，不影响弹窗。
+ */
+export declare function frameToToast(frame: NotifyFrame, sessionTitle?: string): {
     title: string;
     body: string;
     icon: string;

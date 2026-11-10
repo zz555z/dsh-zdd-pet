@@ -6,8 +6,7 @@
  * @module dsh-zdd-pet/src/client/bubble
  */
 import {
-  balanceBubbleView,
-  balanceDetailView,
+  balancePageView,
   customClickable,
   customViews,
   type BalanceBubbleRow,
@@ -86,6 +85,20 @@ const bubbleCss = [
   '.dsh-zdd-pet-bubble .pet-bub-quota-fill.pet-bub-quota-crit{background:#e53935}',
   '.dsh-zdd-pet-bubble .pet-bub-quota-used{flex:none;min-width:calc(var(--f)*2.2);text-align:right;font-variant-numeric:tabular-nums;font-weight:650;color:#1f1f1f}',
   '.dsh-zdd-pet-bubble .pet-bub-quota-reset{flex:none;min-width:calc(var(--f)*2.6);text-align:right;font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.6)}',
+  // 用量页（第三页）：三行两列占满展开态宽度，总量是唯一的大字。
+  // 配色只给进/出两处强调，其余沿用次级灰——同页里超过两种彩色会盖过数值本身。
+  '.dsh-zdd-pet-bubble .pet-bub-usage{display:flex;flex-direction:column;gap:calc(var(--f)*0.22);margin:calc(var(--f)*0.1) 0}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-line{display:flex;align-items:baseline;justify-content:space-between;gap:calc(var(--f)*0.8);line-height:1.45}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-title{font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.62)}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-total{font-size:calc(var(--f)*1.45);line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:#1f1f1f}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-in{font-size:calc(var(--f)*0.7692);font-variant-numeric:tabular-nums;color:#3f6ea8}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-out{font-size:calc(var(--f)*0.7692);font-variant-numeric:tabular-nums;color:#b4703c}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-period{font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.62)}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-spend{font-size:calc(var(--f)*0.7692);font-weight:650;font-variant-numeric:tabular-nums;color:#1f1f1f}',
+  // 进出比例条：两段按真实占比分宽，颜色与下面的数字一一对应；占比极小时只留一条细线，不放大。
+  '.dsh-zdd-pet-bubble .pet-bub-usage-bar{display:flex;height:calc(var(--f)*0.3);border-radius:calc(var(--f)*0.15);overflow:hidden;background:rgba(43,43,43,.1);margin:calc(var(--f)*0.05) 0}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-bar-in{display:block;height:100%;background:#3f6ea8}',
+  '.dsh-zdd-pet-bubble .pet-bub-usage-bar-out{display:block;height:100%;background:#b4703c}',
   // 任务进度角标（「▰▰▱▱▱  2/5」或纯数字）：方块 + 数字，等宽数字不跳动。
   // 与桌面端 runtime/electron-helper/index.html 的 .pet-bub-prog 同一套数值，两端不许走样。
   '.dsh-zdd-pet-bubble .pet-bub-prog{font-size:calc(var(--f)*0.7692);font-weight:700;color:rgba(43,43,43,.55);' +
@@ -142,7 +155,7 @@ function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode[] {
       }),
     ];
   }
-  // 其余每行一个块：label、sub、error、quota。
+  // 其余每行一个块：label、sub、error、quota、usage。
   return rows.map((r, i) => {
     // 展开态一行一个窗口；四段 flex 同行，进度条吃剩余宽度。
     if (r.role === 'quota') {
@@ -161,6 +174,54 @@ function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode[] {
           }),
           h('span', { key: 'used', className: 'pet-bub-quota-used', children: r.usedText }),
           h('span', { key: 'reset', className: 'pet-bub-quota-reset', children: r.resetText }),
+        ],
+      });
+    }
+    // 用量页：三行两列，总量是整卡唯一的大字；进/出各一处强调色，其余保持次级灰。
+    if (r.role === 'usage') {
+      return h('div', {
+        key: i,
+        className: 'pet-bub-usage',
+        children: [
+          h('div', {
+            key: 'head',
+            className: 'pet-bub-usage-line',
+            children: [
+              h('span', { key: 'title', className: 'pet-bub-usage-title', children: r.title }),
+              h('span', { key: 'total', className: 'pet-bub-usage-total', children: r.total }),
+            ],
+          }),
+          // 进出比例条：宽度即真实占比，输入通常压倒性占多数，条偏单色属正常。
+          r.inputPercent === undefined
+            ? null
+            : h('div', {
+                key: 'bar',
+                className: 'pet-bub-usage-bar',
+                children: [
+                  h('i', { key: 'in', className: 'pet-bub-usage-bar-in', style: { width: r.inputPercent + '%' } }),
+                  h('i', {
+                    key: 'out',
+                    className: 'pet-bub-usage-bar-out',
+                    style: { width: 100 - r.inputPercent + '%' },
+                  }),
+                ],
+              }),
+          h('div', {
+            key: 'io',
+            className: 'pet-bub-usage-line',
+            children: [
+              h('span', { key: 'in', className: 'pet-bub-usage-in', children: r.input }),
+              h('span', { key: 'out', className: 'pet-bub-usage-out', children: r.output }),
+            ],
+          }),
+          h('div', {
+            key: 'foot',
+            className: 'pet-bub-usage-line',
+            children: [
+              h('span', { key: 'period', className: 'pet-bub-usage-period', children: r.period }),
+              h('span', { key: 'spend', className: 'pet-bub-usage-spend', children: r.spend }),
+            ],
+          }),
         ],
       });
     }
@@ -197,7 +258,7 @@ function treeToNodes(h: typeof jsx, node: CustomNode, key: string | number): Rea
 const BALANCE_FADE_MS = 250;
 
 /** 制造余额气泡组件（工厂），注入样式一次。
- *  内容来自 shared 的 balanceBubbleView / balanceDetailView；内置形态走行数据，
+ *  内容来自 shared 的 balancePageView（按页取行数据）；内置形态走行数据，
  *  custom 走第三方节点树。切页是淡出 → 换内容 → 淡入，显隐与 10s 计时归 pet.ts 管。
  */
 export function makeBalanceBubble(rt: {
@@ -208,7 +269,7 @@ export function makeBalanceBubble(rt: {
 }): (props: {
   state: BalanceState;
   on: boolean;
-  /** 目标页：0 为初始页；内置 windows 形态下 0 收起、1 展开。 */
+  /** 目标页：0 为初始页；内置 windows 形态下 0 收起、1 窗口明细、2 区间用量。 */
   index: number;
   /** 点击气泡：上层切到下一页并重置 10s 计时器。 */
   onCycle: () => void;
@@ -244,12 +305,12 @@ export function makeBalanceBubble(rt: {
     const isCustom = state.ok && state.shape === 'custom';
     const views = isCustom ? customViews(state) : undefined;
     const tree = views ? views[Math.min(shown, views.length - 1)] : undefined;
-    const rows = isCustom ? [] : shown > 0 ? balanceDetailView(state) : balanceBubbleView(state);
+    const rows = isCustom ? [] : balancePageView(state, shown);
     // 可点：windows 可展开；custom 只有多于 1 页才可点；其余形态点开没有新内容。
     const clickable = state.ok && (state.shape === 'windows' || (isCustom && customClickable(state)));
     // 不可用状态是多行说明，套用碎碎念的窄字号变体。
     const wrap = state.ok ? '' : ' dsh-zdd-pet-whisper';
-    // 展开态只属于内置 windows 的收起/展开两页；custom 各页是对等页面，翻页不该切紧凑字号。
+    // 展开态字号只属于内置 windows 的窗口明细与用量两页；custom 各页是对等页面，翻页不该切紧凑字号。
     return h('div', {
       className:
         'dsh-zdd-pet-bubble' +
@@ -274,16 +335,19 @@ export function makeBalanceBubble(rt: {
  *  image 是池内名（按素材根拼路径），url 是第三方完整地址，两者互斥且由 host 判定层保证。
  *  有配图时渲染在文字上方，图片样式取自 shared 的 MEME_BUBBLE_CSS。
  *  progress 是任务进度角标（「▰▰▱▱▱  2/5」），有值时渲染在正文上方；工作气泡靠它显示清单进度。
+ *  voiceState 是语音播报状态角标；onClick 让工作气泡可点（跳到对应会话），缺省即不可点。
  */
-export function makeWhisperBubble(rt: {
-  h: typeof jsx;
-}): (props: {
+export function makeWhisperBubble(rt: { h: typeof jsx }): (props: {
   text: string;
   image?: string;
   url?: string;
   assetRoot?: string;
+  /** 任务进度角标文案；null = 无清单进度。 */
   progress?: string | null;
   on: boolean;
+  voiceState?: 'idle' | 'loading' | 'ready' | 'failed';
+  /** 可点时的回调；工作状态气泡用它跳会话，缺省即不可点。 */
+  onClick?: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
 }) => ReactNode {
   const { h } = rt;
   injectBubbleCss();
@@ -296,6 +360,8 @@ export function makeWhisperBubble(rt: {
     assetRoot,
     progress,
     on,
+    voiceState = 'idle',
+    onClick,
   }: {
     text: string;
     image?: string;
@@ -303,6 +369,8 @@ export function makeWhisperBubble(rt: {
     assetRoot?: string;
     progress?: string | null;
     on: boolean;
+    voiceState?: 'idle' | 'loading' | 'ready' | 'failed';
+    onClick?: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
   }) {
     const rows = whisperBubbleView({ ok: true, text, ts: 0 });
     const key = String(image ?? '').trim();
@@ -314,20 +382,44 @@ export function makeWhisperBubble(rt: {
     const body: ReactNode[] = badge
       ? [h('div', { key: 'prog', className: 'pet-bub-prog', children: badge }), ...rowsToNodes(h, rows)]
       : rowsToNodes(h, rows);
+    const children: ReactNode[] = src
+      ? [
+          h('img', {
+            key: 'img',
+            className: MEME_IMG_CLASS,
+            // 名称形态拼本页路由前缀；url 形态是完整地址，与本页 origin 无关。
+            src,
+            alt: key || href,
+          }),
+          ...body,
+        ]
+      : body;
     return h('div', {
-      className: 'dsh-zdd-pet-bubble dsh-zdd-pet-whisper' + (src ? ' ' + MEME_BUBBLE_CLASS : '') + (on ? ' is-on' : ''),
-      children: src
-        ? [
-            h('img', {
-              key: 'img',
-              className: MEME_IMG_CLASS,
-              // 名称形态拼本页路由前缀；url 形态是完整地址，与本页 origin 无关。
-              src,
-              alt: key || href,
-            }),
-            ...body,
-          ]
-        : body,
+      className:
+        'dsh-zdd-pet-bubble dsh-zdd-pet-whisper' +
+        (src ? ' ' + MEME_BUBBLE_CLASS : '') +
+        (on ? ' is-on' : '') +
+        (onClick ? ' is-clickable' : ''),
+      // 点在气泡上不能漏到底下的宠物本体：那里是拖拽与「摸一下」的命中区。
+      onClick: onClick
+        ? (e: ReactNS.MouseEvent<HTMLDivElement>) => {
+            e.stopPropagation();
+            onClick(e);
+          }
+        : undefined,
+      children: voiceState === 'idle' ? children : [children, voiceBadgeNode(h, voiceState)],
     });
   };
+}
+
+/** 语音状态角标：只在手动触发的播报上出现，右下角绝对定位，不参与文字排版。
+ *  `failed` 用静音喇叭——「本该有声却没响」，不是系统告警，所以不上警告符号。 */
+function voiceBadgeNode(h: typeof jsx, state: 'loading' | 'ready' | 'failed'): ReactNode {
+  return h('span', {
+    key: 'voice',
+    className:
+      'dsh-zdd-pet-voice-badge' + (state === 'loading' ? ' is-loading' : '') + (state === 'failed' ? ' is-failed' : ''),
+    'aria-hidden': 'true',
+    children: state === 'loading' ? null : state === 'failed' ? '🔇' : '🔊',
+  });
 }

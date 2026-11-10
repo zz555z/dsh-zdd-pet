@@ -16,9 +16,24 @@ const HIT_BOX = {
 	y1: 335
 };
 const DRAG_THRESHOLD = 5;
+const MIN_REACHABLE_PX = 24;
 const SLINGSHOT_DOUBLE_MS = 200;
 const PET_REF_WIDTH = 462;
-const ROUTE_PATH = "/dsh-zdd-pet-7340";
+const ROUTE_SEGMENT = "/dsh-zdd-pet-7340";
+function mountPrefixOf(baseURI) {
+	if (baseURI === void 0 || baseURI === "") return "";
+	try {
+		const url = new URL(baseURI);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+		return url.pathname.replace(/\/+$/, "");
+	} catch {
+		return "";
+	}
+}
+function routePathOf(baseURI) {
+	return mountPrefixOf(baseURI) + ROUTE_SEGMENT;
+}
+const ROUTE_PATH = routePathOf(typeof document === "undefined" ? void 0 : document.baseURI);
 const ANIMATION_EXT = ".webm";
 
 //#endregion
@@ -28,6 +43,7 @@ const pick = (pool, exclude) => {
 	const src = entries.length ? entries : pool;
 	return src[Math.floor(Math.random() * src.length)];
 };
+const pickSleepSet = (sets) => sets.length > 0 ? sets[Math.floor(Math.random() * sets.length)] : null;
 const pickSlot = (slot, exclude) => {
 	if (typeof slot === "string") return slot;
 	const entries = exclude === void 0 ? slot : slot.filter((n) => n !== exclude);
@@ -223,6 +239,35 @@ const anchorPixel = (o) => {
 		};
 	}
 };
+/** 单轴钳制：窗口比工作区还大（max < min）时贴住起点，与窗口管理器的行为一致。 */
+const clampAxis = (want, min, max) => Math.min(Math.max(want, min), Math.max(min, max));
+const fitWindowInArea = (o) => {
+	const wantX = o.bodyX - o.insetX;
+	const wantY = o.bodyY - o.insetY;
+	if (!o.area) return {
+		x: wantX,
+		y: wantY,
+		offsetX: o.insetX,
+		offsetY: o.insetY
+	};
+	const area = o.area;
+	const reach = o.reach ?? {
+		left: 0,
+		right: 0,
+		top: 0,
+		bottom: 0
+	};
+	const bodyX = clampAxis(o.bodyX, area.x - reach.left, rectRight(area) - o.bodyWidth + reach.right);
+	const bodyY = clampAxis(o.bodyY, area.y - reach.top, rectBottom(area) - o.bodyHeight + reach.bottom);
+	const x = clampAxis(bodyX - o.insetX, area.x, rectRight(area) - o.width);
+	const y = clampAxis(bodyY - o.insetY, area.y, rectBottom(area) - o.height);
+	return {
+		x,
+		y,
+		offsetX: bodyX - x,
+		offsetY: bodyY - y
+	};
+};
 
 //#endregion
 //#region src/shared/balance/tone.ts
@@ -358,6 +403,32 @@ function optNum(value) {
 	const n = Number(value);
 	return Number.isFinite(n) ? n : null;
 }
+/**
+* 解析区间累计用量：缺省返回 undefined（服务商没有这项数据），出现但不完整或非法返回 null。
+*
+* 五个数字缺一不可——少一个就拼不出一页可信的用量，宁可这一拍整片不显示，也不拿 0 顶替。
+*/
+function parseUsage(raw) {
+	if (raw === void 0) return void 0;
+	if (!raw || typeof raw !== "object") return null;
+	const u = raw;
+	const fields = [
+		u.totalTokens,
+		u.inputTokens,
+		u.outputTokens,
+		u.requests,
+		u.spentUsd
+	].map(optNum);
+	if (fields.some((n) => typeof n !== "number")) return null;
+	const [totalTokens, inputTokens, outputTokens, requests, spentUsd] = fields;
+	return {
+		totalTokens,
+		inputTokens,
+		outputTokens,
+		requests,
+		spentUsd
+	};
+}
 function toBalanceState(raw) {
 	if (!raw || typeof raw !== "object") return null;
 	const r = raw;
@@ -380,8 +451,9 @@ function toBalanceState(raw) {
 		const rollingCapUsd = optNum(d.rollingCapUsd);
 		const weeklyCapUsd = optNum(d.weeklyCapUsd);
 		const monthlyCapUsd = optNum(d.monthlyCapUsd);
+		const usage = parseUsage(d.usage);
 		if (monthly === void 0 || monthly === null) return null;
-		if (rolling === null || weekly === null || rollingCapUsd === null || weeklyCapUsd === null || monthlyCapUsd === null) return null;
+		if (rolling === null || weekly === null || rollingCapUsd === null || weeklyCapUsd === null || monthlyCapUsd === null || usage === null) return null;
 		return {
 			provider,
 			shape: "windows",
@@ -392,6 +464,7 @@ function toBalanceState(raw) {
 			rollingCapUsd,
 			weeklyCapUsd,
 			monthlyCapUsd,
+			...usage ? { usage } : {},
 			rollingLabel: typeof d.rollingLabel === "string" && d.rollingLabel.length > 0 ? d.rollingLabel : void 0,
 			rollingResetsAt: typeof d.rollingResetsAt === "string" ? d.rollingResetsAt : void 0,
 			weeklyResetsAt: typeof d.weeklyResetsAt === "string" ? d.weeklyResetsAt : void 0,
@@ -695,10 +768,46 @@ function windowsDetail(v) {
 	}
 	return rows.length > 0 ? rows : windowsRows(v);
 }
+/** 紧凑计数：1.2B / 96.0M / 478.3K，千以下取整。固定一位小数——同一页三个数字宽度稳定，不随取值跳动。 */
+function compactCount(n) {
+	if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+	if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+	if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+	return String(Math.round(n));
+}
+/**
+* 第三页：本期累计用量。一行 `usage` 承载整张卡，两端摆成三行两列——
+* 「Token / 总量」「输入 / 输出」「本期请求数 / 花费」，总量是唯一的大字。
+*
+* 服务商没给这项数据时返回 undefined，由页数判定决定气泡只有两页；给的一半数字不会被拼进来。
+*/
+function windowsUsage(v) {
+	const u = v.usage;
+	if (!u) return void 0;
+	const total = compactCount(u.totalTokens);
+	const input = compactCount(u.inputTokens) + " 入";
+	const output = compactCount(u.outputTokens) + " 出";
+	const period = "本期 " + u.requests + " 次";
+	const spend = "$" + u.spentUsd.toFixed(2);
+	const sum = u.inputTokens + u.outputTokens;
+	const inputPercent = sum > 0 ? u.inputTokens / sum * 100 : void 0;
+	return [{
+		role: "usage",
+		text: "Token " + total + " · " + input + " / " + output + " · " + period + " · " + spend,
+		title: "Token",
+		total,
+		input,
+		output,
+		period,
+		spend,
+		inputPercent
+	}];
+}
 const windowsHandler = {
 	percent: windowsPercent,
 	rows: windowsRows,
-	detail: windowsDetail
+	detail: windowsDetail,
+	usage: windowsUsage
 };
 
 //#endregion
@@ -759,6 +868,19 @@ function balanceDetailView(state) {
 	const handler = HANDLERS[state.shape];
 	return handler.detail ? handler.detail(state) : handler.rows(state);
 }
+function balancePageCount(state) {
+	if (!state.ok) return 1;
+	if (state.shape === "custom") return Math.max(1, customViews(state)?.length ?? 1);
+	if (state.shape !== "windows") return 1;
+	return state.usage ? 3 : 2;
+}
+function balancePageView(state, page) {
+	if (!state.ok) return unavailableRows(state);
+	const handler = HANDLERS[state.shape];
+	if (state.shape !== "windows" || page <= 0) return handler.rows(state);
+	if (page === 1 || !state.usage) return balanceDetailView(state);
+	return handler.usage?.(state) ?? balanceDetailView(state);
+}
 function customViews(state) {
 	if (!state.ok || state.shape !== "custom") return void 0;
 	const views = HANDLERS[state.shape].views?.(state);
@@ -802,7 +924,15 @@ function memeImageUrl(name, base = ROUTE_PATH, assetRoot = "") {
 }
 const MEME_IMG_CLASS = "pet-bub-img";
 const MEME_BUBBLE_CLASS = "has-img";
-const MEME_BUBBLE_CSS = [".pet-bub-img{--m:var(--f,calc(var(--dsh-zdd-pet-size,var(--pet-size,462px))*0.0455));display:block;width:calc(var(--m)*7.4725);max-width:100%;height:auto;border-radius:calc(var(--m)*0.5714);margin:0 auto calc(var(--m)*0.3736);object-fit:cover;pointer-events:none;user-select:none}", ".pet-bubble.has-img,.dsh-zdd-pet-bubble.has-img{min-width:0}"].join("");
+const MEME_BUBBLE_CSS = [
+	".pet-bub-img{--m:var(--f,calc(var(--dsh-zdd-pet-size,var(--pet-size,462px))*0.0455));display:block;width:calc(var(--m)*7.4725);max-width:100%;height:auto;border-radius:calc(var(--m)*0.5714);margin:0 auto calc(var(--m)*0.3736);object-fit:cover;pointer-events:none;user-select:none}",
+	".pet-bubble.has-img,.dsh-zdd-pet-bubble.has-img{min-width:0}",
+	".pet-bubble.has-img,.dsh-zdd-pet-bubble.has-img{min-width:0}",
+	".dsh-zdd-pet-voice-badge{position:absolute;right:calc(var(--f,21px)*0.25);bottom:calc(var(--f,21px)*0.15);width:calc(var(--f,21px)*0.66);height:calc(var(--f,21px)*0.66);display:flex;align-items:center;justify-content:center;font-size:calc(var(--f,21px)*0.5);line-height:1;opacity:.65;pointer-events:none}",
+	".dsh-zdd-pet-voice-badge.is-loading::before{content:\"\";width:calc(var(--f,21px)*0.5);height:calc(var(--f,21px)*0.5);border:1.5px solid rgba(43,43,43,.22);border-top-color:rgba(43,43,43,.7);border-radius:50%;animation:dsh-zdd-pet-voice-spin .8s linear infinite}",
+	"@keyframes dsh-zdd-pet-voice-spin{to{transform:rotate(360deg)}}",
+	".dsh-zdd-pet-voice-badge.is-failed{opacity:.5}"
+].join("");
 /** 只注入一次（页面已有同一标记则跳过）。 */
 let memeCssInjected = false;
 function injectMemeBubbleCss() {
@@ -863,8 +993,15 @@ function flattenConfigPets(merged) {
 			rest: conf.rest,
 			celebrate: conf.celebrate,
 			mood: conf.mood,
+			sleepStartTexts: conf.sleepStartTexts,
+			sleepEndTexts: conf.sleepEndTexts,
+			sleepRefuseTexts: conf.sleepRefuseTexts,
 			whisperModel: conf.whisperModel,
 			chatModel: conf.chatModel,
+			memes: conf.memes,
+			chatImageEnabled: conf.chatImageEnabled,
+			chatAnimationEnabled: conf.chatAnimationEnabled,
+			chatImageLimit: conf.chatImageLimit,
 			assetRoot: entry,
 			extra: entry !== "main"
 		});
@@ -958,27 +1095,43 @@ const NOTIFY_ICONS = {
 	test: "notify-test"
 };
 const MAX_BODY = 80;
+/** 会话名在标题里的截断上限（字符）：名字只是认人用，太长会把事件类型挤出标题那一行。 */
+const MAX_SESSION_NAME = 30;
 function truncate(text) {
 	return text.length > MAX_BODY ? text.slice(0, MAX_BODY) + "…" : text;
 }
-function frameToToast(frame) {
+/** 会话名 → 能放进标题的名字：去掉首尾空白并截断；没有名字时返回 undefined。 */
+function sessionNameOf(sessionTitle) {
+	const name = sessionTitle?.trim();
+	if (!name) return void 0;
+	return name.length > MAX_SESSION_NAME ? name.slice(0, MAX_SESSION_NAME) + "…" : name;
+}
+/** 「会话名 · 事件」形式的标题；没有会话名时只留事件类型。 */
+function composeTitle(sessionTitle, label) {
+	const name = sessionNameOf(sessionTitle);
+	return name ? name + " · " + label : label;
+}
+function frameToToast(frame, sessionTitle) {
 	switch (frame.type) {
 		case "session/event": {
 			const ev = frame.event ?? {};
 			if (ev.type !== "turn/end") return null;
 			const kind = ev.data?.reason?.kind;
-			if (kind === "completed") return {
-				title: "对话完成",
-				body: "",
-				icon: NOTIFY_ICONS.done
-			};
+			if (kind === "completed") {
+				const text = typeof ev.data?.text === "string" ? ev.data.text.trim() : "";
+				return {
+					title: sessionNameOf(sessionTitle) ?? "对话完成",
+					body: text ? truncate(text) : "",
+					icon: NOTIFY_ICONS.done
+				};
+			}
 			if (kind === "error") return {
-				title: "生成失败",
+				title: composeTitle(sessionTitle, "生成失败"),
 				body: ev.data?.reason?.error?.message ?? "",
 				icon: NOTIFY_ICONS.error
 			};
 			if (kind === "max-tokens") return {
-				title: "输出被截断",
+				title: composeTitle(sessionTitle, "输出被截断"),
 				body: "已达到输出 token 上限",
 				icon: NOTIFY_ICONS.truncated
 			};
@@ -988,7 +1141,7 @@ function frameToToast(frame) {
 			const toolName = typeof frame.toolName === "string" ? frame.toolName : "";
 			const reason = typeof frame.reason === "string" && frame.reason ? frame.reason : "";
 			return {
-				title: "正在申请权限",
+				title: composeTitle(sessionTitle, "正在申请权限"),
 				body: (toolName ? "工具「" + toolName + "」" : "") + (reason ? "：" + reason : ""),
 				icon: NOTIFY_ICONS.approval
 			};
@@ -996,7 +1149,7 @@ function frameToToast(frame) {
 		case "question/requested": {
 			const q = Array.isArray(frame.questions) && frame.questions[0]?.question || "";
 			return {
-				title: "模型在等你回答",
+				title: composeTitle(sessionTitle, "模型在等你回答"),
 				body: q,
 				icon: NOTIFY_ICONS.question
 			};
@@ -1011,31 +1164,63 @@ function frameToToast(frame) {
 }
 
 //#endregion
+//#region src/shared/hotkey.ts
+function isTypingTarget(target) {
+	const el = target;
+	if (!el || typeof el.tagName !== "string") return false;
+	const tag = el.tagName.toLowerCase();
+	if (tag === "input" || tag === "textarea" || tag === "select") return true;
+	return el.isContentEditable === true;
+}
+function isBareKey(e, key) {
+	if (e.ctrlKey || e.metaKey || e.altKey) return false;
+	if (String(e.key).toLowerCase() !== key) return false;
+	return !isTypingTarget(e.target);
+}
+
+//#endregion
+//#region src/shared/display-hotkey.ts
+const DISPLAY_ORDER = [
+	"web",
+	"desktop",
+	"both",
+	"none"
+];
+const DISPLAY_HOTKEY_HINTS = DISPLAY_ORDER.map((_, index) => String(index + 1) + " 键");
+function displayOfHotkey(e) {
+	for (let index = 0; index < DISPLAY_ORDER.length; index += 1) if (isBareKey(e, String(index + 1))) return DISPLAY_ORDER[index];
+	return void 0;
+}
+
+//#endregion
 //#region src/shared/menu/tree.ts
+/** 睡着时仍然放行的菜单动作：维护类、「叫醒它」本身，以及第三方菜单项。
+*  第三方要做什么由它自己决定——真去驱动宠物时会带占用锁调接口，宿主闸门在那一层再判
+*  （锁优先）。在渲染端先拦掉，等于让「更多」里的第三方入口在睡觉时整体失效。 */
+const SLEEP_ALLOWED_ACTIONS = [
+	"sleep",
+	"wake",
+	"home",
+	"set-display",
+	"reload",
+	"third-party"
+];
+const isSleepAllowedAction = (action) => action !== void 0 && SLEEP_ALLOWED_ACTIONS.includes(action);
+/** 四个显示位置的菜单文案；键是 {@link DISPLAY_ORDER} 的元素，顺序以那边为准。 */
+const DISPLAY_LABELS = {
+	web: "仅网页",
+	desktop: "仅桌面",
+	both: "两者",
+	none: "都不"
+};
 const displayMenuBranch = () => ({
 	label: "显示位置",
-	children: [
-		{
-			label: "仅网页",
-			action: "set-display",
-			display: "web"
-		},
-		{
-			label: "仅桌面",
-			action: "set-display",
-			display: "desktop"
-		},
-		{
-			label: "两者",
-			action: "set-display",
-			display: "both"
-		},
-		{
-			label: "都不",
-			action: "set-display",
-			display: "none"
-		}
-	]
+	children: DISPLAY_ORDER.map((display, index) => ({
+		label: DISPLAY_LABELS[display],
+		action: "set-display",
+		display,
+		hint: DISPLAY_HOTKEY_HINTS[index]
+	}))
 });
 const pomodoroMenuBranch = () => ({
 	label: "番茄钟",
@@ -1071,7 +1256,7 @@ const pomodoroMenuBranch = () => ({
 	]
 });
 const MORE_MENU_LABEL = "更多";
-function readMenuItems(data, surface) {
+function readMenuItems(data, surface$1) {
 	if (!data || typeof data !== "object") return [];
 	const items = data.items;
 	if (!Array.isArray(items)) return [];
@@ -1081,7 +1266,7 @@ function readMenuItems(data, surface) {
 		const rec = item;
 		const rawTarget = rec.target;
 		const target = rawTarget === "web" || rawTarget === "desktop" || rawTarget === "both" ? rawTarget : "both";
-		if (target !== "both" && target !== surface) continue;
+		if (target !== "both" && target !== surface$1) continue;
 		const owner = rec.owner;
 		const label = rec.label;
 		if (typeof owner === "string" && owner !== "" && typeof label === "string" && label !== "") out.push({
@@ -1092,26 +1277,34 @@ function readMenuItems(data, surface) {
 	return out;
 }
 function buildMoreBranch(items) {
-	const groups = new Map();
-	for (const item of items) {
-		const list = groups.get(item.owner);
-		if (list) list.push(item.label);
-		else groups.set(item.owner, [item.label]);
-	}
+	const labelCount = new Map();
+	for (const item of items) labelCount.set(item.label, (labelCount.get(item.label) ?? 0) + 1);
 	const children = [];
-	for (const [owner, labels] of groups) if (labels.length === 1) children.push({
-		label: labels[0],
-		action: "third-party",
-		owner
-	});
-	else children.push({
-		label: owner,
-		children: labels.map((label) => ({
-			label,
+	const branches = new Map();
+	for (const item of items) {
+		if ((labelCount.get(item.label) ?? 0) === 1) {
+			children.push({
+				label: item.label,
+				action: "third-party",
+				owner: item.owner
+			});
+			continue;
+		}
+		let branch = branches.get(item.owner);
+		if (branch === void 0) {
+			branch = {
+				label: item.owner,
+				children: []
+			};
+			branches.set(item.owner, branch);
+			children.push(branch);
+		}
+		branch.children.push({
+			label: item.label,
 			action: "third-party",
-			owner
-		}))
-	});
+			owner: item.owner
+		});
+	}
 	return children.length > 0 ? {
 		label: MORE_MENU_LABEL,
 		children
@@ -1167,6 +1360,67 @@ function isNoMirrorAnimation(categories, anim) {
 }
 
 //#endregion
+//#region src/shared/menu/memes.ts
+/**
+* 可用图的名称清单：描述为空的不算。
+*
+* 与宿主的池判定同口径（`host/memes` 的 readMemePool 要求描述非空）：模型靠描述才认得出这张图，
+* 没描述的条目即使文件存在也进不了对话与碎碎念。顺序保留配置里的书写顺序。
+*/
+function usableNames(memes) {
+	if (!memes || typeof memes !== "object" || Array.isArray(memes)) return [];
+	const out = [];
+	for (const [name, desc] of Object.entries(memes)) {
+		if (!name.trim()) continue;
+		if (typeof desc !== "string" || desc.trim() === "") continue;
+		out.push(name);
+	}
+	return out;
+}
+function groupMemes(source) {
+	const names = usableNames(source.memes);
+	const limit = Math.floor(Number(source.chatImageLimit));
+	const unlimited = !Number.isFinite(limit) || limit <= 0;
+	const take = source.chatImageEnabled !== true ? 0 : unlimited ? names.length : Math.min(limit, names.length);
+	return {
+		chat: names.slice(0, take),
+		other: names.slice(take)
+	};
+}
+/** 单张图 → 菜单叶子：点它就是「用这张图说一句」；给了缩略图地址就带上，菜单据此画小图。 */
+function memeLeaf(name, thumbOf) {
+	const leaf$1 = {
+		label: name,
+		action: "whisper",
+		image: name
+	};
+	if (thumbOf) leaf$1.thumb = thumbOf(name);
+	return leaf$1;
+}
+function memeThumbUrl(baseUrl, assetRoot, name) {
+	const root = assetRoot && assetRoot.trim() !== "" ? assetRoot : "main";
+	return baseUrl + "/pic/memes/" + encodeURIComponent(root) + "/" + encodeURIComponent(name) + ".png";
+}
+function buildMemeBranch(source, thumbOf) {
+	const { chat, other } = groupMemes(source);
+	const leaf$1 = (name) => memeLeaf(name, thumbOf);
+	const groups = [];
+	if (chat.length > 0) groups.push({
+		label: "纳入对话的配图",
+		children: chat.map(leaf$1)
+	});
+	if (other.length > 0) groups.push({
+		label: "其他",
+		children: other.map(leaf$1)
+	});
+	if (groups.length === 0) return null;
+	return {
+		label: "配图",
+		children: groups
+	};
+}
+
+//#endregion
 //#region src/shared/menu/css.ts
 const MENU_CSS = [
 	".dsh-zdd-pet-menu{position:fixed;left:0;top:0;z-index:2147483000;color:#2b2b2b;font-size:13px;line-height:1.5;",
@@ -1187,6 +1441,11 @@ const MENU_CSS = [
 	"gap:14px;padding:5px 12px;border-radius:6px;white-space:nowrap;cursor:default}",
 	".dsh-zdd-pet-menu-item:hover{background:rgba(43,99,255,.14)}",
 	".dsh-zdd-pet-menu-item>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}",
+	".dsh-zdd-pet-menu-item:hover{background:rgba(43,99,255,.14)}",
+	".dsh-zdd-pet-menu-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}",
+	".dsh-zdd-pet-menu-thumb{width:28px;height:28px;border-radius:4px;object-fit:cover;flex:none;",
+	"background:rgba(0,0,0,.06)}",
+	".dsh-zdd-pet-menu-item-pic{gap:8px}",
 	".dsh-zdd-pet-menu-hint{color:#9aa0a6;font-size:12px;flex:none;white-space:nowrap}",
 	".dsh-zdd-pet-menu-arrow{color:#9aa0a6;font-size:12px;flex:none}"
 ].join("");
@@ -1328,6 +1587,7 @@ function mountContextMenu(opts) {
 			if (isBranchNode(node)) {
 				item.classList.add("dsh-zdd-pet-menu-branch");
 				const label = document.createElement("span");
+				label.className = "dsh-zdd-pet-menu-label";
 				label.textContent = node.label;
 				const arrow = document.createElement("span");
 				arrow.className = "dsh-zdd-pet-menu-arrow";
@@ -1342,7 +1602,19 @@ function mountContextMenu(opts) {
 					showPanel(childPanel, item);
 				});
 			} else {
+				if (node.thumb) {
+					const thumb = document.createElement("img");
+					thumb.className = "dsh-zdd-pet-menu-thumb";
+					thumb.src = node.thumb;
+					thumb.alt = "";
+					thumb.draggable = false;
+					thumb.loading = "lazy";
+					thumb.decoding = "async";
+					item.appendChild(thumb);
+					item.classList.add("dsh-zdd-pet-menu-item-pic");
+				}
 				const label = document.createElement("span");
+				label.className = "dsh-zdd-pet-menu-label";
 				label.textContent = node.label;
 				item.appendChild(label);
 				if (node.hint) {
@@ -1494,13 +1766,6 @@ function targetSize(width, height, maxSide = IMAGE_MAX_SIDE) {
 		height: Math.max(1, Math.round(height * scale))
 	};
 }
-/**
-* 把文件解码成 `<img>`。
-*
-* 用 `FileReader` 的 data URL 而不是 `URL.createObjectURL`：桌面 helper 的 CSP 是
-* `img-src 'self' http: https: data:`，不含 `blob:`，objectURL 在那边会被拦成 onerror
-* （表现为"这个文件解不出图片"，而浏览器端正常）。
-*/
 function loadImage(file) {
 	return new Promise((resolve, reject) => {
 		const reader = new FileReader();
@@ -1519,7 +1784,6 @@ function loadImage(file) {
 		reader.readAsDataURL(file);
 	});
 }
-/** 字节 → 规范 base64（分块，避免 String.fromCharCode 参数过多爆栈）。 */
 function bytesToBase64(bytes) {
 	let bin = "";
 	const CHUNK = 32768;
@@ -1579,9 +1843,319 @@ async function encodeImageFile(file) {
 }
 
 //#endregion
+//#region src/shared/hear.ts
+const HEAR_SAMPLE_RATE = 16e3;
+const MAX_RECORD_MS = 24e3;
+const SILENCE_PEAK = .002;
+const MIN_RECORD_MS = 300;
+/** 等识别结果的上限（ms）：宿主自己 30s 超时，这里留点余量先等它回结构化失败。 */
+const HEAR_TIMEOUT_MS = 4e4;
+/** 每块采集的样本数：1024 样本 @16kHz = 64ms，松手后等待补齐尾音的时长也按它算。 */
+const BLOCK_SAMPLES = 1024;
+/** 松手后等最后一块音频落袋（ms）：比一块略长，避免把最后半句话砍掉。 */
+const TAIL_SETTLE_MS = 80;
+function canRecord() {
+	return typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getUserMedia === "function";
+}
+function floatToPcm16(samples) {
+	const out = new Int16Array(samples.length);
+	for (let i = 0; i < samples.length; i++) {
+		const v = samples[i] < -1 ? -1 : samples[i] > 1 ? 1 : samples[i];
+		out[i] = v < 0 ? v * 32768 : v * 32767;
+	}
+	return out;
+}
+function peakOf(pcm) {
+	let peak = 0;
+	for (let i = 0; i < pcm.length; i++) {
+		const v = pcm[i] < 0 ? -pcm[i] : pcm[i];
+		if (v > peak) peak = v;
+	}
+	return peak / 32768;
+}
+function encodeWave(pcm, sampleRate = HEAR_SAMPLE_RATE) {
+	const dataBytes = pcm.length * 2;
+	const bytes = new Uint8Array(44 + dataBytes);
+	const view = new DataView(bytes.buffer);
+	/** 写 4 字节 ASCII 标记（RIFF/WAVE/fmt /data），全是大写或小写字母，不用考虑编码。 */
+	const ascii = (offset, text) => {
+		for (let i = 0; i < text.length; i++) bytes[offset + i] = text.charCodeAt(i);
+	};
+	ascii(0, "RIFF");
+	view.setUint32(4, 36 + dataBytes, true);
+	ascii(8, "WAVE");
+	ascii(12, "fmt ");
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, 1, true);
+	view.setUint32(24, sampleRate, true);
+	view.setUint32(28, sampleRate * 2, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	ascii(36, "data");
+	view.setUint32(40, dataBytes, true);
+	for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, pcm[i], true);
+	return bytes;
+}
+function toBase64(bytes) {
+	const BASE64_CHUNK_BYTES = 8192;
+	let binary = "";
+	for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_BYTES) {
+		const end = Math.min(offset + BASE64_CHUNK_BYTES, bytes.length);
+		for (let i = offset; i < end; i++) binary += String.fromCharCode(bytes[i]);
+	}
+	return btoa(binary);
+}
+/** 把宿主的失败原因收敛到自己认识的几种；其余一律按生成失败处理。 */
+function reasonOf(raw) {
+	return raw === "unsupported" || raw === "bad-request" ? raw : "generate-error";
+}
+async function hearAudio(url, audio, signal) {
+	const timeout = AbortSignal.timeout(HEAR_TIMEOUT_MS);
+	try {
+		const res = await fetch(url, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ audio }),
+			signal: signal === void 0 ? timeout : AbortSignal.any([signal, timeout])
+		});
+		const raw = await res.json().catch(() => null);
+		if (!raw || typeof raw !== "object") return {
+			ok: false,
+			reason: "network",
+			message: "识别响应不是 JSON"
+		};
+		const body = raw;
+		if (body.ok === true && typeof body.text === "string") return {
+			ok: true,
+			text: body.text
+		};
+		return {
+			ok: false,
+			reason: reasonOf(body.reason),
+			message: typeof body.message === "string" ? body.message : ""
+		};
+	} catch (e) {
+		return {
+			ok: false,
+			reason: "network",
+			message: e instanceof Error ? e.message : String(e)
+		};
+	}
+}
+async function startRecording() {
+	const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
+	const ctx = new AudioContext({ sampleRate: HEAR_SAMPLE_RATE });
+	const source = ctx.createMediaStreamSource(stream);
+	const processor = ctx.createScriptProcessor(BLOCK_SAMPLES, 1, 1);
+	const chunks = [];
+	const maxSamples = Math.floor(MAX_RECORD_MS / 1e3 * HEAR_SAMPLE_RATE);
+	let frames = 0;
+	let closed = false;
+	processor.onaudioprocess = (event) => {
+		if (frames >= maxSamples) return;
+		const samples = event.inputBuffer.getChannelData(0);
+		const room = maxSamples - frames;
+		const take = samples.length > room ? samples.subarray(0, room) : samples;
+		chunks.push(new Float32Array(take));
+		frames += take.length;
+	};
+	source.connect(processor);
+	processor.connect(ctx.destination);
+	await ctx.resume();
+	const teardown = () => {
+		if (closed) return;
+		closed = true;
+		processor.onaudioprocess = null;
+		try {
+			source.disconnect();
+			processor.disconnect();
+		} catch {}
+		for (const track of stream.getTracks()) track.stop();
+		ctx.close();
+	};
+	return {
+		elapsedMs: () => frames / HEAR_SAMPLE_RATE * 1e3,
+		async stop() {
+			await new Promise((resolve) => setTimeout(resolve, TAIL_SETTLE_MS));
+			teardown();
+			if (frames === 0) return null;
+			const all = new Float32Array(frames);
+			let offset = 0;
+			for (const chunk of chunks) {
+				all.set(chunk, offset);
+				offset += chunk.length;
+			}
+			const pcm = floatToPcm16(all);
+			return {
+				wave: encodeWave(pcm),
+				peak: peakOf(pcm)
+			};
+		},
+		cancel: teardown
+	};
+}
+
+//#endregion
+//#region src/shared/chat/hear-control.ts
+function createHearControl(opts) {
+	const { micBtn, input, hint, resizeInput, hearUrl } = opts;
+	let hearState = "idle";
+	let recorder = null;
+	let hearTimer = 0;
+	/** 还没拿到麦克风就松手了：等 startRecording 一返回立刻收尾，避免麦克风一直开着。 */
+	let wasReleasedEarly = false;
+	/** 按钮外观：录音阶段画红，识别阶段禁用（避免连点开两次）。 */
+	const paint = () => {
+		if (hearState === "starting" || hearState === "recording") micBtn.dataset.hear = "recording";
+		else delete micBtn.dataset.hear;
+		micBtn.disabled = hearState === "transcribing";
+	};
+	/** 现在录不了的原因；能录时给空串。 */
+	const blockedReason = () => {
+		if (!canRecord()) return "当前地址不支持录音：用 https 或 localhost 打开才有麦克风";
+		if (hearUrl === "") return "这个入口没有接上识别地址";
+		return "";
+	};
+	/** 把识别结果接在光标处（替换当前选区），并把焦点交回输入框。 */
+	const insertText = (text) => {
+		const from = input.selectionStart ?? input.value.length;
+		const to = input.selectionEnd ?? from;
+		input.value = input.value.slice(0, from) + text + input.value.slice(to);
+		const caret = from + text.length;
+		input.setSelectionRange(caret, caret);
+		resizeInput();
+		input.focus();
+	};
+	/** 失败原因翻成人话；宿主给的 message 有就附上，方便对着日志排查。 */
+	const describeFailure = (outcome) => {
+		if (outcome.reason === "unsupported") return "这个宿主没开语音识别";
+		if (outcome.reason === "bad-request") return "音频没通过宿主校验";
+		if (outcome.reason === "network") return "识别请求失败：" + outcome.message;
+		return "识别失败：" + (outcome.message || "未知原因");
+	};
+	/** 收尾：停采集 → 判误触 → 判静音 → 送宿主 → 文字落进输入框。失败只提示，不动已输入的文字。 */
+	const stop = async () => {
+		const current = recorder;
+		if (!current) return;
+		recorder = null;
+		window.clearInterval(hearTimer);
+		if (current.elapsedMs() < MIN_RECORD_MS) {
+			current.cancel();
+			hearState = "idle";
+			paint();
+			hint.hide();
+			return;
+		}
+		hearState = "transcribing";
+		paint();
+		hint.show("识别中…");
+		try {
+			const clip = await current.stop();
+			if (clip === null) {
+				hint.flash("没录到声音");
+				return;
+			}
+			if (clip.peak < SILENCE_PEAK) {
+				hint.flash("没听到声音，检查一下麦克风");
+				return;
+			}
+			if (!input.isConnected) return;
+			const outcome = await hearAudio(hearUrl, toBase64(clip.wave));
+			if (!input.isConnected) return;
+			if (!outcome.ok) {
+				hint.flash(describeFailure(outcome));
+				return;
+			}
+			const text = outcome.text.trim();
+			if (text === "") {
+				hint.flash("没听清，再说一次");
+				return;
+			}
+			hint.hide();
+			insertText(text);
+		} catch (e) {
+			hint.flash("录音出错：" + (e instanceof Error ? e.message : String(e)));
+		} finally {
+			hearState = "idle";
+			paint();
+		}
+	};
+	/** 开录：先要麦克风，拿到了才开始计时。 */
+	const start = async () => {
+		const blocked = blockedReason();
+		if (blocked !== "") {
+			hint.flash(blocked);
+			return;
+		}
+		if (hearState !== "idle") return;
+		if (document.activeElement === input) input.blur();
+		hearState = "starting";
+		wasReleasedEarly = false;
+		paint();
+		hint.show("正在打开麦克风…");
+		try {
+			recorder = await startRecording();
+		} catch (e) {
+			hearState = "idle";
+			paint();
+			hint.flash("打不开麦克风：" + (e instanceof Error ? e.message : String(e)));
+			return;
+		}
+		if (wasReleasedEarly) {
+			stop();
+			return;
+		}
+		hearState = "recording";
+		paint();
+		hearTimer = window.setInterval(() => {
+			const rec = recorder;
+			if (!rec) return;
+			if (rec.elapsedMs() >= MAX_RECORD_MS) {
+				stop();
+				return;
+			}
+			const total = Math.floor(rec.elapsedMs() / 1e3);
+			hint.show("录音中 " + Math.floor(total / 60) + ":" + String(total % 60).padStart(2, "0") + " · 松开结束");
+		}, 200);
+	};
+	micBtn.addEventListener("pointerdown", (e) => {
+		if (e.button !== 0) return;
+		e.preventDefault();
+		try {
+			micBtn.setPointerCapture(e.pointerId);
+		} catch {}
+		start();
+	});
+	/** 松手或指针被系统抢走（切窗口）都算说完；还在等麦克风时先记下，等它回来立刻收尾。 */
+	const onRelease = () => {
+		if (hearState === "starting") {
+			wasReleasedEarly = true;
+			return;
+		}
+		if (hearState === "recording") stop();
+	};
+	micBtn.addEventListener("pointerup", onRelease);
+	micBtn.addEventListener("pointercancel", onRelease);
+	return {
+		start: () => void start(),
+		stop: () => void stop(),
+		isHearing: () => hearState === "recording",
+		dispose: () => {
+			window.clearInterval(hearTimer);
+			if (recorder) {
+				recorder.cancel();
+				recorder = null;
+			}
+			hearState = "idle";
+		}
+	};
+}
+
+//#endregion
 //#region src/shared/chat/icons.ts
 /**
-* 对话弹窗里的两枚内联 SVG 图标。
+* 对话弹窗里的三枚内联 SVG 图标。
 * 不用 emoji：同一个符号在不同字体回退链下会被渲染成异体字形（上传用的 🖼 在 Windows 上就是如此）。
 * @module dsh-zdd-pet/src/shared/chat/icons
 */
@@ -1620,6 +2194,22 @@ function pictureIcon(size = 16) {
 	}), svgNode("path", { d: "M21 15l-5-5L5 21" }));
 	return svg;
 }
+function micIcon(size = 16) {
+	const svg = svgNode("svg", {
+		viewBox: "0 0 24 24",
+		width: String(size),
+		height: String(size),
+		...ICON_ATTRS
+	});
+	svg.append(svgNode("rect", {
+		x: "9",
+		y: "2",
+		width: "6",
+		height: "11",
+		rx: "3"
+	}), svgNode("path", { d: "M5.5 11a6.5 6.5 0 0 0 13 0" }), svgNode("path", { d: "M12 17.5V21" }), svgNode("path", { d: "M8.5 21h7" }));
+	return svg;
+}
 function cameraIcon(size = 16) {
 	const svg = svgNode("svg", {
 		viewBox: "0 0 24 24",
@@ -1656,6 +2246,19 @@ const CHAT_CSS = [
 	".dsh-zdd-pet-chat-btn:hover{background:rgba(0,0,0,.06);color:rgba(43,43,43,.9)}",
 	".dsh-zdd-pet-chat-btn:disabled{opacity:.45;cursor:default}",
 	".dsh-zdd-pet-chat-btn svg{display:block}",
+	".dsh-zdd-pet-chat-input::placeholder{color:rgba(43,43,43,.45)}",
+	".dsh-zdd-pet-chat-input:disabled{opacity:.55}",
+	".dsh-zdd-pet-chat-actions{display:flex;align-items:center;gap:6px;padding:0 8px 7px}",
+	".dsh-zdd-pet-chat-btn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;",
+	"border:none;border-radius:6px;background:transparent;color:rgba(43,43,43,.62);font-size:14px;line-height:1;",
+	"cursor:pointer;transition:background .15s,color .15s}",
+	".dsh-zdd-pet-chat-btn:hover{background:rgba(0,0,0,.06);color:rgba(43,43,43,.9)}",
+	".dsh-zdd-pet-chat-btn:disabled{opacity:.45;cursor:default}",
+	".dsh-zdd-pet-chat-btn svg{display:block}",
+	".dsh-zdd-pet-chat-btn[data-hear=\"recording\"]{color:#e5484d;background:rgba(229,72,77,.14)}",
+	".dsh-zdd-pet-chat-btn[data-hear=\"recording\"]:hover{background:rgba(229,72,77,.2);color:#e5484d}",
+	".dsh-zdd-pet-chat-btn[data-hear=\"recording\"] svg{animation:dsh-zdd-pet-hear-pulse 1s ease-in-out infinite}",
+	"@keyframes dsh-zdd-pet-hear-pulse{0%,100%{opacity:1}50%{opacity:.4}}",
 	".dsh-zdd-pet-chat-attach{display:none;align-items:center;gap:4px;margin-left:2px}",
 	".dsh-zdd-pet-chat-attach[data-on=\"1\"]{display:inline-flex}",
 	".dsh-zdd-pet-chat-thumb{width:24px;height:24px;object-fit:cover;border-radius:4px;",
@@ -1691,7 +2294,7 @@ function iconButton(title, icon) {
 	btn.className = "dsh-zdd-pet-chat-btn";
 	btn.title = title;
 	btn.setAttribute("aria-label", title);
-	btn.appendChild(icon);
+	btn.append(icon);
 	return btn;
 }
 /** 输入框宽度随文本自适应：宽度按测量值，封顶后由高度接住折行。 */
@@ -1724,16 +2327,24 @@ function createChatDom(opts = {}) {
 	const hint = document.createElement("div");
 	hint.className = "dsh-zdd-pet-chat-hint";
 	let hintTimer = 0;
-	const flash = (text) => {
+	/** 常驻提示：录音与识别期间一直显示，由调用点自己收。 */
+	const showHint = (text) => {
+		window.clearTimeout(hintTimer);
 		hint.textContent = text;
 		hint.style.display = "block";
+	};
+	const hideHint = () => {
 		window.clearTimeout(hintTimer);
-		hintTimer = window.setTimeout(() => {
-			hint.style.display = "none";
-		}, HINT_MS);
+		hint.style.display = "none";
+	};
+	const flash = (text) => {
+		showHint(text);
+		hintTimer = window.setTimeout(hideHint, HINT_MS);
 	};
 	const pickBtn = iconButton("上传图片", pictureIcon());
 	const shotBtn = iconButton("截取当前屏幕", cameraIcon());
+	const hearUrl = typeof opts.hearUrl === "string" ? opts.hearUrl : "";
+	const micBtn = iconButton("按住说话", micIcon());
 	const fileInput = document.createElement("input");
 	fileInput.type = "file";
 	fileInput.accept = IMAGE_ACCEPT;
@@ -1752,7 +2363,7 @@ function createChatDom(opts = {}) {
 	attach.append(thumb, attachX);
 	const actions = document.createElement("div");
 	actions.className = "dsh-zdd-pet-chat-actions";
-	actions.append(pickBtn, shotBtn, fileInput, attach);
+	actions.append(pickBtn, shotBtn, micBtn, fileInput, attach);
 	root.append(input, actions, hint, err);
 	(opts.container ?? document.body).appendChild(root);
 	const resizeInput = opts.autoWidth === false ? () => {} : enableAutoResize(input, root);
@@ -1817,6 +2428,17 @@ function createChatDom(opts = {}) {
 			});
 		});
 	} else shotBtn.addEventListener("click", () => flash("当前环境不支持截屏，先用上传试试"));
+	const hear = createHearControl({
+		micBtn,
+		input,
+		hint: {
+			show: showHint,
+			hide: hideHint,
+			flash
+		},
+		resizeInput,
+		hearUrl
+	});
 	resizeInput();
 	return {
 		root,
@@ -1830,8 +2452,40 @@ function createChatDom(opts = {}) {
 		getAttachment: () => attachment,
 		isEncoding: () => encoding || capturing,
 		flash,
-		dispose: () => window.clearTimeout(hintTimer)
+		startHear: hear.start,
+		stopHear: hear.stop,
+		isHearing: hear.isHearing,
+		dispose: () => {
+			window.clearTimeout(hintTimer);
+			hear.dispose();
+		}
 	};
+}
+
+//#endregion
+//#region src/shared/chat/enter.ts
+const COMPOSITION_SETTLE_MS = 80;
+function createCompositionWatch() {
+	let composing = false;
+	let endedAt = Number.NEGATIVE_INFINITY;
+	return {
+		start: () => {
+			composing = true;
+		},
+		end: (at) => {
+			composing = false;
+			endedAt = at;
+		},
+		isComposing: () => composing,
+		endedWithin: (now) => now - endedAt < COMPOSITION_SETTLE_MS
+	};
+}
+function decideEnter(event, watch, now) {
+	if (event.key !== "Enter" || event.shiftKey) return "ignore";
+	if (event.isComposing === true || event.keyCode === 229 || watch.isComposing()) return "ignore";
+	if (event.repeat === true) return "swallow";
+	if (watch.endedWithin(now)) return "swallow";
+	return "send";
 }
 
 //#endregion
@@ -1919,18 +2573,30 @@ function bindSend(binding) {
 			if (!binding.isClosed()) binding.input.focus();
 		});
 	};
+	const ime = createCompositionWatch();
+	binding.input.addEventListener("compositionstart", ime.start);
+	binding.input.addEventListener("compositionend", () => ime.end(performance.now()));
 	binding.input.addEventListener("keydown", (e) => {
-		if (e.key === "Enter") {
-			e.preventDefault();
-			doSend();
-		}
+		const action = decideEnter(e, ime, performance.now());
+		if (action === "ignore") return;
+		e.preventDefault();
+		if (action === "send") doSend();
 	});
+}
+/**
+* 由对话地址推导识别地址：两端传进来的都是 `.../chat`，去掉尾段换成 `/voice/hear`。
+*
+* @param baseUrl - 已含挂载前缀的对话地址。
+* @returns 同前缀下的识别地址。
+*/
+function hearUrlOf(baseUrl) {
+	return baseUrl.replace(/\/chat$/, "") + "/voice/hear";
 }
 function mountChatDialog(opts) {
 	injectChatCss();
-	const { petId, surface, x, y, onSent, onClose, clamp } = opts;
+	const { petId, surface: surface$1, x, y, onSent, onClose, clamp } = opts;
 	const baseUrl = opts.baseUrl ?? ROUTE_PATH + "/chat";
-	const withPet = baseUrl + "?pet=" + encodeURIComponent(petId) + "&surface=" + surface;
+	const withPet = baseUrl + "?pet=" + encodeURIComponent(petId) + "&surface=" + surface$1;
 	const c = clamp && Number.isFinite(clamp.x + clamp.y + clamp.w + clamp.h) ? clamp : {
 		x: 0,
 		y: 0,
@@ -1940,7 +2606,8 @@ function mountChatDialog(opts) {
 	const dom = createChatDom({
 		capture: opts.capture,
 		container: opts.container,
-		autoWidth: opts.autoWidth
+		autoWidth: opts.autoWidth,
+		hearUrl: opts.hearUrl ?? hearUrlOf(baseUrl)
 	});
 	const { root, input, err } = dom;
 	/** 以 (x,y) 落点，超出 clamp 矩形夹回。 */
@@ -1979,27 +2646,60 @@ function mountChatDialog(opts) {
 	dom.resizeInput();
 	if (!opts.container) place();
 	if (opts.initialImage) dom.setImageFile(opts.initialImage);
+	if (opts.initialEncoded) dom.setEncoded(opts.initialEncoded);
 	input.focus();
 	return {
 		el: root,
-		close
+		close,
+		startHear: dom.startHear,
+		stopHear: dom.stopHear,
+		isHearing: dom.isHearing,
+		setEncoded: dom.setEncoded,
+		setImageFile: dom.setImageFile,
+		flash: dom.flash
+	};
+}
+
+//#endregion
+//#region src/shared/chat/hear-hold.ts
+/** 目标键的小写形式：判定与状态机共用这一份，避免两处各写一个字面量。 */
+const HEAR_KEY = "m";
+function isHearHotkey(e) {
+	return isBareKey(e, HEAR_KEY);
+}
+function createHearHold(hooks) {
+	let holding = false;
+	/** 只比键名：按住期间焦点已交给输入框，不能再套「不在可编辑元素里」那道判据。 */
+	const sameKey = (key) => String(key).toLowerCase() === HEAR_KEY;
+	const release = () => {
+		if (!holding) return;
+		holding = false;
+		hooks.onRelease();
+	};
+	return {
+		onKeyDown(e) {
+			if (holding) return sameKey(e.key);
+			if (e.repeat === true || !isHearHotkey(e) || !hooks.isArmed()) return false;
+			holding = true;
+			hooks.onPress();
+			return true;
+		},
+		onKeyUp(e) {
+			if (sameKey(e.key)) release();
+		},
+		release
 	};
 }
 
 //#endregion
 //#region src/shared/chat/hotkey.ts
-const CHAT_HOTKEY_HINT = "T 键";
-function isTypingTarget(target) {
-	const el = target;
-	if (!el || typeof el.tagName !== "string") return false;
-	const tag = el.tagName.toLowerCase();
-	if (tag === "input" || tag === "textarea" || tag === "select") return true;
-	return el.isContentEditable === true;
-}
+const CHAT_HOTKEY_HINT = "L 键";
+const CAPTURE_HOTKEY_HINT = "S 键";
 function isChatHotkey(e) {
-	if (e.ctrlKey || e.metaKey || e.altKey) return false;
-	if (e.key !== "t" && e.key !== "T") return false;
-	return !isTypingTarget(e.target);
+	return isBareKey(e, "l");
+}
+function isCaptureHotkey(e) {
+	return isBareKey(e, "s");
 }
 
 //#endregion
@@ -2025,11 +2725,15 @@ const DEFAULT_PHYSICS = {
 	groundFriction: GROUND_FRICTION,
 	ceilingBounce: true,
 	throwPower: 1,
-	petCollision: false
+	petCollision: true,
+	hapticEnabled: true,
+	tiltGravity: true,
+	shakeThrow: true
 };
 const DEFAULT_THROW_POWER = 1;
-const REST_VY = 40;
-const REST_VX = 15;
+const REST_NORMAL = 40;
+const REST_TANGENT = 15;
+const REST_NORMAL_EPS = 1;
 const MAX_STEP_DT = .05;
 const SQ_SQUASH = .55;
 const SQ_DURATION_MS = 220;
@@ -2058,6 +2762,51 @@ const squashScale = (u, squash = SQ_SQUASH) => {
 	const c3 = c1 + 1;
 	const f = 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
 	return Math.min(1.12, squash + (1 - squash) * Math.max(f, 0));
+};
+
+//#endregion
+//#region src/shared/physics/contact.ts
+const CONTACT_NORMALS = {
+	left: {
+		nx: 1,
+		ny: 0
+	},
+	right: {
+		nx: -1,
+		ny: 0
+	},
+	ceiling: {
+		nx: 0,
+		ny: 1
+	},
+	floor: {
+		nx: 0,
+		ny: -1
+	}
+};
+const resolveContact = (speed, edge, physics, dt) => {
+	const { nx, ny } = CONTACT_NORMALS[edge];
+	const tx = -ny;
+	const ty = nx;
+	const vn = speed.vx * nx + speed.vy * ny;
+	const vt = speed.vx * tx + speed.vy * ty;
+	const normalSpeed = Math.abs(vn) < REST_NORMAL ? 0 : Math.abs(vn) * physics.restitution;
+	const tangentSpeed = vt * Math.max(0, 1 - physics.groundFriction * dt);
+	return {
+		vx: normalSpeed * nx + tangentSpeed * tx,
+		vy: normalSpeed * ny + tangentSpeed * ty,
+		normalSpeed,
+		tangentSpeed
+	};
+};
+const isRestingOnContacts = (edges, speed) => {
+	if (edges.length === 0) return false;
+	return edges.every((edge) => {
+		const { nx, ny } = CONTACT_NORMALS[edge];
+		const normal = Math.abs(speed.vx * nx + speed.vy * ny);
+		const tangent = Math.abs(speed.vx * -ny + speed.vy * nx);
+		return normal < REST_NORMAL_EPS && tangent < REST_TANGENT;
+	});
 };
 
 //#endregion
@@ -2093,50 +2842,95 @@ const screenOfBox = (space, x, y) => {
 	const hit = indexAtPoint(space.areas, cx, cy);
 	return hit >= 0 ? hit : nearestIndex(space.areas, cx, cy);
 };
-const throwStep = (s, dtRaw, b, physics = DEFAULT_PHYSICS) => {
+const throwStep = (s, dtRaw, b, physics = DEFAULT_PHYSICS, gravity) => {
 	const dt = Math.min(Math.max(dtRaw, 0), MAX_STEP_DT);
+	const g = gravity ?? {
+		gx: 0,
+		gy: physics.gravity
+	};
 	let { x, y, vx, vy } = s;
-	vy += physics.gravity * dt;
+	vx += g.gx * dt;
+	vy += g.gy * dt;
 	x += vx * dt;
 	y += vy * dt;
 	let bounced = false;
+	let hit = null;
+	const contacts = [];
+	/** 同一步撞到两条边（角落）时 hit 留更重的那个（手感只按主撞击算），contacts 全量保留。 */
+	const record = (edge, speed) => {
+		contacts.push(edge);
+		if (hit === null || speed > hit.speed) hit = {
+			edge,
+			speed
+		};
+	};
 	if (x < b.minX) {
+		record("left", Math.abs(vx));
 		x = b.minX;
-		vx = Math.abs(vx) * physics.restitution;
+		const out = resolveContact({
+			vx,
+			vy
+		}, "left", physics, dt);
+		vx = out.vx;
+		vy = out.vy;
 		bounced = true;
 	} else if (x > b.maxX) {
+		record("right", Math.abs(vx));
 		x = b.maxX;
-		vx = -Math.abs(vx) * physics.restitution;
+		const out = resolveContact({
+			vx,
+			vy
+		}, "right", physics, dt);
+		vx = out.vx;
+		vy = out.vy;
 		bounced = true;
 	}
 	if (y < b.minY) {
 		if (physics.ceilingBounce) {
+			record("ceiling", Math.abs(vy));
 			y = b.minY;
-			vy = Math.abs(vy) * physics.restitution;
+			const out = resolveContact({
+				vx,
+				vy
+			}, "ceiling", physics, dt);
+			vx = out.vx;
+			vy = out.vy;
 			bounced = true;
 		}
 	} else if (y >= b.maxY) {
+		record("floor", Math.abs(vy));
 		y = b.maxY;
-		vx *= Math.max(0, 1 - physics.groundFriction * dt);
-		if (Math.abs(vy) < REST_VY) vy = 0;
-		else vy = -Math.abs(vy) * physics.restitution;
+		const out = resolveContact({
+			vx,
+			vy
+		}, "floor", physics, dt);
+		vx = out.vx;
+		vy = out.vy;
 		bounced = true;
 	}
-	const speed = Math.hypot(vx, vy);
-	const atRest = y >= b.maxY - 1 && Math.abs(vy) < 1 && Math.abs(vx) < REST_VX || bounced && speed < REST_VY && Math.abs(vy) < 1;
 	return {
 		x,
 		y,
 		vx,
 		vy,
 		bounced,
-		atRest
+		atRest: isRestingOnContacts(contacts, {
+			vx,
+			vy
+		}),
+		hit,
+		contacts
 	};
 };
-const throwStepRegion = (s, dtRaw, space, physics = DEFAULT_PHYSICS, lockScreen = -1) => {
+const throwStepRegion = (s, dtRaw, space, physics = DEFAULT_PHYSICS, lockScreen = -1, gravity) => {
 	const dt = Math.min(Math.max(dtRaw, 0), MAX_STEP_DT);
+	const g = gravity ?? {
+		gx: 0,
+		gy: physics.gravity
+	};
 	let { x, y, vx, vy } = s;
-	vy += physics.gravity * dt;
+	vx += g.gx * dt;
+	vy += g.gy * dt;
 	x += vx * dt;
 	y += vy * dt;
 	if (space.areas.length === 0) return {
@@ -2146,10 +2940,22 @@ const throwStepRegion = (s, dtRaw, space, physics = DEFAULT_PHYSICS, lockScreen 
 		vy,
 		screen: -1,
 		bounced: false,
-		atRest: false
+		atRest: false,
+		hit: null,
+		contacts: []
 	};
 	const h = space.size * 9 / 16;
 	let bounced = false;
+	let hit = null;
+	const contacts = [];
+	/** 同一步撞到两条边时 hit 留更重的那个，与 {@link throwStep} 同口径；contacts 全量保留。 */
+	const record = (edge, speed) => {
+		contacts.push(edge);
+		if (hit === null || speed > hit.speed) hit = {
+			edge,
+			speed
+		};
+	};
 	const locked = Number.isInteger(lockScreen) && lockScreen >= 0 && lockScreen < space.areas.length;
 	/** 该用哪块屏的 AABB / 工作区 / 面板：锁定时恒为锁定屏，否则取身体中心所在屏 */
 	const pick$1 = (i) => locked ? lockScreen : i;
@@ -2160,14 +2966,26 @@ const throwStepRegion = (s, dtRaw, space, physics = DEFAULT_PHYSICS, lockScreen 
 	const cy = y + h / 2;
 	if (x < b.minX) {
 		if (locked || indexAtPoint(space.panels, pa.x - 1, cy) < 0) {
+			record("left", Math.abs(vx));
 			x = b.minX;
-			vx = Math.abs(vx) * physics.restitution;
+			const out = resolveContact({
+				vx,
+				vy
+			}, "left", physics, dt);
+			vx = out.vx;
+			vy = out.vy;
 			bounced = true;
 		}
 	} else if (x > b.maxX) {
 		if (locked || indexAtPoint(space.panels, rectRight(pa), cy) < 0) {
+			record("right", Math.abs(vx));
 			x = b.maxX;
-			vx = -Math.abs(vx) * physics.restitution;
+			const out = resolveContact({
+				vx,
+				vy
+			}, "right", physics, dt);
+			vx = out.vx;
+			vy = out.vy;
 			bounced = true;
 		}
 	}
@@ -2178,23 +2996,30 @@ const throwStepRegion = (s, dtRaw, space, physics = DEFAULT_PHYSICS, lockScreen 
 	const cx = x + space.size / 2;
 	if (y < b.minY) {
 		if (physics.ceilingBounce && (locked || indexAtPoint(space.panels, cx, pa2.y - 1) < 0)) {
+			record("ceiling", Math.abs(vy));
 			y = b.minY;
-			vy = Math.abs(vy) * physics.restitution;
+			const out = resolveContact({
+				vx,
+				vy
+			}, "ceiling", physics, dt);
+			vx = out.vx;
+			vy = out.vy;
 			bounced = true;
 		}
 	} else if (y >= b.maxY) {
 		if (locked || indexAtPoint(space.panels, cx, rectBottom(pa2)) < 0) {
+			record("floor", Math.abs(vy));
 			y = b.maxY;
-			vx *= Math.max(0, 1 - physics.groundFriction * dt);
-			if (Math.abs(vy) < REST_VY) vy = 0;
-			else vy = -Math.abs(vy) * physics.restitution;
+			const out = resolveContact({
+				vx,
+				vy
+			}, "floor", physics, dt);
+			vx = out.vx;
+			vy = out.vy;
 			bounced = true;
 		}
 	}
 	cur = pick$1(screenOfBox(space, x, y));
-	b = space.bounds[cur];
-	const speed = Math.hypot(vx, vy);
-	const atRest = y >= b.maxY - 1 && Math.abs(vy) < 1 && Math.abs(vx) < REST_VX || bounced && speed < REST_VY && Math.abs(vy) < 1;
 	return {
 		x,
 		y,
@@ -2202,7 +3027,12 @@ const throwStepRegion = (s, dtRaw, space, physics = DEFAULT_PHYSICS, lockScreen 
 		vy,
 		screen: cur,
 		bounced,
-		atRest
+		atRest: isRestingOnContacts(contacts, {
+			vx,
+			vy
+		}),
+		hit,
+		contacts
 	};
 };
 const throwSubsteps = (vx, vy, dt) => {
@@ -2338,7 +3168,22 @@ const collidePet = (fly, hit) => {
 		fvx: fly.vx - v1n * nx + v1n2 * nx,
 		fvy: fly.vy - v1n * ny + v1n2 * ny,
 		hvx: hit.vx - v2n * nx + v2n2 * nx,
-		hvy: hit.vy - v2n * ny + v2n2 * ny
+		hvy: hit.vy - v2n * ny + v2n2 * ny,
+		impactSpeed: vrel
+	};
+};
+const overlapPush = (a, b) => {
+	const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+	const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+	if (ox <= 0 || oy <= 0) return null;
+	const alongX = ox <= oy;
+	const sign = alongX ? (a.left + a.right) / 2 >= (b.left + b.right) / 2 ? 1 : -1 : (a.top + a.bottom) / 2 >= (b.top + b.bottom) / 2 ? 1 : -1;
+	return alongX ? {
+		dx: sign * ox / 2,
+		dy: 0
+	} : {
+		dx: 0,
+		dy: sign * oy / 2
 	};
 };
 
@@ -2522,6 +3367,7 @@ function toWorkStatus(raw) {
 	if (!raw || typeof raw !== "object") return null;
 	const r = raw;
 	const state = r.state === null || typeof r.state === "string" && WORK_STATUS_STATES.includes(r.state) ? r.state : null;
+	const sessionId = typeof r.sessionId === "string" && r.sessionId !== "" && r.sessionId !== "unknown" ? r.sessionId : null;
 	const p = r.progress;
 	const done = Number(p?.done);
 	const total = Number(p?.total);
@@ -2532,7 +3378,8 @@ function toWorkStatus(raw) {
 	return {
 		state,
 		task: typeof r.task === "string" ? r.task : null,
-		progress
+		progress,
+		sessionId
 	};
 }
 function hasTask(ws) {
@@ -3095,7 +3942,8 @@ const SECTION_LEAF_NAMES = [
 	"balance",
 	"workStatus",
 	"notify",
-	"menu"
+	"menu",
+	"focusSession"
 ];
 /** 宠物叶子名的全集；新增宠物叶子时与 {@link PetLeafName} 一起改。 */
 const PET_LEAF_NAMES = [
@@ -3103,7 +3951,8 @@ const PET_LEAF_NAMES = [
 	"anim",
 	"position",
 	"throw",
-	"lock"
+	"lock",
+	"sleep"
 ];
 /** 把字符串收窄成分段叶子名。 */
 function isSectionLeafName(name) {
@@ -3156,7 +4005,8 @@ function readSay(leaf$1) {
 		anim: typeof d.anim === "boolean" ? d.anim : void 0,
 		hold: typeof d.hold === "boolean" ? d.hold : void 0,
 		holdKind: d.holdKind === "complete" || d.holdKind === "confirm" ? d.holdKind : void 0,
-		dismissOnHover: typeof d.dismissOnHover === "boolean" ? d.dismissOnHover : void 0
+		dismissOnHover: typeof d.dismissOnHover === "boolean" ? d.dismissOnHover : void 0,
+		voiceTo: d.voiceTo === "web" || d.voiceTo === "desktop" ? d.voiceTo : void 0
 	};
 }
 function readWorkStatus(leaf$1) {
@@ -3184,6 +4034,23 @@ function readLock(leaf$1) {
 	return {
 		locked: true,
 		expiresAt: d.expiresAt
+	};
+}
+function readSleep(leaf$1) {
+	if (!leaf$1.data || typeof leaf$1.data !== "object") return null;
+	const d = leaf$1.data;
+	if (d.sleeping === false) return { sleeping: false };
+	if (d.sleeping !== true) return null;
+	for (const name of [
+		d.start,
+		d.loop,
+		d.end
+	]) if (typeof name !== "string" || name === "") return null;
+	return {
+		sleeping: true,
+		start: d.start,
+		loop: d.loop,
+		end: d.end
 	};
 }
 function readPosition(leaf$1) {
@@ -3249,6 +4116,914 @@ function sayBubbleDurationMs(text) {
 }
 
 //#endregion
+//#region src/shared/bubble-hold.ts
+const BUBBLE_HOLD_TAIL_MS = 1500;
+const BUBBLE_HOLD_MAX_MS = 5e4;
+function utteranceToHold(event) {
+	return {
+		kind: event.kind === "start" ? "hold" : "release",
+		seq: event.seq
+	};
+}
+const BUBBLE_HOLD_IDLE = {
+	on: false,
+	delayMs: null,
+	holdSeq: null
+};
+function reduceBubbleHold(state, event) {
+	if (event.kind === "show") return {
+		delayMs: Math.max(0, event.durationMs),
+		holdSeq: null,
+		on: true
+	};
+	if (event.kind === "clear") return BUBBLE_HOLD_IDLE;
+	if (event.kind === "hide") return state.on ? BUBBLE_HOLD_IDLE : state;
+	if (!state.on) return state;
+	if (event.kind === "hold") {
+		if (state.holdSeq === event.seq) return state;
+		return {
+			delayMs: BUBBLE_HOLD_MAX_MS,
+			holdSeq: event.seq,
+			on: true
+		};
+	}
+	if (state.holdSeq !== event.seq) return state;
+	return {
+		delayMs: BUBBLE_HOLD_TAIL_MS,
+		holdSeq: null,
+		on: true
+	};
+}
+
+//#endregion
+//#region src/shared/sleep-hotkey.ts
+const SLEEP_HOTKEY_HINT = "Z 键";
+function isSleepHotkey(e) {
+	return isBareKey(e, "z");
+}
+
+//#endregion
+//#region src/shared/todo/types.ts
+/** 读一个数字，非法回落。 */
+function numberOr(raw, fallback) {
+	return typeof raw === "number" && Number.isFinite(raw) ? raw : fallback;
+}
+function parseTodoItem(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const record = raw;
+	if (typeof record.id !== "string" || record.id === "") return null;
+	if (typeof record.text !== "string") return null;
+	const dueAt = record.dueAt === null || record.dueAt === void 0 ? null : typeof record.dueAt === "number" && Number.isFinite(record.dueAt) ? record.dueAt : void 0;
+	if (dueAt === void 0) return null;
+	return {
+		id: record.id,
+		text: record.text,
+		dueAt,
+		done: record.done === true,
+		createdAt: numberOr(record.createdAt, 0),
+		updatedAt: numberOr(record.updatedAt, 0),
+		completedAt: typeof record.completedAt === "number" ? record.completedAt : null
+	};
+}
+function parseTodoList(raw) {
+	if (!Array.isArray(raw)) return [];
+	const out = [];
+	for (const item of raw) {
+		const todo = parseTodoItem(item);
+		if (todo !== null) out.push(todo);
+	}
+	return out;
+}
+function sortTodoItems(list) {
+	return [...list].sort((a, b) => {
+		if (a.done !== b.done) return a.done ? 1 : -1;
+		if (a.done) return (b.completedAt ?? 0) - (a.completedAt ?? 0);
+		const aDue = a.dueAt ?? Number.POSITIVE_INFINITY;
+		const bDue = b.dueAt ?? Number.POSITIVE_INFINITY;
+		if (aDue !== bDue) return aDue - bDue;
+		return a.createdAt - b.createdAt;
+	});
+}
+
+//#endregion
+//#region src/shared/todo/api.ts
+const TODOS_PATH = ROUTE_PATH + "/todos";
+/** 发一次请求并收窄最外层：协议失败、业务失败、非 JSON 都归成失败。 */
+async function send(url, method, body) {
+	try {
+		const response = await fetch(url, {
+			method,
+			cache: "no-store",
+			...body === void 0 ? {} : {
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body)
+			}
+		});
+		const payload = await response.json().catch(() => null);
+		if (!response.ok) return {
+			failed: true,
+			message: `请求失败（HTTP ${response.status}）`
+		};
+		if (payload === null) return {
+			failed: true,
+			message: "响应不是 JSON"
+		};
+		if (payload.ok === false) {
+			const reason = typeof payload.message === "string" ? payload.message : payload.reason;
+			return {
+				failed: true,
+				message: typeof reason === "string" && reason !== "" ? reason : "请求被拒绝"
+			};
+		}
+		return {
+			failed: false,
+			body: payload
+		};
+	} catch (error) {
+		return {
+			failed: true,
+			message: "连不上桌宠服务：" + (error instanceof Error ? error.message : String(error))
+		};
+	}
+}
+/** 单条响应 → 待办；形状不对时给出可展示的失败。 */
+function readTodo(body) {
+	const todo = parseTodoItem(body.todo);
+	return todo === null ? {
+		ok: false,
+		message: "响应里没有有效的待办"
+	} : {
+		ok: true,
+		value: todo
+	};
+}
+async function loadTodos(baseUrl = TODOS_PATH) {
+	const result = await send(baseUrl, "GET");
+	if (result.failed) return {
+		ok: false,
+		message: result.message
+	};
+	return {
+		ok: true,
+		value: parseTodoList(result.body.todos)
+	};
+}
+async function addTodo(text, dueAt, baseUrl = TODOS_PATH) {
+	const result = await send(baseUrl, "POST", {
+		text,
+		dueAt
+	});
+	if (result.failed) return {
+		ok: false,
+		message: result.message
+	};
+	return readTodo(result.body);
+}
+async function patchTodo(id, patch, baseUrl = TODOS_PATH) {
+	const result = await send(baseUrl + "/" + encodeURIComponent(id), "PATCH", patch);
+	if (result.failed) return {
+		ok: false,
+		message: result.message
+	};
+	return readTodo(result.body);
+}
+async function removeTodo(id, baseUrl = TODOS_PATH) {
+	const result = await send(baseUrl + "/" + encodeURIComponent(id), "DELETE");
+	if (result.failed) return {
+		ok: false,
+		message: result.message
+	};
+	return {
+		ok: true,
+		value: typeof result.body.removed === "number" ? result.body.removed : 0
+	};
+}
+
+//#endregion
+//#region src/shared/todo/format.ts
+const MINUTE_MS = 60 * 1e3;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+/** 星期名，索引与 Date.getDay() 对齐。 */
+const WEEKDAYS = [
+	"周日",
+	"周一",
+	"周二",
+	"周三",
+	"周四",
+	"周五",
+	"周六"
+];
+/** 两位补零。 */
+function pad2$1(value) {
+	return String(value).padStart(2, "0");
+}
+/** 当天零点的时间戳：跨日比较用它，避开夏令时造成的 23/25 小时日。 */
+function startOfDay(date) {
+	return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+/** 两个时刻相差几个自然日（按本地日历，向前为负）。 */
+function dayDiff(target, base) {
+	return Math.round((startOfDay(target) - startOfDay(base)) / DAY_MS);
+}
+function spanText(ms) {
+	const minutes = Math.max(1, Math.round(Math.abs(ms) / MINUTE_MS));
+	if (minutes < 60) return `${minutes}分钟`;
+	const hours = Math.max(1, Math.round(minutes / 60));
+	if (hours < 24) return `${hours}小时`;
+	return `${Math.max(1, Math.round(hours / 24))}天`;
+}
+function dueLabel(dueAt, now) {
+	if (dueAt === null) return "无期限";
+	const due = new Date(dueAt);
+	const clock = `${pad2$1(due.getHours())}:${pad2$1(due.getMinutes())}`;
+	const days = dayDiff(due, new Date(now));
+	if (days === 0) return `今天 ${clock}`;
+	if (days === 1) return `明天 ${clock}`;
+	if (days === 2) return `后天 ${clock}`;
+	if (days > 2 && days < 7) return `${WEEKDAYS[due.getDay()]} ${clock}`;
+	return `${due.getMonth() + 1}月${due.getDate()}日 ${clock}`;
+}
+function remainingLabel(dueAt, now) {
+	if (dueAt === null) return "";
+	if (dueAt <= now) return `已逾期${spanText(now - dueAt)}`;
+	return `还剩${spanText(dueAt - now)}`;
+}
+function todoUrgency(dueAt, now) {
+	if (dueAt === null) return "undated";
+	const remaining = dueAt - now;
+	if (remaining <= 0) return "overdue";
+	if (remaining <= 6 * HOUR_MS) return "soon";
+	if (remaining <= DAY_MS) return "today";
+	return "later";
+}
+function metaLabel(todo, now) {
+	if (todo.done) return todo.dueAt === null ? "已完成" : `已完成 · ${dueLabel(todo.dueAt, now)}`;
+	if (todo.dueAt === null) return "无期限";
+	const relative = remainingLabel(todo.dueAt, now);
+	if (todo.dueAt <= now) return relative;
+	return `${dueLabel(todo.dueAt, now)} · ${relative}`;
+}
+function formatDateTimeLocal(ms) {
+	const date = new Date(ms);
+	return `${date.getFullYear()}-${pad2$1(date.getMonth() + 1)}-${pad2$1(date.getDate())}T${pad2$1(date.getHours())}:${pad2$1(date.getMinutes())}`;
+}
+function parseDateTimeLocal(value) {
+	const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value.trim());
+	if (!match) return null;
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const hour = Number(match[4]);
+	const minute = Number(match[5]);
+	if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+	const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+	if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+	return date.getTime();
+}
+
+//#endregion
+//#region src/shared/todo/calendar.ts
+function monthCells(year, month) {
+	const first = new Date(year, month, 1);
+	const lead = (first.getDay() + 6) % 7;
+	const days = new Date(year, month + 1, 0).getDate();
+	const rows = Math.ceil((lead + days) / 7);
+	const cells = [];
+	for (let i = 0; i < rows * 7; i++) {
+		const date = new Date(year, month, 1 - lead + i);
+		cells.push({
+			date,
+			out: date.getMonth() !== month
+		});
+	}
+	return cells;
+}
+
+//#endregion
+//#region src/shared/todo/due-picker.ts
+/** 周一为一周首日，与国内日历习惯一致。 */
+const WEEK_HEAD = [
+	"一",
+	"二",
+	"三",
+	"四",
+	"五",
+	"六",
+	"日"
+];
+/** 分钟档位：与提醒的最短间隔一致，避免选出提醒策略分辨不出的时刻。 */
+const MINUTE_STEP = 5;
+/** 未选日期时的默认时分：早上九点，比零点更像个「该做事了」的时刻。 */
+const DEFAULT_HOUR = 9;
+/** 两位补零。 */
+function pad2(value) {
+	return String(value).padStart(2, "0");
+}
+/** 造一个带 class 的元素。 */
+function make(tag, className) {
+	const node = document.createElement(tag);
+	node.className = className;
+	return node;
+}
+/** 造一个按钮：全部是 `type="button"`，否则在表单里会触发提交。 */
+function makeButton(className, text) {
+	const button = make("button", className);
+	button.type = "button";
+	if (text !== void 0) button.textContent = text;
+	return button;
+}
+/** 建整个选择器的 DOM（尚未挂进文档）。 */
+function buildPickerDom() {
+	const el = makeButton("dsh-zdd-pet-todo-due", "无期限");
+	el.setAttribute("aria-haspopup", "dialog");
+	el.setAttribute("aria-expanded", "false");
+	el.setAttribute("aria-label", "提醒时间（可选）");
+	const calendar = make("div", "dsh-zdd-pet-todo-cal");
+	calendar.setAttribute("role", "dialog");
+	calendar.setAttribute("aria-label", "选择提醒时间");
+	const head = make("div", "dsh-zdd-pet-todo-cal-head");
+	const prev = makeButton("dsh-zdd-pet-todo-cal-nav", "‹");
+	prev.dataset.act = "prev";
+	prev.setAttribute("aria-label", "上个月");
+	const title = make("span", "dsh-zdd-pet-todo-cal-title");
+	const next = makeButton("dsh-zdd-pet-todo-cal-nav", "›");
+	next.dataset.act = "next";
+	next.setAttribute("aria-label", "下个月");
+	head.append(prev, title, next);
+	const week = make("div", "dsh-zdd-pet-todo-cal-week");
+	for (const name of WEEK_HEAD) {
+		const cell = make("span", "");
+		cell.textContent = name;
+		week.appendChild(cell);
+	}
+	const grid = make("div", "dsh-zdd-pet-todo-cal-grid");
+	const foot = make("div", "dsh-zdd-pet-todo-cal-foot");
+	const today = makeButton("dsh-zdd-pet-todo-cal-act", "今天");
+	today.dataset.act = "today";
+	const clear = makeButton("dsh-zdd-pet-todo-cal-act", "清除");
+	clear.dataset.act = "clear";
+	const grow = make("span", "dsh-zdd-pet-todo-cal-grow");
+	const hourChip = makeButton("dsh-zdd-pet-todo-cal-chip", "09");
+	hourChip.dataset.act = "hour";
+	hourChip.setAttribute("aria-label", "选择小时");
+	const colon = make("span", "dsh-zdd-pet-todo-cal-colon");
+	colon.textContent = ":";
+	const minuteChip = makeButton("dsh-zdd-pet-todo-cal-chip", "00");
+	minuteChip.dataset.act = "minute";
+	minuteChip.setAttribute("aria-label", "选择分钟");
+	const done = makeButton("dsh-zdd-pet-todo-cal-act", "完成");
+	done.dataset.act = "done";
+	foot.append(today, clear, grow, hourChip, colon, minuteChip, done);
+	calendar.append(head, week, grid, foot);
+	return {
+		el,
+		calendar,
+		prev,
+		next,
+		title,
+		grid,
+		hourChip,
+		minuteChip
+	};
+}
+/** 同一个自然日（忽略时分）。 */
+function sameDay(a, b) {
+	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+/** 选中日期 + 当前时分组成的时刻；未选日期为 null。 */
+function dueMs(state) {
+	if (state.picked === null) return null;
+	const { picked } = state;
+	return new Date(picked.getFullYear(), picked.getMonth(), picked.getDate(), state.hour, state.minute).getTime();
+}
+/** 造一个日历格：选中态同时写进 class 与 aria。 */
+function cellButton(text, selected) {
+	const button = makeButton("dsh-zdd-pet-todo-cal-cell", text);
+	button.classList.toggle("is-sel", selected);
+	button.setAttribute("aria-pressed", String(selected));
+	return button;
+}
+/** 画日期网格。 */
+function renderDays(dom, state) {
+	const today = new Date();
+	for (const cell of monthCells(state.view.getFullYear(), state.view.getMonth())) {
+		const { date } = cell;
+		const button = cellButton(String(date.getDate()), state.picked !== null && sameDay(state.picked, date));
+		button.classList.toggle("is-out", cell.out);
+		button.classList.toggle("is-today", sameDay(today, date));
+		button.dataset.ts = String(date.getTime());
+		button.setAttribute("aria-label", `${date.getMonth() + 1}月${date.getDate()}日`);
+		dom.grid.appendChild(button);
+	}
+}
+/** 画小时或分钟的网格：一格一个数，当前值高亮。 */
+function renderNumbers(dom, state) {
+	const isHour = state.mode === "hour";
+	const count = isHour ? 24 : 60;
+	const step = isHour ? 1 : MINUTE_STEP;
+	for (let value = 0; value < count; value += step) {
+		const button = cellButton(pad2(value), (isHour ? state.hour : state.minute) === value);
+		button.dataset.num = String(value);
+		button.setAttribute("aria-label", `${value} ${isHour ? "时" : "分"}`);
+		dom.grid.appendChild(button);
+	}
+}
+/** 同步按钮文案、时分标签与当前网格的标题。 */
+function syncPicker(dom, state) {
+	const ms = dueMs(state);
+	dom.el.textContent = ms === null ? "无期限" : dueLabel(ms, Date.now());
+	dom.el.classList.toggle("is-set", ms !== null);
+	dom.hourChip.textContent = pad2(state.hour);
+	dom.minuteChip.textContent = pad2(state.minute);
+	dom.hourChip.classList.toggle("is-on", state.mode === "hour");
+	dom.minuteChip.classList.toggle("is-on", state.mode === "minute");
+}
+/** 整块重画：标题、翻月按钮、网格与文案一次到位。 */
+function renderPicker(dom, state) {
+	const day = state.mode === "day";
+	dom.title.textContent = day ? `${state.view.getFullYear()}年${state.view.getMonth() + 1}月` : state.mode === "hour" ? "选择小时" : "选择分钟";
+	dom.prev.hidden = !day;
+	dom.next.hidden = !day;
+	dom.grid.className = "dsh-zdd-pet-todo-cal-grid is-" + state.mode;
+	dom.grid.textContent = "";
+	if (day) renderDays(dom, state);
+	else renderNumbers(dom, state);
+	syncPicker(dom, state);
+}
+/** 选中某一天：同步展示月份，并回到日期网格。 */
+function pickDay(dom, state, date) {
+	state.picked = date;
+	state.view = new Date(date.getFullYear(), date.getMonth(), 1);
+	state.mode = "day";
+	renderPicker(dom, state);
+}
+/** 点日历里的按钮：翻月、切网格、今天、清除、完成，或选中某一天 / 某个数。 */
+function onCalendarClick(dom, state, button, close) {
+	const { ts, num, act } = button.dataset;
+	if (ts !== void 0) {
+		pickDay(dom, state, new Date(Number(ts)));
+		return;
+	}
+	if (num !== void 0) {
+		if (state.mode === "hour") state.hour = Number(num);
+		else state.minute = Number(num);
+		state.mode = "day";
+		renderPicker(dom, state);
+		return;
+	}
+	if (act === "prev" || act === "next") {
+		state.view = new Date(state.view.getFullYear(), state.view.getMonth() + (act === "prev" ? -1 : 1), 1);
+		renderPicker(dom, state);
+		return;
+	}
+	if (act === "hour" || act === "minute") {
+		state.mode = state.mode === act ? "day" : act;
+		renderPicker(dom, state);
+		return;
+	}
+	if (act === "today") {
+		const now = new Date();
+		pickDay(dom, state, new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+		return;
+	}
+	if (act === "clear") state.picked = null;
+	renderPicker(dom, state);
+	if (act === "clear" || act === "done") close();
+}
+function createDuePicker(options = {}) {
+	const now = new Date();
+	const state = {
+		picked: null,
+		hour: DEFAULT_HOUR,
+		minute: 0,
+		view: new Date(now.getFullYear(), now.getMonth(), 1),
+		mode: "day",
+		open: false
+	};
+	const dom = buildPickerDom();
+	const setOpen = (open) => {
+		if (state.open === open) return;
+		state.open = open;
+		dom.el.setAttribute("aria-expanded", String(open));
+		options.onOpenChange?.(open);
+	};
+	dom.el.addEventListener("click", () => {
+		if (!state.open) {
+			const anchor = state.picked ?? new Date();
+			state.view = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+			state.mode = "day";
+			renderPicker(dom, state);
+		}
+		setOpen(!state.open);
+	});
+	dom.calendar.addEventListener("click", (event) => {
+		const button = event.target.closest("button");
+		if (button !== null) onCalendarClick(dom, state, button, () => setOpen(false));
+	});
+	const onDocMouseDown = (event) => {
+		if (!state.open) return;
+		const target = event.target;
+		if (target !== null && (dom.el.contains(target) || dom.calendar.contains(target))) return;
+		setOpen(false);
+	};
+	document.addEventListener("mousedown", onDocMouseDown, true);
+	renderPicker(dom, state);
+	return {
+		el: dom.el,
+		calendar: dom.calendar,
+		value: () => {
+			const ms = dueMs(state);
+			return ms === null ? "" : formatDateTimeLocal(ms);
+		},
+		close: () => setOpen(false),
+		reset: () => {
+			state.picked = null;
+			state.hour = DEFAULT_HOUR;
+			state.minute = 0;
+			state.mode = "day";
+			renderPicker(dom, state);
+			setOpen(false);
+		},
+		dispose: () => document.removeEventListener("mousedown", onDocMouseDown, true)
+	};
+}
+
+//#endregion
+//#region src/shared/todo/render.ts
+/** 删除按钮的二次确认窗口（ms）：超时自动复原，避免「确认」态一直挂着。 */
+const DELETE_ARM_MS = 2500;
+/** 空态文案：加载中会临时替换它，重渲染时再写回来。 */
+const EMPTY_TEXT = "还没有待办。记一件要做的事，到点我会提醒你～";
+/** 清单最多露出几行，其余靠滚动。 */
+const LIST_ROWS = 2;
+/** 造一个带 class 的元素，避免每处都写 createElement + className。 */
+function element(tag, className, text) {
+	const node = document.createElement(tag);
+	node.className = className;
+	if (text !== void 0) node.textContent = text;
+	return node;
+}
+/** 造一个可折叠区：高度靠 grid-template-rows 在 0fr 与 1fr 之间过渡，内容高度是 auto 也能动画。 */
+function fold(className, children) {
+	const outer = element("div", "dsh-zdd-pet-todo-fold " + className);
+	const clip = element("div", "dsh-zdd-pet-todo-foldClip");
+	clip.append(...children);
+	outer.appendChild(clip);
+	return outer;
+}
+function createTodoPanelParts() {
+	const root = element("div", "dsh-zdd-pet-todo");
+	root.setAttribute("role", "dialog");
+	root.setAttribute("aria-label", "待办事项");
+	const head = element("div", "dsh-zdd-pet-todo-head");
+	const title = element("span", "dsh-zdd-pet-todo-title", "待办事项");
+	const count = element("span", "dsh-zdd-pet-todo-count", "0 项未完成");
+	count.setAttribute("aria-live", "polite");
+	const closeButton = element("button", "dsh-zdd-pet-todo-close", "✕");
+	closeButton.type = "button";
+	closeButton.setAttribute("aria-label", "关闭待办面板");
+	head.append(title, count, closeButton);
+	const form = element("form", "dsh-zdd-pet-todo-form");
+	const input = element("input", "dsh-zdd-pet-todo-input");
+	input.type = "text";
+	input.maxLength = 200;
+	input.placeholder = "记一件要做的事…";
+	input.autocomplete = "off";
+	input.setAttribute("aria-label", "待办内容");
+	const row = element("div", "dsh-zdd-pet-todo-row");
+	const duePicker = createDuePicker({ onOpenChange: (open) => root.classList.toggle("is-picking", open) });
+	const addButton = element("button", "dsh-zdd-pet-todo-add", "添加");
+	addButton.type = "submit";
+	row.append(duePicker.el, addButton);
+	form.append(input, row);
+	const error = element("div", "dsh-zdd-pet-todo-err");
+	error.hidden = true;
+	const empty = element("div", "dsh-zdd-pet-todo-empty", EMPTY_TEXT);
+	empty.hidden = true;
+	const list = element("ul", "dsh-zdd-pet-todo-list");
+	const hint = element("div", "dsh-zdd-pet-todo-hint", "离到期越近，我会提醒得越勤快～");
+	const lower = element("div", "dsh-zdd-pet-todo-lower");
+	lower.append(fold("is-cal", [duePicker.calendar]), fold("is-list", [
+		error,
+		empty,
+		list,
+		hint
+	]));
+	root.append(head, form, lower);
+	return {
+		root,
+		form,
+		input,
+		duePicker,
+		addButton,
+		list,
+		empty,
+		count,
+		closeButton,
+		error
+	};
+}
+/**
+* 把清单压到「两行」的高度，多出来的部分靠清单自己滚动。
+*
+* 行高随正文折行变化，写不成 CSS 常量，所以量一次首行再乘二；量不到（未挂载）就不设上限，
+* 免得把清单压成 0 高。
+*
+* @param list - 清单容器。
+*/
+function capListHeight(list) {
+	const first = list.firstElementChild;
+	if (first === null) {
+		list.style.maxHeight = "";
+		return;
+	}
+	const rowHeight = first.getBoundingClientRect().height;
+	if (rowHeight <= 0) return;
+	const pad = parseFloat(getComputedStyle(list).paddingTop) || 0;
+	list.style.maxHeight = rowHeight * LIST_ROWS + pad * 2 + "px";
+}
+function renderTodoList(parts, todos, handlers, now) {
+	parts.list.textContent = "";
+	const pending = todos.filter((todo) => !todo.done).length;
+	parts.count.textContent = `${pending} 项未完成`;
+	parts.empty.textContent = EMPTY_TEXT;
+	parts.empty.hidden = todos.length > 0;
+	for (const todo of todos) parts.list.appendChild(renderItem(todo, handlers, now));
+	capListHeight(parts.list);
+}
+/** 渲染一条；未完成项带紧迫度，已完成项划线。 */
+function renderItem(todo, handlers, now) {
+	const item = element("li", "dsh-zdd-pet-todo-item" + (todo.done ? " is-done" : ""));
+	if (!todo.done) item.dataset.urgency = todoUrgency(todo.dueAt, now);
+	const check = element("input", "dsh-zdd-pet-todo-check");
+	check.type = "checkbox";
+	check.checked = todo.done;
+	check.setAttribute("aria-label", (todo.done ? "标记未完成：" : "标记完成：") + todo.text);
+	check.addEventListener("change", () => handlers.onToggle(todo, check.checked));
+	const main = element("div", "dsh-zdd-pet-todo-main");
+	const text = element("div", "dsh-zdd-pet-todo-text", todo.text);
+	const meta = element("div", "dsh-zdd-pet-todo-meta", metaLabel(todo, now));
+	main.append(text, meta);
+	const remove = element("button", "dsh-zdd-pet-todo-del", "✕");
+	remove.type = "button";
+	remove.setAttribute("aria-label", "删除：" + todo.text);
+	remove.addEventListener("click", () => {
+		if (remove.dataset.armed !== "1") {
+			remove.dataset.armed = "1";
+			remove.classList.add("is-armed");
+			remove.textContent = "确认";
+			window.setTimeout(() => {
+				if (!remove.isConnected) return;
+				delete remove.dataset.armed;
+				remove.classList.remove("is-armed");
+				remove.textContent = "✕";
+			}, DELETE_ARM_MS);
+			return;
+		}
+		handlers.onDelete(todo);
+	});
+	item.append(check, main, remove);
+	return item;
+}
+function setTodoError(parts, message) {
+	parts.error.hidden = message === null;
+	parts.error.textContent = message ?? "";
+}
+function setTodoBusy(parts, busy) {
+	parts.input.disabled = busy;
+	parts.duePicker.el.disabled = busy;
+	parts.addButton.disabled = busy;
+}
+
+//#endregion
+//#region src/shared/todo/styles.ts
+const TODO_FONT_SCALE = .618;
+const TODO_PANEL_METRICS = {
+	head: 2.9995,
+	form: 5.879,
+	list: 8.921999999999999,
+	hint: 2.423,
+	calendar: 18.673999999999996
+};
+const TODO_CSS = [
+	".dsh-zdd-pet-bubble.dsh-zdd-pet-todo-bubble,.pet-bubble.dsh-zdd-pet-todo-bubble{padding:0;",
+	"width:max(220px,calc(var(--f)*14.65));max-width:calc(100vw - 16px);pointer-events:auto;cursor:default}",
+	".dsh-zdd-pet-todo{--t:calc(var(--f)*" + TODO_FONT_SCALE + ");display:flex;flex-direction:column;",
+	"box-sizing:border-box;border-radius:inherit;overflow:hidden;color:#2b2b2b;font-size:var(--t);",
+	"line-height:1.5;user-select:none;",
+	"font-family:var(--dsh-zdd-pet-font-family,'ShangshouSoftCandy','Yuanti SC','YouYuan','幼圆','Comic Sans MS','PingFang SC','Microsoft YaHei',sans-serif);",
+	"}",
+	".dsh-zdd-pet-todo *{box-sizing:border-box}",
+	".dsh-zdd-pet-todo-head{display:flex;align-items:center;gap:.615em;padding:.769em .923em .615em}",
+	".dsh-zdd-pet-todo-title{flex:1;font-size:1.077em;font-weight:600}",
+	".dsh-zdd-pet-todo-count{color:rgba(43,43,43,.55);font-size:.923em}",
+	".dsh-zdd-pet-todo-close{border:none;background:transparent;color:rgba(43,43,43,.5);font-family:inherit;",
+	"font-size:1em;line-height:1;padding:.308em .385em;border-radius:.462em;cursor:pointer}",
+	".dsh-zdd-pet-todo-close:hover{background:rgba(0,0,0,.06);color:rgba(43,43,43,.9)}",
+	".dsh-zdd-pet-todo-form{display:flex;flex-direction:column;gap:.462em;padding:0 .923em .769em;",
+	"border-bottom:1px solid rgba(0,0,0,.07)}",
+	".dsh-zdd-pet-todo-input{width:100%;border:1px solid rgba(0,0,0,.12);border-radius:.615em;",
+	"background:rgba(255,255,255,.9);padding:.462em .615em;font-size:1em;line-height:1.4;color:#2b2b2b;",
+	"font-family:inherit;outline:none}",
+	".dsh-zdd-pet-todo-input:focus{border-color:rgba(64,128,255,.55);box-shadow:0 0 0 .154em rgba(64,128,255,.14)}",
+	".dsh-zdd-pet-todo-input::placeholder{color:rgba(43,43,43,.42)}",
+	".dsh-zdd-pet-todo-row{display:flex;align-items:center;gap:.462em}",
+	".dsh-zdd-pet-todo-due{flex:1;min-width:0;text-align:left;border:1px solid rgba(0,0,0,.12);border-radius:.615em;",
+	"background:rgba(255,255,255,.9);padding:.462em .615em;font-size:1em;line-height:1.4;font-family:inherit;",
+	"color:rgba(43,43,43,.55);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+	".dsh-zdd-pet-todo-due:hover{border-color:rgba(64,128,255,.45)}",
+	".dsh-zdd-pet-todo-due.is-set{color:#2b2b2b}",
+	".dsh-zdd-pet-todo-due[aria-expanded=\"true\"]{border-color:rgba(64,128,255,.55);",
+	"box-shadow:0 0 0 .154em rgba(64,128,255,.14)}",
+	".dsh-zdd-pet-todo-add{border:none;border-radius:.615em;background:#4a7dff;color:#fff;font-size:1em;",
+	"padding:.462em .923em;cursor:pointer;font-family:inherit;white-space:nowrap}",
+	".dsh-zdd-pet-todo-add:hover{background:#3a6ce8}",
+	".dsh-zdd-pet-todo-add:disabled,.dsh-zdd-pet-todo-input:disabled{opacity:.55;cursor:default}",
+	".dsh-zdd-pet-todo-cal{display:flex;flex-direction:column;gap:.308em;",
+	"padding:.462em .615em .615em;background:rgba(43,43,43,.025)}",
+	".dsh-zdd-pet-todo-cal-head{display:flex;align-items:center;gap:.308em}",
+	".dsh-zdd-pet-todo-cal-title{flex:1;text-align:center;font-size:1.077em;font-weight:600}",
+	".dsh-zdd-pet-todo-cal-nav{border:none;background:transparent;color:rgba(43,43,43,.55);font-family:inherit;",
+	"font-size:1.154em;line-height:1;padding:.154em .385em;border-radius:.462em;cursor:pointer}",
+	".dsh-zdd-pet-todo-cal-nav:hover{background:rgba(0,0,0,.07);color:#2b2b2b}",
+	".dsh-zdd-pet-todo-cal-week,.dsh-zdd-pet-todo-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:.154em}",
+	".dsh-zdd-pet-todo-cal-grid{grid-auto-rows:1.862em}",
+	".dsh-zdd-pet-todo-cal-grid.is-hour,.dsh-zdd-pet-todo-cal-grid.is-minute{grid-template-columns:repeat(6,1fr);",
+	"grid-auto-rows:1.6em;align-content:center}",
+	".dsh-zdd-pet-todo-cal-week{font-size:.846em;line-height:1.5;color:rgba(43,43,43,.45);text-align:center}",
+	".dsh-zdd-pet-todo-cal-cell{border:none;background:transparent;font-family:inherit;font-size:1em;line-height:1.4;",
+	"color:#2b2b2b;padding:.231em 0;border-radius:.462em;cursor:pointer;font-variant-numeric:tabular-nums}",
+	".dsh-zdd-pet-todo-cal-cell:hover{background:rgba(0,0,0,.06)}",
+	".dsh-zdd-pet-todo-cal-cell.is-out{color:rgba(43,43,43,.26)}",
+	".dsh-zdd-pet-todo-cal-cell.is-today{box-shadow:inset 0 0 0 1px rgba(74,125,255,.55)}",
+	".dsh-zdd-pet-todo-cal-cell.is-sel{background:#4a7dff;color:#fff;font-weight:600}",
+	".dsh-zdd-pet-todo-cal-foot{display:flex;align-items:center;gap:.308em}",
+	".dsh-zdd-pet-todo-cal-act{border:none;background:transparent;color:#4a7dff;font-family:inherit;font-size:.923em;",
+	"line-height:1.5;padding:.231em .385em;border-radius:.462em;cursor:pointer}",
+	".dsh-zdd-pet-todo-cal-act:hover{background:rgba(74,125,255,.1)}",
+	".dsh-zdd-pet-todo-cal-grow{flex:1}",
+	".dsh-zdd-pet-todo-cal-chip{border:1px solid rgba(0,0,0,.12);border-radius:.462em;background:rgba(255,255,255,.95);",
+	"color:#2b2b2b;font-family:inherit;font-size:.923em;line-height:1.4;padding:.154em .385em;cursor:pointer;",
+	"font-variant-numeric:tabular-nums}",
+	".dsh-zdd-pet-todo-cal-chip.is-on{border-color:rgba(74,125,255,.55);color:#4a7dff;",
+	"box-shadow:0 0 0 .154em rgba(74,125,255,.14)}",
+	".dsh-zdd-pet-todo-cal-colon{color:rgba(43,43,43,.45)}",
+	".dsh-zdd-pet-todo-lower{display:flex;flex-direction:column}",
+	".dsh-zdd-pet-todo-fold{display:grid;grid-template-rows:0fr;visibility:hidden;",
+	"transition:grid-template-rows .18s ease,visibility 0s .18s}",
+	".dsh-zdd-pet-todo-fold>.dsh-zdd-pet-todo-foldClip{overflow:hidden;min-height:0}",
+	".dsh-zdd-pet-todo-fold.is-list{grid-template-rows:1fr;visibility:visible;transition-delay:0s}",
+	".dsh-zdd-pet-todo.is-picking .dsh-zdd-pet-todo-fold.is-cal{grid-template-rows:1fr;visibility:visible;",
+	"transition-delay:0s}",
+	".dsh-zdd-pet-todo.is-picking .dsh-zdd-pet-todo-fold.is-list{grid-template-rows:0fr;visibility:hidden;",
+	"transition-delay:0s,.18s}",
+	".dsh-zdd-pet-todo-list{list-style:none;margin:0;padding:.462em;overflow-y:auto;overscroll-behavior:contain;",
+	"flex:0 1 auto;min-height:0;scrollbar-width:thin}",
+	".dsh-zdd-pet-todo-item{display:flex;align-items:flex-start;gap:.615em;padding:.538em .462em;border-radius:.615em}",
+	".dsh-zdd-pet-todo-item:hover{background:rgba(0,0,0,.045)}",
+	".dsh-zdd-pet-todo-check{margin-top:.231em;width:1.154em;height:1.154em;flex:0 0 auto;cursor:pointer;",
+	"accent-color:#4a7dff}",
+	".dsh-zdd-pet-todo-main{flex:1;min-width:0}",
+	".dsh-zdd-pet-todo-text{overflow-wrap:anywhere;white-space:pre-wrap}",
+	".dsh-zdd-pet-todo-meta{margin-top:calc(var(--t)*0.154);font-size:.846em;color:rgba(43,43,43,.5)}",
+	".dsh-zdd-pet-todo-item[data-urgency=\"overdue\"] .dsh-zdd-pet-todo-meta{color:#d94f3d}",
+	".dsh-zdd-pet-todo-item[data-urgency=\"soon\"] .dsh-zdd-pet-todo-meta{color:#c9761b}",
+	".dsh-zdd-pet-todo-item[data-urgency=\"today\"] .dsh-zdd-pet-todo-meta{color:#3f6fd8}",
+	".dsh-zdd-pet-todo-item.is-done .dsh-zdd-pet-todo-text{text-decoration:line-through;color:#2e9e4f}",
+	".dsh-zdd-pet-todo-del{border:none;background:transparent;color:rgba(43,43,43,.34);font-size:.923em;line-height:1;",
+	"padding:calc(var(--t)*0.308) calc(var(--t)*0.385);border-radius:.462em;cursor:pointer;flex:0 0 auto;",
+	"min-width:calc(var(--t)*1.692)}",
+	".dsh-zdd-pet-todo-del:hover{background:rgba(0,0,0,.07);color:rgba(43,43,43,.8)}",
+	".dsh-zdd-pet-todo-del.is-armed{background:rgba(217,79,61,.12);color:#d94f3d}",
+	".dsh-zdd-pet-todo-empty{padding:calc(var(--t)*1.538) calc(var(--t)*0.923);text-align:center;",
+	"color:rgba(43,43,43,.44);font-size:.923em}",
+	".dsh-zdd-pet-todo-empty[hidden]{display:none}",
+	".dsh-zdd-pet-todo-err{flex:0 0 auto;padding:0 calc(var(--t)*0.923) calc(var(--t)*0.615);color:#d94f3d;",
+	"font-size:.923em;white-space:pre-wrap;overflow-wrap:anywhere}",
+	".dsh-zdd-pet-todo-err[hidden]{display:none}",
+	".dsh-zdd-pet-todo-hint{margin-top:auto;padding:calc(var(--t)*0.462) calc(var(--t)*0.923) calc(var(--t)*0.692);",
+	"color:rgba(43,43,43,.4);font-size:.846em;text-align:center}"
+].join("");
+let todoCssInjected = false;
+function injectTodoCss() {
+	if (todoCssInjected || typeof document === "undefined") return;
+	todoCssInjected = true;
+	const tag = document.createElement("style");
+	tag.dataset.plugin = "dsh-zdd-pet";
+	tag.dataset.pluginCss = "dsh-zdd-pet/todo";
+	tag.textContent = TODO_CSS;
+	document.head.appendChild(tag);
+}
+function todoPanelTopMarginPx(font, size) {
+	const m = TODO_PANEL_METRICS;
+	const panelPx = (m.head + m.form + Math.max(m.list + m.hint, m.calendar)) * resolveFontPx(font, size).bubble * TODO_FONT_SCALE;
+	const overlap = (Number(size) || 0) * BUBBLE_OVERLAP_RATIO;
+	return Math.max(0, Math.ceil(panelPx - overlap));
+}
+
+//#endregion
+//#region src/shared/todo/panel.ts
+function createTodoPanel(options = {}) {
+	injectTodoCss();
+	const parts = createTodoPanelParts();
+	const baseUrl = options.baseUrl ?? TODOS_PATH;
+	let disposed = false;
+	let busy = false;
+	let todos = [];
+	const handlers = {
+		onToggle: (todo, done) => void mutate(() => patchTodo(todo.id, { done }, baseUrl)),
+		onDelete: (todo) => void mutate(() => removeTodo(todo.id, baseUrl))
+	};
+	/** 重新拉整张清单：修改一律以宿主返回为准，不在本地猜结果。 */
+	async function reload() {
+		const result = await loadTodos(baseUrl);
+		if (disposed) return;
+		if (!result.ok) {
+			setTodoError(parts, result.message);
+			parts.empty.textContent = "清单加载失败，关掉面板再开一次试试";
+			parts.empty.hidden = false;
+			return;
+		}
+		todos = result.value;
+		setTodoError(parts, null);
+		renderTodoList(parts, todos, handlers, Date.now());
+	}
+	/** 串行执行一次修改：请求在途时禁止再次提交，成功后统一重拉。 */
+	async function mutate(task) {
+		if (disposed || busy) return;
+		busy = true;
+		setTodoBusy(parts, true);
+		setTodoError(parts, null);
+		const result = await task();
+		busy = false;
+		if (disposed) return;
+		setTodoBusy(parts, false);
+		if (!result.ok) {
+			setTodoError(parts, result.message);
+			return;
+		}
+		await reload();
+	}
+	/** 提交新增：空正文直接回到输入框。 */
+	const submitAdd = () => {
+		const text = parts.input.value.trim();
+		if (text === "") {
+			parts.input.focus();
+			return;
+		}
+		const dueText = parts.duePicker.value();
+		const dueAt = dueText === "" ? null : parseDateTimeLocal(dueText);
+		parts.duePicker.close();
+		if (dueAt !== null && dueAt < Date.now()) {
+			setTodoError(parts, "这个时间已经过去了，换一个吧");
+			return;
+		}
+		mutate(async () => {
+			const result = await addTodo(text, dueAt, baseUrl);
+			if (result.ok) {
+				parts.input.value = "";
+				parts.duePicker.reset();
+			}
+			return result;
+		});
+	};
+	parts.form.addEventListener("submit", (event) => {
+		event.preventDefault();
+		submitAdd();
+	});
+	const onDocMouseDown = (event) => {
+		if (disposed) return;
+		const target = event.target;
+		if (target !== null && parts.root.contains(target)) return;
+		if (options.keepOpenOn?.(event.target) === true) return;
+		options.onClose?.();
+	};
+	document.addEventListener("mousedown", onDocMouseDown, true);
+	parts.closeButton.addEventListener("click", () => options.onClose?.());
+	parts.empty.textContent = "加载中…";
+	parts.empty.hidden = false;
+	reload();
+	return {
+		el: parts.root,
+		dispose: () => {
+			if (disposed) return;
+			disposed = true;
+			document.removeEventListener("mousedown", onDocMouseDown, true);
+			parts.duePicker.dispose();
+			parts.root.remove();
+		}
+	};
+}
+
+//#endregion
+//#region src/shared/todo/hotkey.ts
+const TODO_HOTKEY_HINT = "D 键";
+function isTodoHotkey(e) {
+	return isBareKey(e, "d");
+}
+
+//#endregion
 //#region src/shared/tooltip.ts
 const TOOLTIP_CLASS = "pet-tooltip";
 const TOOLTIP_GAP_RATIO = .022;
@@ -3284,14 +5059,314 @@ const TOOLTIP_CSS = [
 ].join("");
 
 //#endregion
+//#region src/shared/voice.ts
+/** 当前音色；空串 = 不指定，由宿主用默认音色。 */
+let voiceName = "";
+/** 播放音量系数（0–1，1 = 最大音量）；两端共用，只作用于播放，不影响已合成好的音频。 */
+let voiceVolume = 1;
+/** 工作状态播报开关；只有成品配置明确为 true 才念。 */
+let notifyEnabled = false;
+/** 本端是网页端还是桌面端；`null` = 还没声明，此时不按叶子播放。 */
+let surface = null;
+/** 接口基址：网页端是同源前缀，桌面端由 `setVoiceBase` 换成 bridge 地址。 */
+let voiceBase = ROUTE_PATH;
+/** 配置是否已就绪；网页端由 `setVoiceConfig` 置位，桌面端首次播放时懒加载。 */
+let configLoaded = false;
+/** 当前播报状态；气泡据此显示图标。 */
+let voiceState = "idle";
+/** 状态订阅者：两端的说话气泡据此渲染图标。 */
+const stateListeners = new Set();
+/** 播报开始/结束的订阅者：说话气泡据此挂起与收尾。 */
+const utteranceListeners = new Set();
+/** 播报序号；每次决定要念一句就自增，用来让气泡丢掉迟到的「上一句播完了」。 */
+let utteranceSeq = 0;
+/**
+* 客户端等合成结果的上限（ms）。
+*
+* 比宿主侧的总超时（28s）再宽一点：让宿主先超时并回结构化失败，
+* 客户端这道只是兜底，避免上游挂住时气泡上的转圈永远停不下来。
+*/
+const SPEAK_TIMEOUT_MS = 3e4;
+const PLAYBACK_WAIT_MAX_MS = 6e4;
+/** 合成请求的超时信号；自动播报与手动点播共用同一份口径。 */
+function speakSignal() {
+	return AbortSignal.timeout(SPEAK_TIMEOUT_MS);
+}
+/** 切换状态并通知订阅者；同值不重复通知。 */
+function setVoiceState(next) {
+	if (voiceState === next) return;
+	voiceState = next;
+	for (const listener of stateListeners) listener(next);
+}
+function getVoiceState() {
+	return voiceState;
+}
+function subscribeVoiceState(listener) {
+	stateListeners.add(listener);
+	listener(voiceState);
+	return () => {
+		stateListeners.delete(listener);
+	};
+}
+function subscribeVoiceUtterance(listener) {
+	utteranceListeners.add(listener);
+	return () => {
+		utteranceListeners.delete(listener);
+	};
+}
+/** 广播一次播报事件；单个订阅者抛错不能挡住其余订阅者。 */
+function emitUtterance(event) {
+	for (const listener of utteranceListeners) listener(event);
+}
+function setVoiceBase(base) {
+	if (typeof base === "string" && base) voiceBase = base;
+}
+function setSurface(next) {
+	if (next === "web" || next === "desktop") surface = next;
+}
+function setVoiceConfig(name, volume) {
+	voiceName = typeof name === "string" ? name : "";
+	voiceVolume = clampVolume(volume);
+	configLoaded = true;
+}
+function setVoiceNotifyEnabled(on) {
+	notifyEnabled = on === true;
+}
+function isVoiceNotifyEnabled() {
+	return notifyEnabled;
+}
+/** 把音量收敛到 0–1；非数值按最大音量（1）处理——脏配置不该把声音悄悄变成 0。 */
+function clampVolume(value) {
+	const n = Number(value);
+	return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+}
+/** 懒加载成品配置；失败按「不播」处理，且只试一次（避免每句都发请求）。 */
+async function loadConfigOnce() {
+	if (configLoaded) return;
+	try {
+		const response = await fetch(voiceBase + "/config", { cache: "no-store" });
+		const body = await response.json();
+		const main = body?.main;
+		voiceName = typeof main?.voiceName === "string" ? main.voiceName : "";
+		voiceVolume = clampVolume(main?.voiceVolume);
+		setVoiceNotifyEnabled(main?.voiceNotifyEnabled);
+		configLoaded = true;
+	} catch {}
+}
+function playSayVoice(say) {
+	const isMine = say.voiceTo !== void 0 && say.voiceTo === surface;
+	if (!say.text || !isMine) {
+		setVoiceState("idle");
+		return;
+	}
+	if (surface === "web" && typeof document !== "undefined" && document.hidden) {
+		setVoiceState("idle");
+		return;
+	}
+	speakWhenReady(say.text);
+}
+/**
+* 配置就绪后开播；桌面端首次调用会顺手拉一次 `/config`。
+*
+* @param text - 要念的整句。
+* @param canPlayHidden - 页面隐藏时是否继续播；缺省 `false`（藏起来就静音）。
+*/
+async function speakWhenReady(text, canPlayHidden = false) {
+	await loadConfigOnce();
+	const seq = ++utteranceSeq;
+	emitUtterance({
+		kind: "start",
+		seq,
+		text
+	});
+	setVoiceState("loading");
+	try {
+		await speak(text, canPlayHidden);
+	} finally {
+		emitUtterance({
+			kind: "end",
+			seq,
+			text
+		});
+	}
+}
+function speakNotice(text) {
+	if (text === "") return;
+	speakWhenReady(text, true);
+}
+/**
+* 等到这一句真正播完。
+*
+* `play()` 的 Promise 在「开播」时就 resolve，而气泡要的是「播完」：两者的差就是气泡提前
+* 收起的全部原因。所以这里另等收尾信号，并用 {@link PLAYBACK_WAIT_MAX_MS} 兜底。
+*
+* @param audio - 正在播的元素。
+* @param objectUrl - 收尾时要释放的 blob 地址。
+*/
+function waitForPlaybackEnd(audio, objectUrl) {
+	return new Promise((resolve) => {
+		let settled = false;
+		let timer = null;
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			if (timer !== null) clearTimeout(timer);
+			URL.revokeObjectURL(objectUrl);
+			resolve();
+		};
+		timer = setTimeout(finish, PLAYBACK_WAIT_MAX_MS);
+		timer.unref?.();
+		audio.onended = finish;
+		audio.onerror = finish;
+		audio.onpause = finish;
+	});
+}
+/** 自动播报当前正在响的那个音频：新的一句进来先掐掉旧的，熄屏醒来后攒下的一串才不会叠着响。 */
+let autoAudio = null;
+/** 自动播报世代号：合成期间可能被更新的一句顶掉，回来的旧结果直接丢弃。 */
+let autoSeq = 0;
+/** 当前这句是否允许页面隐藏时继续播；跟随 autoAudio 一起换，不做成全局开关。 */
+let autoAudioCanPlayHidden = false;
+/**
+* 掐掉当前自动播报。
+*
+* 用 pause 而不是直接丢掉引用：`waitForPlaybackEnd` 已经挂了 `onpause` 收尾，
+* 气泡能照常收起，不会等一个已经不会响的音频。
+*/
+function stopAutoAudio() {
+	const audio = autoAudio;
+	autoAudio = null;
+	autoAudioCanPlayHidden = false;
+	if (audio === null) return;
+	try {
+		audio.pause();
+	} catch {}
+}
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") document.addEventListener("visibilitychange", () => {
+	if (document.hidden && !autoAudioCanPlayHidden) stopAutoAudio();
+});
+/**
+* 请求合成并播放；任何一步失败都落到 `failed`（气泡上留一个静音喇叭，而不是干脆没图标）。
+*
+* @param text - 要念的整句。
+* @param canPlayHidden - 页面隐藏时是否继续播；缺省 `false`。
+*/
+async function speak(text, canPlayHidden = false) {
+	const token = ++autoSeq;
+	stopAutoAudio();
+	try {
+		const response = await fetch(voiceBase + "/voice/speak", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				text,
+				...voiceName ? { voice: voiceName } : {}
+			}),
+			signal: speakSignal()
+		});
+		if (token !== autoSeq) return;
+		if (!response.ok || !(response.headers.get("content-type") ?? "").includes("audio")) {
+			setVoiceState("failed");
+			return;
+		}
+		const objectUrl = URL.createObjectURL(await response.blob());
+		if (token !== autoSeq) {
+			URL.revokeObjectURL(objectUrl);
+			return;
+		}
+		const audio = new Audio(objectUrl);
+		audio.volume = voiceVolume;
+		if (!canPlayHidden && typeof document !== "undefined" && document.hidden) {
+			URL.revokeObjectURL(objectUrl);
+			setVoiceState("idle");
+			return;
+		}
+		setVoiceState("ready");
+		autoAudioCanPlayHidden = canPlayHidden;
+		autoAudio = audio;
+		try {
+			await audio.play();
+		} catch {
+			URL.revokeObjectURL(objectUrl);
+			if (autoAudio === audio) {
+				autoAudio = null;
+				autoAudioCanPlayHidden = false;
+			}
+			setVoiceState("failed");
+			return;
+		}
+		await waitForPlaybackEnd(audio, objectUrl);
+		if (autoAudio === audio) autoAudio = null;
+	} catch {
+		if (token === autoSeq) setVoiceState("failed");
+	}
+}
+/** 手动点播时正在响的那个音频；新的一句先掐掉旧的，避免两句话叠在一起。 */
+let manualAudio = null;
+/** 手动点播的世代号：新的点播会作废旧请求的阶段回调，避免旧回调清掉新状态。 */
+let manualSeq = 0;
+function speakText(text, onPhase) {
+	if (!text) return;
+	playManual(text, onPhase);
+}
+/** 请求合成并播放手动点播；失败静默，不打断面板交互。 */
+async function playManual(text, onPhase) {
+	const token = ++manualSeq;
+	await loadConfigOnce();
+	if (manualAudio) {
+		manualAudio.pause();
+		manualAudio = null;
+	}
+	if (token !== manualSeq) return;
+	onPhase?.("loading");
+	try {
+		const response = await fetch(voiceBase + "/voice/speak", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				text,
+				...voiceName ? { voice: voiceName } : {}
+			}),
+			signal: speakSignal()
+		});
+		if (token !== manualSeq) return;
+		if (!response.ok || !(response.headers.get("content-type") ?? "").includes("audio")) {
+			onPhase?.("failed");
+			return;
+		}
+		const objectUrl = URL.createObjectURL(await response.blob());
+		if (token !== manualSeq) return;
+		const audio = new Audio(objectUrl);
+		audio.volume = voiceVolume;
+		audio.onended = () => {
+			URL.revokeObjectURL(objectUrl);
+			if (manualAudio === audio) {
+				manualAudio = null;
+				onPhase?.("idle");
+			}
+		};
+		audio.onerror = () => URL.revokeObjectURL(objectUrl);
+		manualAudio = audio;
+		onPhase?.("playing");
+		await audio.play();
+	} catch {
+		if (token === manualSeq) onPhase?.("failed");
+	}
+}
+
+//#endregion
 exports.ACCEL_GAIN_MAX = ACCEL_GAIN_MAX
 exports.ACCEL_REF = ACCEL_REF
 exports.ANIMATION_EXT = ANIMATION_EXT
 exports.BUBBLE_DURATION_MS = BUBBLE_DURATION_MS
 exports.BUBBLE_FONT_BASE_PX = BUBBLE_FONT_BASE_PX
+exports.BUBBLE_HOLD_IDLE = BUBBLE_HOLD_IDLE
+exports.BUBBLE_HOLD_MAX_MS = BUBBLE_HOLD_MAX_MS
+exports.BUBBLE_HOLD_TAIL_MS = BUBBLE_HOLD_TAIL_MS
 exports.BUBBLE_METRICS = BUBBLE_METRICS
 exports.BUBBLE_OVERLAP_RATIO = BUBBLE_OVERLAP_RATIO
 exports.CANVAS_H = CANVAS_H
+exports.CAPTURE_HOTKEY_HINT = CAPTURE_HOTKEY_HINT
 exports.CHAT_CSS = CHAT_CSS
 exports.CHAT_HOTKEY_HINT = CHAT_HOTKEY_HINT
 exports.CUSTOM_LIMITS = CUSTOM_LIMITS
@@ -3307,6 +5382,8 @@ exports.DEFAULT_PHYSICS = DEFAULT_PHYSICS
 exports.DEFAULT_PROACTIVE = DEFAULT_PROACTIVE
 exports.DEFAULT_ROLLING_LABEL = DEFAULT_ROLLING_LABEL
 exports.DEFAULT_THROW_POWER = DEFAULT_THROW_POWER
+exports.DISPLAY_HOTKEY_HINTS = DISPLAY_HOTKEY_HINTS
+exports.DISPLAY_ORDER = DISPLAY_ORDER
 exports.DRAG_THRESHOLD = DRAG_THRESHOLD
 exports.FEET_Y = FEET_Y
 exports.FONT_PRESETS = FONT_PRESETS
@@ -3329,6 +5406,7 @@ exports.MEME_BUBBLE_CSS = MEME_BUBBLE_CSS
 exports.MEME_IMG_CLASS = MEME_IMG_CLASS
 exports.MEMORY_FACT_MAX = MEMORY_FACT_MAX
 exports.MENU_CSS = MENU_CSS
+exports.MIN_REACHABLE_PX = MIN_REACHABLE_PX
 exports.MIN_SPAN_MS = MIN_SPAN_MS
 exports.MOOD_MAX = MOOD_MAX
 exports.MOOD_MIN = MOOD_MIN
@@ -3338,15 +5416,18 @@ exports.PEAK_WEIGHT = PEAK_WEIGHT
 exports.PET_BOUNCE_E = PET_BOUNCE_E
 exports.PET_DISPLAYS = PET_DISPLAYS
 exports.PET_REF_WIDTH = PET_REF_WIDTH
+exports.PLAYBACK_WAIT_MAX_MS = PLAYBACK_WAIT_MAX_MS
 exports.PROGRESS_BAR_MAX_SLOTS = PROGRESS_BAR_MAX_SLOTS
 exports.QUOTA_CRIT_PERCENT = QUOTA_CRIT_PERCENT
 exports.QUOTA_WARN_PERCENT = QUOTA_WARN_PERCENT
 exports.RELEASE_STALE_MS = RELEASE_STALE_MS
 exports.RELEASE_WINDOW_MS = RELEASE_WINDOW_MS
 exports.RESTITUTION = RESTITUTION
-exports.REST_VX = REST_VX
-exports.REST_VY = REST_VY
+exports.REST_NORMAL = REST_NORMAL
+exports.REST_NORMAL_EPS = REST_NORMAL_EPS
+exports.REST_TANGENT = REST_TANGENT
 exports.ROUTE_PATH = ROUTE_PATH
+exports.ROUTE_SEGMENT = ROUTE_SEGMENT
 exports.SAY_BUBBLE_BASE_MS = SAY_BUBBLE_BASE_MS
 exports.SAY_BUBBLE_MAX_MS = SAY_BUBBLE_MAX_MS
 exports.SAY_BUBBLE_MIN_MS = SAY_BUBBLE_MIN_MS
@@ -3355,6 +5436,7 @@ exports.SCORE_MIN_SPEED = SCORE_MIN_SPEED
 exports.SCORE_POPUP_CSS = SCORE_POPUP_CSS
 exports.SCORE_POPUP_DURATION_MS = SCORE_POPUP_DURATION_MS
 exports.SEG_MIN_DT_MS = SEG_MIN_DT_MS
+exports.SLEEP_HOTKEY_HINT = SLEEP_HOTKEY_HINT
 exports.SLINGSHOT_DOUBLE_MS = SLINGSHOT_DOUBLE_MS
 exports.SLINGSHOT_REF_RATIO = SLINGSHOT_REF_RATIO
 exports.SPRING_C = SPRING_C
@@ -3368,6 +5450,8 @@ exports.SUBSTEP_MAX = SUBSTEP_MAX
 exports.SUBSTEP_PX = SUBSTEP_PX
 exports.THROW_SPEED_ANCHOR = THROW_SPEED_ANCHOR
 exports.TIP_FONT_BASE_PX = TIP_FONT_BASE_PX
+exports.TODOS_PATH = TODOS_PATH
+exports.TODO_HOTKEY_HINT = TODO_HOTKEY_HINT
 exports.TOOLTIP_CLASS = TOOLTIP_CLASS
 exports.TOOLTIP_CSS = TOOLTIP_CSS
 exports.TOOLTIP_GAP_RATIO = TOOLTIP_GAP_RATIO
@@ -3376,15 +5460,19 @@ exports.WINDOW_LABELS = WINDOW_LABELS
 exports.WORK_BUBBLE_MS = WORK_BUBBLE_MS
 exports.WORK_STATUS_INDEX = WORK_STATUS_INDEX
 exports.WORK_STATUS_STATES = WORK_STATUS_STATES
+exports.addTodo = addTodo
 exports.anchorPixel = anchorPixel
 exports.balanceBubbleView = balanceBubbleView
 exports.balanceDetailView = balanceDetailView
 exports.balanceEventIndex = balanceEventIndex
+exports.balancePageCount = balancePageCount
+exports.balancePageView = balancePageView
 exports.balancePercent = balancePercent
 exports.bodyPixelBox = bodyPixelBox
 exports.boundingRect = boundingRect
 exports.bubbleMaxHeightPx = bubbleMaxHeightPx
 exports.bubbleTopMarginPx = bubbleTopMarginPx
+exports.buildMemeBranch = buildMemeBranch
 exports.buildMenuTree = buildMenuTree
 exports.buildMoreBranch = buildMoreBranch
 exports.clampMood = clampMood
@@ -3393,8 +5481,10 @@ exports.clampPointToRegion = clampPointToRegion
 exports.clickScore = clickScore
 exports.collidePet = collidePet
 exports.completionValid = completionValid
+exports.createHearHold = createHearHold
 exports.createMemeImage = createMemeImage
 exports.createMemeImageFromUrl = createMemeImageFromUrl
+exports.createTodoPanel = createTodoPanel
 exports.customClickable = customClickable
 exports.customViews = customViews
 exports.decayAffection = decayAffection
@@ -3403,15 +5493,22 @@ exports.decideBalanceNotice = decideBalanceNotice
 exports.decideCare = decideCare
 exports.displayMenuBranch = displayMenuBranch
 exports.displayMood = displayMood
+exports.displayOfHotkey = displayOfHotkey
 exports.distToRectSq = distToRectSq
 exports.dragHasFiles = dragHasFiles
+exports.dueLabel = dueLabel
 exports.estimateReleaseVelocity = estimateReleaseVelocity
 exports.fetchState = fetchState
 exports.firstImageFile = firstImageFile
+exports.firstImageFromClipboard = firstImageFromClipboard
+exports.fitWindowInArea = fitWindowInArea
 exports.flattenConfigPets = flattenConfigPets
 exports.flattenCounters = flattenCounters
 exports.fontStackOf = fontStackOf
+exports.formatDateTimeLocal = formatDateTimeLocal
 exports.frameToToast = frameToToast
+exports.getVoiceState = getVoiceState
+exports.groupMemes = groupMemes
 exports.hasTask = hasTask
 exports.idleEventsValid = idleEventsValid
 exports.indexAtPoint = indexAtPoint
@@ -3421,33 +5518,50 @@ exports.intimacyStageOf = intimacyStageOf
 exports.intimacyTextPool = intimacyTextPool
 exports.intimacyTierOf = intimacyTierOf
 exports.intimacyValid = intimacyValid
+exports.isCaptureHotkey = isCaptureHotkey
 exports.isChatHotkey = isChatHotkey
 exports.isDesktopVisible = isDesktopVisible
 exports.isEventAnim = isEventAnim
+exports.isHearHotkey = isHearHotkey
 exports.isImageFile = isImageFile
 exports.isLateNight = isLateNight
 exports.isNoMirrorAnimation = isNoMirrorAnimation
 exports.isPromotion = isPromotion
+exports.isSleepAllowedAction = isSleepAllowedAction
+exports.isSleepHotkey = isSleepHotkey
+exports.isTodoHotkey = isTodoHotkey
 exports.isTypingTarget = isTypingTarget
+exports.isVoiceNotifyEnabled = isVoiceNotifyEnabled
 exports.isWebVisible = isWebVisible
 exports.landingSquash = landingSquash
 exports.loadAffection = loadAffection
+exports.loadTodos = loadTodos
 exports.memeImageUrl = memeImageUrl
+exports.memeThumbUrl = memeThumbUrl
+exports.metaLabel = metaLabel
 exports.moodLabel = moodLabel
 exports.moodTextPool = moodTextPool
 exports.moodTier = moodTier
 exports.moodValid = moodValid
 exports.mountChatDialog = mountChatDialog
 exports.mountContextMenu = mountContextMenu
+exports.mountPrefixOf = mountPrefixOf
 exports.mountScorePopup = mountScorePopup
 exports.nearestIndex = nearestIndex
 exports.nextWorkStatusAnim = nextWorkStatusAnim
+exports.overlapPush = overlapPush
+exports.parseDateTimeLocal = parseDateTimeLocal
+exports.parseTodoItem = parseTodoItem
+exports.parseTodoList = parseTodoList
+exports.patchTodo = patchTodo
 exports.pick = pick
 exports.pickCategoryAction = pickCategoryAction
 exports.pickIdleEvent = pickIdleEvent
+exports.pickSleepSet = pickSleepSet
 exports.pickSlot = pickSlot
 exports.pickWeightedCategory = pickWeightedCategory
 exports.planMove = planMove
+exports.playSayVoice = playSayVoice
 exports.pointInRect = pointInRect
 exports.pomodoroMenuBranch = pomodoroMenuBranch
 exports.poolIncludes = poolIncludes
@@ -3470,6 +5584,7 @@ exports.readMoodParams = readMoodParams
 exports.readPosition = readPosition
 exports.readProactiveParams = readProactiveParams
 exports.readSay = readSay
+exports.readSleep = readSleep
 exports.readThrow = readThrow
 exports.readWorkStatus = readWorkStatus
 exports.rebaseCenter = rebaseCenter
@@ -3477,25 +5592,39 @@ exports.rectAtPoint = rectAtPoint
 exports.rectBottom = rectBottom
 exports.rectRight = rectRight
 exports.rectsOverlap = rectsOverlap
+exports.reduceBubbleHold = reduceBubbleHold
 exports.regionArea = regionArea
 exports.regionHoleRatio = regionHoleRatio
+exports.remainingLabel = remainingLabel
+exports.removeTodo = removeTodo
 exports.resetInText = resetInText
 exports.resolveFontPx = resolveFontPx
 exports.resolveLeafPath = resolveLeafPath
 exports.resolveRect = resolveRect
 exports.rollKind = rollKind
+exports.routePathOf = routePathOf
 exports.saveAffection = saveAffection
 exports.sayBubbleDurationMs = sayBubbleDurationMs
 exports.screenOfBox = screenOfBox
 exports.sendChat = sendChat
+exports.setSurface = setSurface
+exports.setVoiceBase = setVoiceBase
+exports.setVoiceConfig = setVoiceConfig
+exports.setVoiceNotifyEnabled = setVoiceNotifyEnabled
 exports.slingshotPower = slingshotPower
 exports.slingshotRefDist = slingshotRefDist
 exports.slingshotVelocity = slingshotVelocity
 exports.slotIncludes = slotIncludes
 exports.softClampSpeed = softClampSpeed
+exports.sortTodoItems = sortTodoItems
+exports.spanText = spanText
 exports.spawnScoreBurst = spawnScoreBurst
+exports.speakNotice = speakNotice
+exports.speakText = speakText
 exports.springStep = springStep
 exports.squashScale = squashScale
+exports.subscribeVoiceState = subscribeVoiceState
+exports.subscribeVoiceUtterance = subscribeVoiceUtterance
 exports.takeChanged = takeChanged
 exports.throwBounds = throwBounds
 exports.throwBoundsIn = throwBoundsIn
@@ -3506,12 +5635,15 @@ exports.throwSubsteps = throwSubsteps
 exports.throwVelocity = throwVelocity
 exports.toBalanceState = toBalanceState
 exports.toWorkStatus = toWorkStatus
+exports.todoPanelTopMarginPx = todoPanelTopMarginPx
+exports.todoUrgency = todoUrgency
 exports.tooltipPlacement = tooltipPlacement
 exports.touchAffection = touchAffection
 exports.translateRects = translateRects
 exports.trimTrail = trimTrail
 exports.truncate = truncate
 exports.urgentWindow = urgentWindow
+exports.utteranceToHold = utteranceToHold
 exports.whisperBubbleView = whisperBubbleView
 exports.windowsHandler = windowsHandler
 return exports;

@@ -1,4 +1,4 @@
-# dsh-pet 对外 Cordis 服务
+# dsh-zdd-pet 对外 Cordis 服务
 
 同名服务 `petApiZdd` 在两半各有一份，分属不同容器（宿主进程 / DSH web 页面），互不可见。
 
@@ -8,7 +8,7 @@
 ctx.get('petApiZdd')
 ```
 
-拿不到对应分组 = 你在另一半，或 dsh-pet 未启用 / 版本过旧。
+拿不到对应分组 = 你在另一半，或 dsh-zdd-pet 未启用 / 版本过旧。
 
 ## 客户端半侧（DSH web 页面内，只在该页面内有效）
 
@@ -121,7 +121,7 @@ if (res.ok) {
 
 ## 宿主半侧（宿主插件进程内）
 
-入口返回 `{ balance }`。
+入口返回 `{ balance, voice }`。
 
 ### balance.register
 
@@ -239,4 +239,135 @@ ctx.effect(() =>
 ```js
 ctx.get('petApiZdd').balance.list();
 // { builtin: ['opencode-go', 'commandcode', 'deepseek-official', 'deepseek-account'], external: ['my-gateway'] }
+```
+
+### voice.register
+
+第三方插件注册自己的语音合成实现。注册后 `POST /voice/speak` 改走它；没注册时走内置实现。
+
+**参数**
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 唯一标识；参与缓存键，换实现不会命中旧音频。不能与内置实现同名（`edge`） |
+| `name` | string | 展示名，只用于排障 |
+| `synthesize` | function | 入参 `{ text, rate }`，返回 mp3 字节（`Uint8Array`） |
+
+**返回**：`() => void`，注销函数。配合 `ctx.effect` 使用，插件卸载时自动注销。
+
+**抛错**：定义不是对象、`id` 为空、`id` 与内置实现同名、`synthesize` 不是函数。
+
+**行为**
+
+- 同一时刻只有一个实现生效，**后注册的覆盖先注册的**；注销只清「仍是自己那份」，迟到的注销不会顶掉后来者。
+- 注册后 `POST /voice/speak` 的 `voice` 参数不生效（音色由实现自己决定），但校验口径不变：非法值仍按 `bad-request` 拒绝。
+- 不接收音色与配置：`voiceEnabled` 只控制端上要不要播，与本实现无关。
+- 失败必须 `throw`：宿主归一成 `generate-error` 并记日志；返回空字节同样按失败处理。
+- 单次合成上限 15 秒，超时按失败处理。
+- **不回落**：注册了就不会退到内置实现——第三方坏了就是没声音，不会静默改用 edge。
+
+```js
+export const inject = ['petApi7340'];
+
+export function apply(ctx) {
+  ctx.effect(() =>
+    ctx.get('petApi7340').voice.register({
+      id: 'my-tts',
+      name: '我的语音',
+      async synthesize({ text, rate }) {
+        const res = await fetch('http://127.0.0.1:9000/speak', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text, rate }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return new Uint8Array(await res.arrayBuffer());
+      },
+    }),
+  );
+}
+```
+
+### voice.list
+
+**参数**：无。
+
+**返回**：`{ builtin, external }`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `builtin` | string[] | 内置实现 id（目前只有 `edge`） |
+| `external` | string[] | 当前生效的第三方 id；没注册则为空数组 |
+
+```js
+ctx.get('petApi7340').voice.list();
+// { builtin: ['edge'], external: ['my-tts'] }
+```
+
+### speech.register
+
+第三方插件注册自己的语音识别实现。注册后 `POST /voice/hear` 改走它；没注册时走 DSH 宿主自带的识别能力。
+
+**参数**
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 唯一标识；不能与内置来源同名（`dsh`） |
+| `name` | string | 展示名，只用于排障 |
+| `transcribe` | function | 入参 `{ audio, language }` 与可选中止信号，返回识别出的文字 |
+
+**返回**：`() => void`，注销函数。配合 `ctx.effect` 使用，插件卸载时自动注销。
+
+**抛错**：定义不是对象、`id` 为空、`id` 与内置来源同名、`transcribe` 不是函数。
+
+**行为**
+
+- 同一时刻只有一个实现生效，**后注册的覆盖先注册的**；注销只清「仍是自己那份」，迟到的注销不会顶掉后来者。
+- **不回落**：注册了就不会退到 DSH 自带识别——第三方坏了就是识别失败，不会静默改用别人。
+- `audio` 是**原始 WAV 字节**（16kHz / 单声道 / PCM16）；宿主不做格式校验，格式不合规由实现自己抛错。
+- 返回**空串表示这段没人说话**，属于成功，不是失败——与合成的「空字节即失败」相反。
+- 失败必须 `throw`：宿主归一成 `generate-error`，原始 message 回给调用方。
+- 返回非字符串按失败处理，不会把对象塞进 `text` 字段。
+- 单次识别上限 30 秒；调用方断开时信号会被 abort，实现可以选择不理，但宿主会立即停止等待。
+- **宿主不排队**：并发由实现自己决定；DSH 自带识别有自己的队列（约 4 个），第三方没有。
+- 识别**不缓存**：同一段音频每次都会重新走实现。
+
+```js
+export const inject = ['petApi7340'];
+
+export function apply(ctx) {
+  ctx.effect(() =>
+    ctx.get('petApi7340').speech.register({
+      id: 'my-asr',
+      name: '我的识别',
+      async transcribe({ audio, language }, signal) {
+        const res = await fetch('http://127.0.0.1:9001/asr', {
+          method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' },
+          body: audio,
+          signal,
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return (await res.json()).text;
+      },
+    }),
+  );
+}
+```
+
+### speech.list
+
+**参数**：无。
+
+**返回**：`{ builtin, external }`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `builtin` | string[] | 内置来源 id（目前只有 `dsh`） |
+| `external` | string[] | 当前生效的第三方 id；没注册则为空数组 |
+
+```js
+ctx.get('petApi7340').speech.list();
+// { builtin: ['dsh'], external: ['my-asr'] }
 ```

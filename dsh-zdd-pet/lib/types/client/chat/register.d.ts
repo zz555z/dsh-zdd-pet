@@ -21,10 +21,22 @@ export interface PetChatTabHost {
     };
 }
 /**
+ * 打开右侧栏的对话标签。
+ *
+ * 侧栏导航面可能比注册表晚到，取不到就什么都不做。快捷键的触发动作走这里，
+ * 这样「标签类型」这个事实仍只在 registerPetChatTab 里出现一次。
+ *
+ * @param ctx - 客户端上下文（只用到软取）。
+ */
+export declare function openPetChatTab(ctx: PetChatTabHost): void;
+/**
  * 注册对话标签（标签类型 + 正文插槽 + 样式）。
  *
  * @param ctx - 客户端上下文。
  * @param rt - 注入的 react 能力。
+ * @param options.commandId - 快捷键命令 id；只有命令真的登记成功才传，指向不存在的命令会让侧栏抛错。
  * @returns 注销标签类型并释放样式的函数；正文插槽交给 slots.inject 的作用域随插件卸载。
  */
-export declare function registerPetChatTab(ctx: PetChatTabHost, rt: ChatPanelRuntime): () => void;
+export declare function registerPetChatTab(ctx: PetChatTabHost, rt: ChatPanelRuntime, options?: {
+    commandId?: string;
+}): () => void;

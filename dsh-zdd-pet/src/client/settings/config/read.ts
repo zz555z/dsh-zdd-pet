@@ -21,11 +21,13 @@ import type {
   Pet,
   PhysicsParams,
   PomodoroParams,
+  Weights,
 } from '../../../shared/types.ts';
 import type { IntimacyParams } from '../../../shared/intimacy.ts';
 import type { IdleEventsParams } from '../../../shared/idle-events.ts';
 import type { ProactiveParams } from '../../../shared/proactive.ts';
 import type { CompletionParams } from '../../../shared/completion.ts';
+import { parseWeights } from '../../../shared/weights.ts';
 
 /** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
 export type MergedConfig = Record<string, Record<string, unknown>>;
@@ -39,8 +41,24 @@ export interface MainConfigPatch {
   notificationsEnabled?: boolean;
   clickSoundEnabled?: boolean;
   bubbleImageEnabled?: boolean;
+  whisperImageEnabled?: boolean;
+  chatImageEnabled?: boolean;
+  /** 对话动作联动开关；缺省表示这次响应里没有可信值。 */
+  chatAnimationEnabled?: boolean;
   confineToScreen?: boolean;
   trayEnabled?: boolean;
+  /** 手动播报开关：手动触发的碎碎念与对话回复；缺省表示这次响应里没有可信值。 */
+  voiceEnabled?: boolean;
+  /** 语音音色 id（宿主已按白名单校验，客户端原样展示）。 */
+  voiceName?: string;
+  /** 播放音量系数（0–1）；缺省表示这次响应里没有可信值。 */
+  voiceVolume?: number;
+  /** 周期碎碎念的语音开关；缺省表示这次响应里没有可信值。 */
+  voiceWhisperEnabled?: boolean;
+  /** 待办提醒的语音开关；缺省表示这次响应里没有可信值。 */
+  voiceTodoEnabled?: boolean;
+  /** 工作状态播报开关；缺省表示这次响应里没有可信值。 */
+  voiceNotifyEnabled?: boolean;
   /** 物理参数：成品已按「内置默认 ← 用户层」填满，缺子键再用内置默认兜底一次。 */
   physics?: PhysicsParams;
   /** 字体：同物理参数。 */
@@ -59,6 +77,8 @@ export interface MainConfigPatch {
   proactive?: ProactiveParams;
   /** 任务完成常驻提示：同上，用内置默认补满。 */
   completion?: CompletionParams;
+  /** 动作频率权重（main 条目）：缺省表示这次响应里没有可信值。 */
+  animationWeights?: Weights;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
   chatMemoryRounds?: number;
@@ -96,8 +116,16 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   if (typeof main.notificationsEnabled === 'boolean') patch.notificationsEnabled = main.notificationsEnabled;
   if (typeof main.clickSoundEnabled === 'boolean') patch.clickSoundEnabled = main.clickSoundEnabled;
   if (typeof main.bubbleImageEnabled === 'boolean') patch.bubbleImageEnabled = main.bubbleImageEnabled;
+  if (typeof main.whisperImageEnabled === 'boolean') patch.whisperImageEnabled = main.whisperImageEnabled;
+  if (typeof main.chatImageEnabled === 'boolean') patch.chatImageEnabled = main.chatImageEnabled;
+  if (typeof main.chatAnimationEnabled === 'boolean') patch.chatAnimationEnabled = main.chatAnimationEnabled;
   if (typeof main.confineToScreen === 'boolean') patch.confineToScreen = main.confineToScreen;
   if (typeof main.trayEnabled === 'boolean') patch.trayEnabled = main.trayEnabled;
+  if (typeof main.voiceEnabled === 'boolean') patch.voiceEnabled = main.voiceEnabled;
+  if (typeof main.voiceName === 'string') patch.voiceName = main.voiceName;
+  if (typeof main.voiceWhisperEnabled === 'boolean') patch.voiceWhisperEnabled = main.voiceWhisperEnabled;
+  if (typeof main.voiceTodoEnabled === 'boolean') patch.voiceTodoEnabled = main.voiceTodoEnabled;
+  if (typeof main.voiceNotifyEnabled === 'boolean') patch.voiceNotifyEnabled = main.voiceNotifyEnabled;
   if (main.physics && typeof main.physics === 'object') {
     patch.physics = { ...DEFAULT_PHYSICS, ...(main.physics as PhysicsParams) };
   }
@@ -125,6 +153,8 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   if (main.completion !== undefined) {
     patch.completion = readCompletionParams(main.completion);
   }
+  const weights = parseWeights(main.animationWeights);
+  if (weights) patch.animationWeights = weights;
   const whisperModel = readModel(main.whisperModel);
   if (whisperModel) patch.whisperModel = whisperModel;
   const chatModel = readModel(main.chatModel);
@@ -133,6 +163,9 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   if (rounds !== undefined) patch.chatMemoryRounds = rounds;
   const limit = nonNegative(main.chatImageLimit);
   if (limit !== undefined) patch.chatImageLimit = limit;
+  // 上界在宿主侧已经把关，这里补一次跨进程读回的判定：脏值只影响显示，不让它流到播放端
+  const volume = nonNegative(main.voiceVolume);
+  if (volume !== undefined && volume <= 1) patch.voiceVolume = volume;
   return patch;
 }
 

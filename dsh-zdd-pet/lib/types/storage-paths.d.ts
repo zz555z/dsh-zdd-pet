@@ -9,7 +9,7 @@
  */
 /** 桌面端 Electron userData 目录名（= main.js 的 app.setName 入参）。 */
 export declare const DESKTOP_APP_NAME = "dsh-zdd-pet-electron-helper";
-/** 清单条目键：客户端按它取本地化文案（zh/en 的 'storage.<key>'）。 */
+/** 清单条目键：客户端按它取本地化文案（各语言字典的 'storage.<key>'）。 */
 export type StorageKey = 'userData' | 'electron' | 'desktopCache' | 'electronCache' | 'package';
 /** 一条存储位置。 */
 export interface StorageEntry {

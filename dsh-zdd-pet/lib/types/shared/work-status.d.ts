@@ -21,10 +21,13 @@ export interface WorkStatusSnapshot {
     state: WorkStatusState | null;
     task: string | null;
     progress: TaskProgress | null;
+    /** 当前展示条目所属会话；空闲 / 外部槽 / 老版本宿主缺该字段时都不出现，气泡因此不可点。 */
+    sessionId?: string | null;
 }
 /** 快照解析：档位不认识 → 归一成 null（空闲）；形状非法 → null，消费端跳过这一拍。
  *  progress 是后加的字段：老 host / 老快照里没有它 → 归一成 null（等价于「无清单进度」），
- *  因此新旧 host 与两端渲染可以任意混搭，不必同步升级。 */
+ *  因此新旧 host 与两端渲染可以任意混搭，不必同步升级。
+ *  sessionId 同理：老 host 没有它 → null（气泡不可点，不影响其余展示）。 */
 export declare function toWorkStatus(raw: unknown): WorkStatusSnapshot | null;
 /** 任务详情是否「正在展示」：有清单进度或有任务文案。
  *  两端气泡槽位用它判定「有任务」——有任务时碎碎念/余额一律让位（进度气泡优先），

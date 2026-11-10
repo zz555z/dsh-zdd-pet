@@ -114,20 +114,20 @@ export function takeChanged(s: PollState, baseline: Record<string, number>): Sta
 }
 
 /** `sections.<名>` 里会被消费端分发的那几个叶子。 */
-export type SectionLeafName = 'config' | 'balance' | 'workStatus' | 'notify' | 'menu';
+export type SectionLeafName = 'config' | 'balance' | 'workStatus' | 'notify' | 'menu' | 'focusSession';
 
 /** `pets.<id>.<名>` 里会被消费端分发的那几个叶子。 */
-export type PetLeafName = 'say' | 'anim' | 'position' | 'throw' | 'lock';
+export type PetLeafName = 'say' | 'anim' | 'position' | 'throw' | 'lock' | 'sleep';
 
 /** 一次叶子分发的落点：分段叶子，或某只宠物的叶子。 */
 export type LeafTarget =
   { where: 'section'; name: SectionLeafName } | { where: 'pet'; name: PetLeafName; petId: string };
 
 /** 分段叶子名的全集；新增 section 叶子时与 {@link SectionLeafName} 一起改。 */
-const SECTION_LEAF_NAMES = ['config', 'balance', 'workStatus', 'notify', 'menu'] as const;
+const SECTION_LEAF_NAMES = ['config', 'balance', 'workStatus', 'notify', 'menu', 'focusSession'] as const;
 
 /** 宠物叶子名的全集；新增宠物叶子时与 {@link PetLeafName} 一起改。 */
-const PET_LEAF_NAMES = ['say', 'anim', 'position', 'throw', 'lock'] as const;
+const PET_LEAF_NAMES = ['say', 'anim', 'position', 'throw', 'lock', 'sleep'] as const;
 
 /** 把字符串收窄成分段叶子名。 */
 function isSectionLeafName(name: string): name is SectionLeafName {
@@ -176,6 +176,7 @@ export function readBalance(leaf: StateLeaf): { state: BalanceState; manual: boo
  *  clear：收起当前气泡（POST /bubble/clear 的落点），必须是单独形态——空文本会被判成非法、整拍跳过。
  *  配图两种形态并列、由字段名区分：image = 表情包池内的名称（消费端拼图片路径），url = 第三方给的完整地址。
  *  不做「一个中性字段装两种值」：消费端必须知道该不该拼路径，靠 startsWith('http') 嗅探在名字像 URL 时会出错。
+ *  voiceTo：宿主指定这一句该由哪一端念（目前只有周期碎碎念与待办提醒写入）；缺省 = 谁都不念。
  */
 export type SayCue =
   | {
@@ -193,8 +194,13 @@ export type SayCue =
       holdKind?: 'confirm' | 'complete';
       /** complete 气泡是否「鼠标移入即收起」。缺省 true；false = 不自动收（一直挂着直到被覆盖）。 */
       dismissOnHover?: boolean;
+      /** 这一句该由哪一端念；缺省 = 不指定，消费端据此不念。 */
+      voiceTo?: VoiceTarget;
     }
   | { kind: 'clear' };
+
+/** 一次说话该由哪一端念；与 src/host/surface 的同名联合体是两份（宿主不 import src/shared），改动时两边一起改。 */
+export type VoiceTarget = 'web' | 'desktop';
 
 /** 类型收窄：宠物说话叶子 → SayCue（形状非法或空文本 → null，消费端跳过这一拍）。
  *  碎碎念、命令气泡、对话回复共用这一个叶子——前端本来就是同一条展示链路。
@@ -210,6 +216,7 @@ export function readSay(leaf: StateLeaf): SayCue | null {
     hold?: unknown;
     holdKind?: unknown;
     dismissOnHover?: unknown;
+    voiceTo?: unknown;
     clear?: unknown;
     messageId?: unknown;
   };
@@ -230,6 +237,8 @@ export function readSay(leaf: StateLeaf): SayCue | null {
     hold: typeof d.hold === 'boolean' ? d.hold : undefined,
     holdKind: d.holdKind === 'complete' || d.holdKind === 'confirm' ? d.holdKind : undefined,
     dismissOnHover: typeof d.dismissOnHover === 'boolean' ? d.dismissOnHover : undefined,
+    // 只认两个合法字面量：写错的一端名等于「不指定」，消费端据此不念
+    voiceTo: d.voiceTo === 'web' || d.voiceTo === 'desktop' ? d.voiceTo : undefined,
   };
 }
 
@@ -288,6 +297,27 @@ export function readLock(leaf: StateLeaf): LockState | null {
   // locked:true 却缺 expiresAt（或非法）= 形状非法：宁可不冻结，也不猜一个到期时刻
   if (typeof d.expiresAt !== 'number' || !Number.isFinite(d.expiresAt)) return null;
   return { locked: true, expiresAt: d.expiresAt };
+}
+
+/** 睡觉叶子的形态：`{ sleeping: true, start, loop, end }` = 正在睡（三段名由宿主挑定），
+ *  `{ sleeping: false }` = 醒着。 */
+export type SleepState = { sleeping: true; start: string; loop: string; end: string } | { sleeping: false };
+
+/** 类型收窄：睡觉叶子 → SleepState（形状非法 → null，消费端跳过这一拍）。
+ *
+ *  这是状态不是指令：渲染端读它决定要不要睡，不往回写。三段名字由宿主挑定并一起写进叶子，
+ *  渲染端照此播「开始（一次）→ 循环（无限）→ 起来（一次）」——自己重新挑会让两端播到不同的一套。
+ *  `sleeping: true` 却缺任何一段名 = 形状非法：宁可不睡（保持现状），也不要播一段不存在的动画。
+ */
+export function readSleep(leaf: StateLeaf): SleepState | null {
+  if (!leaf.data || typeof leaf.data !== 'object') return null;
+  const d = leaf.data as { sleeping?: unknown; start?: unknown; loop?: unknown; end?: unknown };
+  if (d.sleeping === false) return { sleeping: false };
+  if (d.sleeping !== true) return null;
+  for (const name of [d.start, d.loop, d.end]) {
+    if (typeof name !== 'string' || name === '') return null;
+  }
+  return { sleeping: true, start: d.start as string, loop: d.loop as string, end: d.end as string };
 }
 
 /** 位置指令的运动模式（三选一）。与宿主半侧的同名联合体是两份，改动时两边要一起改。 */

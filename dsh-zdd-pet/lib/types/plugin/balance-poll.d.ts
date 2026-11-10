@@ -6,7 +6,7 @@ import type { HostContext } from './context.ts';
 export type BalancePollInput = {
     /** 宿主上下文（apply 收到的那一个）。 */
     ctx: HostContext;
-} & Pick<HostSetup, 'configPaths'> & Pick<ChatMemory, 'getActivePetId'> & Pick<HostSetup, 'log'> & Pick<HostSetup, 'state'> & Pick<Extras, 'deliverCue' | 'memeValid'>;
+} & Pick<HostSetup, 'configPaths'> & Pick<ChatMemory, 'getActivePetId'> & Pick<HostSetup, 'log'> & Pick<HostSetup, 'standaloneAiBalance'> & Pick<HostSetup, 'state'> & Pick<Extras, 'deliverCue' | 'memeValid'>;
 /**
  * 创建余额与周期。
  */

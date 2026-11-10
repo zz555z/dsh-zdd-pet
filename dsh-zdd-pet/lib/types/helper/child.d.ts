@@ -28,6 +28,19 @@ type Logger = {
  * `'0'` / `'false'` / `'1'` 都进纯 Node 模式；运行期再 delete 已经晚了，模块加载器在进程启动时就定了。
  */
 export declare function helperSpawnEnv(hostPid: number, extra?: Record<string, string | undefined>): NodeJS.ProcessEnv;
+/**
+ * 组装 helper 的 argv；`--no-sandbox` 必须排在 app 路径之前，否则 Electron 会把它当应用参数。
+ *
+ * Electron 只认命令行，没有环境变量或配置文件能表达「禁用沙箱」；自定义 command 一律不注入，
+ * 那不是真正的 Electron（测试替身与用户脚本靠这条排除）。
+ * @param baseArgs - 默认启动参数，首项是 main.js 路径。
+ * @param opts - `sandboxFallback` 为已退化到 `--no-sandbox`；`customCommand` 为调用方自带了可执行文件。
+ * @returns 可直接交给 spawn 的新数组；未回退时与 `baseArgs` 等值。
+ */
+export declare function helperLaunchArgs(baseArgs: readonly string[], opts: {
+    sandboxFallback: boolean;
+    customCommand: boolean;
+}): string[];
 /** 一个 Helper 子进程的生命周期：启动、协议读写、停止、崩溃重启。 */
 export declare class HelperProcess {
     readonly options: HelperOptions;
@@ -41,6 +54,12 @@ export declare class HelperProcess {
     private lastStartAt;
     /** stdout 按行缓冲（协议行按 \n 切分）。用 declare + 构造器赋值，避免类字段降级出外部 helper */
     private stdoutBuffer;
+    /** 最近一次拉起的运行时身份（可执行文件路径与版本）：崩溃与熔断日志都要带它 */
+    private launchIdentity;
+    /** 是否已经因为「沙箱初始化失败」改用过 `--no-sandbox`（只退一次） */
+    private hasSandboxFallbackApplied;
+    /** 当前子进程有没有写过非空白 stdout/stderr：有输出说明 JS 已经跑过，秒退就不能赖沙箱 */
+    private hasChildOutput;
     constructor(options?: HelperOptions, logger?: Logger);
     /** 拉起子进程；已有子进程在跑或正在停止时直接返回现有句柄。 */
     start(): import('node:child_process').ChildProcess | undefined;
@@ -63,6 +82,8 @@ export declare class HelperProcess {
      * （默认 3s）升级 SIGKILL，再给 1s 宽限，仍未退出就放弃等待，配置保存绝不能被无限挂住。
      */
     stopAndWait(reason?: string, timeoutMs?: number): Promise<void>;
+    /** 沙箱初始化失败的特殊崩溃 → 改用 `--no-sandbox` 立刻重试一次，不计入退避与熔断额度。 */
+    private applySandboxFallback;
     private scheduleRestart;
     /** 退避基值：DSH_PET_RESTART_BASE_MS（ms，>0）可调，默认 750。 */
     private resolveRestartBaseMs;

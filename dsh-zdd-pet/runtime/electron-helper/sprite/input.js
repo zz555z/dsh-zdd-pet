@@ -105,7 +105,6 @@ Object.assign(PetSprite.prototype, {
     this.dragState.sling = sling;
     this.dragState.anchorX = this.pos.x + this.halfW;
     this.dragState.anchorY = this.pos.y + this.halfH;
-    // 舞台「拍平」不能在这里做：纯点击会让人物瞬移上移再落下，只有拖拽超过阈值才拍平。
   },
 
   onPointerMove(e) {
@@ -117,9 +116,8 @@ Object.assign(PetSprite.prototype, {
     if (!d.dragging) {
       if (Math.hypot(dx, dy) < S.DRAG_THRESHOLD) return;
       d.dragging = true;
-      // 真正开始拖拽才把舞台拍平（人物随光标拿起）
-      this.stage.style.transform = 'none';
-      if (this.animations.drag.length) {
+      // 睡觉：位置照常跟手，但不换拖拽动画——睡姿循环整段归睡觉状态机，顶掉就回不来了。
+      if (this.animations.drag.length && !this.sleeping) {
         this.playOnce(S.pick(this.animations.drag));
       }
       this.syncInputBusy(); // 拖拽成立：主进程兜底通道闭嘴（见 inputBusy）
@@ -140,19 +138,18 @@ Object.assign(PetSprite.prototype, {
     d.dragging = false;
     this.hit.classList.remove('dragging');
     this.stopDragFollow(); // 弹簧跟随立即停（位置定格在实时 this.pos）
-    this.stage.style.transform = 'translateY(' + this.bottomPad + 'px)';
     this.syncInputBusy(); // 拖拽结束：交还给常规判定（幂等，非拖拽时多调一次不发 IPC）
     // 提示复位：点击/拖拽期间收起，指针仍在命中区内就恢复。用 hitRect 而不是 getBoundingClientRect
     // ——命中区是窗口坐标里的权威几何，与 onMouseMove 同源。必须留在 syncInputBusy() 之后：
     // 源码守卫只扫本函数开头 400 字符找上报调用，插到前面会把上报挤出窗口。
     if (e && Number.isFinite(e.clientX)) {
       const r = this.hitRect;
-      const px = e.clientX - this.margin.l;
-      const py = e.clientY - this.margin.t;
+      const px = e.clientX - this.winOffset.x;
+      const py = e.clientY - this.winOffset.y;
       // 先按松手位置更新光标再摆位/显示，否则会重现拖拽前的位置（与浏览器 placeTip 同一处理）
       this.tipCursor = {
-        x: this.pos.x - this.margin.l + e.clientX,
-        y: this.pos.y - this.margin.t + e.clientY,
+        x: this.pos.x - this.winOffset.x + e.clientX,
+        y: this.pos.y - this.winOffset.y + e.clientY,
       };
       this.setTip(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h);
     }
@@ -174,7 +171,8 @@ Object.assign(PetSprite.prototype, {
       }
       // 拖拽松手：非终态工作状态恢复档位循环，否则回 idle。必须用 playOnce：switchTo(idle,false)
       // 会 loop 播放、ended 永不触发，随机链就再也回不来。
-      if (!this.resumeWorkStatusAnim()) {
+      // 睡觉：拖拽期间没换过动画、睡姿照播，这里不接回 idle，否则会把睡姿顶掉。
+      if (!this.sleeping && !this.resumeWorkStatusAnim()) {
         if (this.animations.idle.length) this.playOnce(S.pick(this.animations.idle, this.anim));
       }
       // 释放位置 = 弹簧跟随后的实际包围盒左上角（不是指针目标：滞后时落点应跟随宠物实际位置）
@@ -236,31 +234,38 @@ Object.assign(PetSprite.prototype, {
   /**
    * 本窗口是否必须保持可交互（= 我正在用这个窗口的鼠标输入）。
    *
-   * 来源是拖拽中 / 右键菜单开着 / 对话弹窗开着（外加可点的余额气泡）：它们都靠窗口级鼠标事件驱动，
+   * 来源是拖拽中 / 右键菜单开着 / 对话或待办弹窗开着（外加可点的余额气泡）：它们都靠窗口级鼠标事件驱动，
    * 窗口一变回穿透输入链就断（拖拽定格、松手也没人报 pointerup）。
    * 这是渲染端专有的知识，主进程无从推断；同时上报控件矩形，菜单/聊天框外仍继续穿透。
    */
   inputBusy() {
-    // 可点的余额气泡是第四个来源：它长在窗口里、靠窗口级 click 触发，却悬在平时穿透的余量区，
-    // 正需要借 busy + 控件矩形把它圈出来。
-    return this.dragState.active || this.menuOpen || this.chatOpen || this.balanceClickable();
+    // 可点的气泡（余额翻页、工作气泡跳会话）同样是来源：它们长在窗口里、靠窗口级 click 触发，
+    // 却悬在平时穿透的余量区，正需要借 busy + 控件矩形把它们圈出来。
+    return (
+      this.dragState.active ||
+      this.menuOpen ||
+      this.chatOpen ||
+      this.todoOpen ||
+      this.balanceClickable() ||
+      this.workClickable()
+    );
   },
 
-  /** 余额气泡当前有几页：custom 取 views.length；内置 windows 是收起/展开两页；其余一页。 */
+  /** 余额气泡当前有几页：规则归共享层（与每页内容同源），这里只补「还没有结果」的兜底。 */
   balancePageCount() {
     const s = this.balanceState;
-    if (!s || !s.ok) return 1;
-    if (s.shape === 'custom') {
-      const views = S.customViews(s);
-      return views ? Math.max(1, views.length) : 1;
-    }
-    return s.shape === 'windows' ? 2 : 1;
+    return s ? S.balancePageCount(s) : 1;
   },
 
   /** 余额气泡此刻是否可点切页：页数多于 1 且气泡正在显示。 */
   balanceClickable() {
     if (!this.bubbleOn || this.balanceWrap) return false;
     return this.balancePageCount() > 1;
+  },
+
+  /** 工作气泡此刻是否可点：它正占着气泡槽，且拿到了可跳转的会话。 */
+  workClickable() {
+    return this.bubbleSlot === 'work' && !!this.workSessionId;
   },
 
   /**
@@ -294,7 +299,7 @@ Object.assign(PetSprite.prototype, {
     // 控件矩形 = 主进程允许接收点击的区域，矩形外继续穿透。可点的余额气泡悬在余量区，不登记就点不到。
     const controls = [
       ...document.querySelectorAll(
-        '.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .pet-bubble.is-chat, .pet-bubble.is-clickable',
+        '.dsh-zdd-pet-menu-column, .dsh-zdd-pet-chat, .dsh-zdd-pet-todo, .pet-bubble.is-chat, .pet-bubble.is-clickable',
       ),
     ];
     for (const el of this.inputRegionElements) {
@@ -346,20 +351,20 @@ Object.assign(PetSprite.prototype, {
       this.setInteractive(true);
       return;
     }
-    // 右键菜单/对话弹窗开启：整窗保持可交互，关闭后恢复命中区判定
-    if (this.menuOpen || this.chatOpen) {
+    // 右键菜单/对话弹窗/待办面板开启：整窗保持可交互，关闭后恢复命中区判定
+    if (this.menuOpen || this.chatOpen || this.todoOpen) {
       this.syncInputRegions(); // 级联菜单按悬停增减面板，及时更新占用区域
       this.setInteractive(true);
       this.setTip(false); // 菜单/弹窗期间提示让位，不跟浮层抢注意力
       return;
     }
     const r = this.hitRect;
-    // forwarded 事件坐标以窗口为原点；转换到 sprite 坐标要扣减窗口余量。异常时退回屏幕坐标推导：
+    // forwarded 事件坐标以窗口为原点；转换到 sprite 坐标要扣减本体在窗口内的偏移。异常时退回屏幕坐标推导：
     // ÷scale 后减去窗口屏幕原点即窗口内坐标（hitRect/pos 均为 CSS 系）。
-    const wx = Number.isFinite(e.clientX) ? e.clientX : toLocal(e.screenX) - (this.pos.x + VIEW.x - this.margin.l);
-    const wy = Number.isFinite(e.clientY) ? e.clientY : toLocal(e.screenY) - (this.pos.y + VIEW.y - this.margin.t);
-    const px = wx - this.margin.l;
-    const py = wy - this.margin.t;
+    const wx = Number.isFinite(e.clientX) ? e.clientX : toLocal(e.screenX) - (this.pos.x + VIEW.x - this.winOffset.x);
+    const wy = Number.isFinite(e.clientY) ? e.clientY : toLocal(e.screenY) - (this.pos.y + VIEW.y - this.winOffset.y);
+    const px = wx - this.winOffset.x;
+    const py = wy - this.winOffset.y;
     const inBody = px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
     // 快捷键与拖拽都只在"光标在身体上"时生效，与提示/穿透同源，避免另一套判定
     const wasHoverBody = this.hoverBody;
@@ -381,11 +386,11 @@ Object.assign(PetSprite.prototype, {
     if (moodOn) {
       if (inBody && !wasHoverBody) this.showMoodOnHover();
       // 常驻气泡（番茄钟倒计时/等待确认）不随鼠标离开消失——它们是状态，不是悬浮提示。
-      else if (!inBody && wasHoverBody && !this.whisperHold) this.clearWhisper();
+      else if (!inBody && wasHoverBody && !this.whisperHoldKind) this.clearWhisper();
     }
     // 光标存视口坐标（窗口原点 + 窗口内坐标）：窗口随宠物移动时贴光标不会漂。必须在 setTip 之前
     // 更新——setTip 变显隐时会立刻渲染一次，晚一步就会用上一次的光标摆位。
-    if (inBody) this.tipCursor = { x: this.pos.x - this.margin.l + wx, y: this.pos.y - this.margin.t + wy };
+    if (inBody) this.tipCursor = { x: this.pos.x - this.winOffset.x + wx, y: this.pos.y - this.winOffset.y + wy };
     this.setInteractive(inBody);
     // 悬浮提示与可交互判定同源（同一个 inBody）：进身体出现，离开收起
     this.setTip(inBody);
@@ -433,6 +438,24 @@ Object.assign(PetSprite.prototype, {
     }
     this.stopThrow(); // 点击飞行中的宠物 = 收手停住（再播点击回应）
     this.stopMove();
+    // 睡觉：点一下就是叫醒。挤压与音效照常（手感与平时一致），但不播点击回应动画——
+    // 叫醒的表现由 /wake 写回的 sleep 叶子驱动（end 播一遍，播完回随机链）。
+    // 这里直接压当前前台那一帧：平时靠 pendingSquash 等新动画就位，这条路没有换源。
+    if (this.sleeping) {
+      playClickSound();
+      const front = this.front === 0 ? this.videoA : this.videoB;
+      if (front) this.startSquash(front);
+      this.postSleepAction('wake');
+      // 入睡过渡里被点：这次入睡作废，按普通点击播回应动画——「起来」那段不再播。
+      // 先本地清状态：等叶子回来时 setSleep 会因「本来没睡」直接返回，不会插一段 end。
+      if (this.sleepPhase === 'start') {
+        this.sleeping = false;
+        this.sleepSet = null;
+        this.sleepPhase = null;
+        if (this.animations.clicks.length) this.playOnce(S.pick(this.animations.clicks));
+      }
+      return;
+    }
     // 点击音效与浏览器同位置：放在「按下已触发积分」的早退之后、点击动画判断之前
     playClickSound();
     // 点击台词：从 clickTexts 随机说一句（气泡），不受点击动画是否存在影响
@@ -467,11 +490,44 @@ Object.assign(PetSprite.prototype, {
     this.showChatFromMenu(file);
   },
 
-  /** 悬停快捷键：光标在身体上时按 T 打开对话，等价于菜单里的「对话」。 */
+  /** 悬停快捷键：按住 M 说话、L 开对话、S 截图、Z 切换睡/醒、D 开关待办、1-4 切显示位置。 */
   onHotkey(e) {
+    // 按住说话先判：它要吃掉按住期间的自动重复，晚一步就会被输入框收走
+    if (this.hearHold.onKeyDown(e)) {
+      e.preventDefault();
+      return;
+    }
     if (!this.hoverBody) return;
-    if (!S.isChatHotkey(e)) return;
-    e.preventDefault();
-    this.showChatFromMenu();
+    const display = S.displayOfHotkey(e);
+    if (display) {
+      e.preventDefault();
+      this.setPetDisplay(display);
+      return;
+    }
+    if (S.isChatHotkey(e)) {
+      e.preventDefault();
+      this.showChatFromMenu();
+      return;
+    }
+    if (S.isCaptureHotkey(e)) {
+      e.preventDefault();
+      this.screenshotFromShortcut();
+      return;
+    }
+    if (S.isTodoHotkey(e)) {
+      e.preventDefault();
+      this.toggleTodo();
+      return;
+    }
+    // 睡觉：与浏览器同为切换语义；该条目没配睡觉动画时整项无效（菜单里也不出现）
+    if (S.isSleepHotkey(e) && Array.isArray(this.animations.sleep) && this.animations.sleep.length > 0) {
+      e.preventDefault();
+      this.postSleepAction(this.sleeping ? 'wake' : 'sleep');
+    }
+  },
+
+  /** 松手：结束「按住说话」的那次录音（没在按住时什么都不做）。 */
+  onHotkeyUp(e) {
+    this.hearHold.onKeyUp(e);
   },
 });

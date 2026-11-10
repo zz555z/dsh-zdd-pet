@@ -27,6 +27,7 @@ export declare function createSessionNotify(deps: SessionNotifyInput): {
     turnFlags: Map<string, WorkStatusTurnContext>;
     terminalTimers: Map<string, NodeJS.Timeout>;
     lastTodoText: Map<string, TodoView>;
+    lastReplyText: Map<string, string>;
     toolsInFlight: ToolCallLedger;
     cancelTerminalCleanup: (sessionId: string) => void;
     scheduleTerminalCleanup: (sessionId: string) => void;

@@ -18,6 +18,8 @@ export declare const SIZE: {
     readonly imgMaxH: 180;
     readonly preview: 48;
     readonly hairline: 2;
+    /** 播报按钮生成中的转圈直径；与 11px 的时间文字同高，不压过文字。 */
+    readonly spinner: 12;
     readonly tabPadY: 3;
     readonly tabPadX: 12;
     readonly toolPadY: 2;
@@ -31,6 +33,13 @@ export declare const SIZE: {
     readonly send: 34;
     readonly pillPadY: 4;
     readonly pill: 999;
+    /** 悬浮提示气泡的内边距（纵、横）；与设置页的 data-tip 气泡一致。 */
+    readonly tipPadY: 6;
+    readonly tipPadX: 10;
+    /** 悬浮提示气泡的最大宽度：一行放不下就省略，不做换行（换行会让宽度随位置跳变）。 */
+    readonly tipMaxW: 260;
+    /** 人设卷帘里正文的最大高度：人设没有长度上限，超过就在这块内部滚动。 */
+    readonly personaMaxH: 200;
 };
 /** 输入框自动长高的上限（px）；超过就内部滚动。 */
 export declare const INPUT_MAX_HEIGHT: 140;

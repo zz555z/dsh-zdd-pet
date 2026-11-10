@@ -1,4 +1,4 @@
-import type { FontConfig, GreetingParams, ModelSelection, MoodParams, Pet, PhysicsParams, PomodoroParams } from '../../../shared/types.ts';
+import type { FontConfig, GreetingParams, ModelSelection, MoodParams, Pet, PhysicsParams, PomodoroParams, Weights } from '../../../shared/types.ts';
 import type { IntimacyParams } from '../../../shared/intimacy.ts';
 import type { IdleEventsParams } from '../../../shared/idle-events.ts';
 import type { ProactiveParams } from '../../../shared/proactive.ts';
@@ -14,8 +14,24 @@ export interface MainConfigPatch {
     notificationsEnabled?: boolean;
     clickSoundEnabled?: boolean;
     bubbleImageEnabled?: boolean;
+    whisperImageEnabled?: boolean;
+    chatImageEnabled?: boolean;
+    /** 对话动作联动开关；缺省表示这次响应里没有可信值。 */
+    chatAnimationEnabled?: boolean;
     confineToScreen?: boolean;
     trayEnabled?: boolean;
+    /** 手动播报开关：手动触发的碎碎念与对话回复；缺省表示这次响应里没有可信值。 */
+    voiceEnabled?: boolean;
+    /** 语音音色 id（宿主已按白名单校验，客户端原样展示）。 */
+    voiceName?: string;
+    /** 播放音量系数（0–1）；缺省表示这次响应里没有可信值。 */
+    voiceVolume?: number;
+    /** 周期碎碎念的语音开关；缺省表示这次响应里没有可信值。 */
+    voiceWhisperEnabled?: boolean;
+    /** 待办提醒的语音开关；缺省表示这次响应里没有可信值。 */
+    voiceTodoEnabled?: boolean;
+    /** 工作状态播报开关；缺省表示这次响应里没有可信值。 */
+    voiceNotifyEnabled?: boolean;
     /** 物理参数：成品已按「内置默认 ← 用户层」填满，缺子键再用内置默认兜底一次。 */
     physics?: PhysicsParams;
     /** 字体：同物理参数。 */
@@ -34,6 +50,8 @@ export interface MainConfigPatch {
     proactive?: ProactiveParams;
     /** 任务完成常驻提示：同上，用内置默认补满。 */
     completion?: CompletionParams;
+    /** 动作频率权重（main 条目）：缺省表示这次响应里没有可信值。 */
+    animationWeights?: Weights;
     whisperModel?: ModelSelection;
     chatModel?: ModelSelection;
     chatMemoryRounds?: number;

@@ -4,6 +4,7 @@
  * @module dsh-zdd-pet/src/host/index
  */
 import { createHostSetup } from './plugin/setup.ts';
+import { readAllConfig } from './config.ts';
 import { createHttpRoute, registerHttpRoute } from './plugin/http-route.ts';
 import { registerLifecycle } from './plugin/lifecycle.ts';
 import { registerChatCommand } from './plugin/command-chat.ts';
@@ -25,6 +26,11 @@ import { createSessionNotify } from './plugin/session-notify.ts';
 import { createPetLookup } from './plugin/pet-lookup.ts';
 import { createDownloadReport } from './plugin/download-report.ts';
 import { createWorkStatusBridge } from './plugin/work-status-bridge.ts';
+import { registerTodoReminders } from './plugin/todo-reminders.ts';
+import { createVoiceService } from './voice/speak.ts';
+import { createHearService } from './voice/hear.ts';
+import { TODO_FILE_NAME, TodoStore } from './todo/store.ts';
+import { join } from 'node:path';
 import type { PetRouteDeps } from './routes/types.ts';
 import { readProactiveParams } from '../shared/proactive.ts';
 
@@ -44,6 +50,7 @@ export function apply(ctx: any): void {
     thumbUserRoot,
     memeDirsFor,
     standaloneAiPolicy,
+    standaloneAiBalance,
     state,
     playback,
     workStatus,
@@ -53,7 +60,9 @@ export function apply(ctx: any): void {
   // 附加玩法（番茄钟 / 任务彩蛋 / 余额告急演出）的共用投递器：把预设文案+配图写进宠物气泡，
   // 不经模型、零 token。三个玩法各在 loops / session-watch / balance-poll 的接入点调用它。
   const extras = createExtras({ configPaths, memeDirsFor, state });
-  const workStatusBridge = createWorkStatusBridge({ state, workStatus });
+  // EXTERNAL_WORK_SESSION 一并传入：外部槽（`api`）不是真实 DSH 会话，写进快照时要置空 sessionId，
+  // 客户端才不会把气泡做成一个点了没反应的入口。
+  const workStatusBridge = createWorkStatusBridge({ state, workStatus, EXTERNAL_WORK_SESSION });
   const { publishWorkStatus, stopWorkStatusFlush } = workStatusBridge;
   const downloadReport = createDownloadReport({
     EXTERNAL_WORK_SESSION,
@@ -62,14 +71,15 @@ export function apply(ctx: any): void {
     workStatus,
   });
   const { reportDownload, stopDownloadSlotTimer } = downloadReport;
-  const petLookup = createPetLookup({ state });
-  const { lock } = petLookup;
+  const petLookup = createPetLookup({ state, configPaths });
+  const { lock, sleep, sleepRefusalText } = petLookup;
   const sessionNotify = createSessionNotify({ ctx, publishWorkStatus, state, workStatus });
   const {
     pushNotifyFrame,
     turnFlags,
     terminalTimers,
     lastTodoText,
+    lastReplyText,
     toolsInFlight,
     cancelTerminalCleanup,
     scheduleTerminalCleanup,
@@ -82,6 +92,7 @@ export function apply(ctx: any): void {
     configPaths,
     log,
     memeDirsFor,
+    playback,
     state,
     userRoot,
     readFacts: memoryFacts.readFacts,
@@ -89,7 +100,7 @@ export function apply(ctx: any): void {
     extractFacts: memoryFacts.extractFacts,
     longMemoryEnabled: (conf) => readProactiveParams(conf.proactive).longMemory,
   });
-  const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
+  const { lastWhisperAt, publishWhisper, publishSleepTalk, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
 
   // 主动关心：久未搭理 / 深夜还在忙 / 刚做完专注时自己冒一句关心。
   const proactive = createProactive({
@@ -130,9 +141,13 @@ export function apply(ctx: any): void {
     log,
     memeValid: extras.memeValid,
     state,
+    standaloneAiBalance,
   });
   const { effectivePetList, balancePeriodSec, whisperPeriodSec, refreshBalance, resolveActivePetId, petDisplayName } =
     balancePoll;
+
+  // 待办清单：一份用户级数据（不分宠物），落盘在插件数据根；提醒循环与 /todos 路由共用同一个实例。
+  const todos = new TodoStore({ file: join(userRoot, TODO_FILE_NAME), log });
 
   const desktopHelper = createDesktopHelper({
     ctx,
@@ -158,6 +173,11 @@ export function apply(ctx: any): void {
     ctx,
     // 用带「主动关心交互追踪」的对话入口覆盖 chatMemory 里那份。
     chatWithPet: chatWithPetTracked,
+    todos,
+    // 语音合成：缓存落 userRoot，失败只留日志，不打断宿主
+    voice: createVoiceService({ userRoot, log }),
+    // 语音识别：能力来自宿主（DSH 的 speechToText），没启用时服务自己在调用时回 unsupported
+    speech: createHearService({ speechToText: () => setup.optionalService('speechToText') }),
   };
   const httpRoute = createHttpRoute(deps);
   registerHttpRoute(ctx, httpRoute.handlePetRoute);
@@ -171,6 +191,7 @@ export function apply(ctx: any): void {
     deliverEasterEgg: extras.deliverEasterEgg,
     lastTodoText,
     log,
+    lastReplyText,
     notifyActivityTimers,
     publishWorkStatus,
     pushNotifyFrame,
@@ -182,7 +203,7 @@ export function apply(ctx: any): void {
     workStatus,
   });
 
-  registerBalanceCommand({ ctx, refreshBalance });
+  registerBalanceCommand({ ctx, effectivePetList, refreshBalance, sleep, sleepRefusalText });
 
   registerLoops({
     ctx,
@@ -194,7 +215,9 @@ export function apply(ctx: any): void {
     log,
     pickPetMeme: extras.pickPetMeme,
     publishWhisper,
+    publishSleepTalk,
     refreshBalance,
+    sleep,
     standaloneAiPolicy,
     whisperPeriodSec,
   });
@@ -203,7 +226,29 @@ export function apply(ctx: any): void {
   proactive.start();
 
   registerPetCommand({ ctx, effectivePetList, petDisplayName, resolveActivePetId, setActivePetId });
-  registerChatCommand({ ctx, chatWithPet: chatWithPetTracked, log, publishWhisper, resolveActivePetId });
+  registerChatCommand({
+    ctx,
+    chatWithPet: chatWithPetTracked,
+    log,
+    publishWhisper,
+    resolveActivePetId,
+    sleep,
+    sleepRefusalText,
+  });
+
+  // 待办提醒：随插件生命周期起停；锁被第三方持有时由 pickReminderSpeaker 跳过该宠物。
+  // 播报开关现读现用：改配置后下一次提醒即生效，不必重启。
+  registerTodoReminders({
+    ctx,
+    effectivePetList,
+    isVoiceTodoEnabled: () => readAllConfig(configPaths).main?.voiceTodoEnabled === true,
+    lock,
+    log,
+    sleep,
+    state,
+    todos,
+    waiterCount: () => state.waiterCount(),
+  });
 
   registerLifecycle({
     ctx,

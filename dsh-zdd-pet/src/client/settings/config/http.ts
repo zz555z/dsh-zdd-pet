@@ -13,6 +13,7 @@ import type {
   Pet,
   PhysicsParams,
   PomodoroParams,
+  Weights,
 } from '../../../shared/types.ts';
 import type { IntimacyParams } from '../../../shared/intimacy.ts';
 import type { IdleEventsParams } from '../../../shared/idle-events.ts';
@@ -28,6 +29,8 @@ export interface ConfigMeta {
   animations: string;
   /** 用户表情包目录（加图不必改包）。 */
   memes?: string;
+  /** 待办数据文件（一份用户级数据，不分宠物）。 */
+  todos?: string;
   /** 统一日志文件；桌面版没控制台，排障只看它。 */
   logs?: string;
   /** 插件落盘的全部位置（路径与是否已存在）。 */
@@ -42,8 +45,24 @@ export interface SaveFields {
   notificationsEnabled: boolean;
   clickSoundEnabled: boolean;
   bubbleImageEnabled: boolean;
+  whisperImageEnabled: boolean;
+  chatImageEnabled: boolean;
+  /** 对话动作联动开关。 */
+  chatAnimationEnabled: boolean;
   confineToScreen: boolean;
   trayEnabled: boolean;
+  /** 手动播报开关：手动触发的碎碎念与对话回复。 */
+  voiceEnabled: boolean;
+  /** 语音音色 id（白名单内的四个之一）。 */
+  voiceName: string;
+  /** 播放音量系数：0–1 的小数，1 = 最大音量，0 = 静音。 */
+  voiceVolume: number;
+  /** 周期碎碎念要不要念出来。 */
+  voiceWhisperEnabled: boolean;
+  /** 待办提醒要不要念出来。 */
+  voiceTodoEnabled: boolean;
+  /** 工作状态播报要不要念出来（任务完成 / 出错 / 等确认时念一句配置台词）。 */
+  voiceNotifyEnabled: boolean;
   physics: PhysicsParams;
   whisperModel: ModelSelection;
   chatModel: ModelSelection;
@@ -57,6 +76,8 @@ export interface SaveFields {
   idleEvents: IdleEventsParams;
   proactive: ProactiveParams;
   completion: CompletionParams;
+  /** 动作频率权重（main 条目）：三项合计 ≤ 100，随机动作是余量。 */
+  animationWeights: Weights;
 }
 
 /** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
@@ -78,8 +99,17 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     notificationsEnabled: fields.notificationsEnabled,
     clickSoundEnabled: fields.clickSoundEnabled,
     bubbleImageEnabled: fields.bubbleImageEnabled,
+    whisperImageEnabled: fields.whisperImageEnabled,
+    chatImageEnabled: fields.chatImageEnabled,
+    chatAnimationEnabled: fields.chatAnimationEnabled,
     confineToScreen: fields.confineToScreen,
     trayEnabled: fields.trayEnabled,
+    voiceEnabled: fields.voiceEnabled,
+    voiceName: fields.voiceName,
+    voiceVolume: fields.voiceVolume,
+    voiceWhisperEnabled: fields.voiceWhisperEnabled,
+    voiceTodoEnabled: fields.voiceTodoEnabled,
+    voiceNotifyEnabled: fields.voiceNotifyEnabled,
     physics: fields.physics,
     whisperModel: fields.whisperModel,
     chatModel: fields.chatModel,
@@ -93,6 +123,7 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
     idleEvents: fields.idleEvents,
     proactive: fields.proactive,
     completion: fields.completion,
+    animationWeights: fields.animationWeights,
   };
 }
 

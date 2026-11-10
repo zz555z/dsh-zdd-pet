@@ -1,15 +1,11 @@
-/**
- * 菜单树构建：从动画清单与第三方注册项拼出层级，并做镜像动画过滤。
- *
- * 不碰 DOM；输入是配置与注册数据，输出是纯对象树。
- * 必须始终成立：同一份输入必得同一棵树，层级顺序稳定。
- * @module dsh-zdd-pet/src/shared/menu/tree
- */
 import { type Animations, type Category } from '../types.ts';
 import type { MenuBranch, MenuLeaf, MenuMoreItem, MenuNode } from './types.ts';
+/** 该菜单动作在睡着时是否放行（两端共用：对话弹窗、待办面板、动作点播都是渲染端行为，宿主闸门拦不到）。 */
+export declare const isSleepAllowedAction: (action: string | undefined) => boolean;
 /** 「显示位置」子菜单：两端注入同一份，文案与设置页的显示位置下拉框一致。
  *  两端各写一份必然漂移，而这一项语义对称：桌面端用它把宠物送走，浏览器端用它送到桌面。
- *  「都不」是单向门（恢复入口是设置页），其余三个值都能从某一端改回来。 */
+ *  「都不」是单向门（恢复入口是设置页），其余三个值都能从某一端改回来。
+ *  右侧键帽由 `1`-`4` 数字键的同一份顺序派生，改顺序只改 {@link DISPLAY_ORDER}。 */
 export declare const displayMenuBranch: () => MenuBranch;
 /** 「番茄钟」子菜单：两端注入同一份；具体状态与倒计时由宿主计时引擎维护，
  *  菜单只发动作，结果通过气泡回来（「查看剩余」会把当前倒计时说一句）。 */
@@ -21,9 +17,12 @@ export declare const MORE_MENU_LABEL = "\u66F4\u591A";
  *  宁可在两端都显示，也不要让一个正在用的第三方菜单凭空消失。
  *  快照来自网络，字段一律按「可能不存在」处理：坏条目静默丢弃，不能让一条数据搞崩菜单。 */
 export declare function readMenuItems(data: unknown, surface: 'web' | 'desktop'): MenuMoreItem[];
-/** 「更多」一级菜单：把第三方菜单项拼成菜单树的一枝；没有第三方项时返回 null，菜单里不会出现空的「更多」。
- *  层级只按项数决定：某 owner 只有 1 项就直接平铺（少一次点击），2 项及以上才加 owner 这一层。
- *  同名不同 owner 的项允许共存，不做去重、编号或来源标注——文案由注册方负责。 */
+/** 「更多」：第三方菜单项的固定容器；没有第三方项时返回 null，菜单里不出现空的「更多」。
+ *
+ *  层级只按 label 是否重名决定：label 在全部第三方项里唯一 → 直接平铺（`更多 / 弹弓`）；
+ *  label 重名 → 每个 owner 各占一个子菜单（`更多 / owner / label`），靠它区分同名项。
+ *  重名只可能跨 owner（同一 owner 内 label 按 Map 去重，见 host/menu 的注册表），子项仍是原
+ *  label——点击上报的 (owner, label) 与平铺时完全一致，两端点击处理不用分叉。 */
 export declare function buildMoreBranch(items: readonly MenuMoreItem[]): MenuBranch | null;
 /** 把动画名包成叶子。 */
 export declare const leaf: (anim: string) => MenuLeaf;

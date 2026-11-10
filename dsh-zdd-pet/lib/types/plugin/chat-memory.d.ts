@@ -1,13 +1,14 @@
 import { type ChatMemoryMessage } from '../chat.ts';
 import type { PetImageRef } from '../image-attachment.ts';
 import type { MemoryFacts } from './memory-facts.ts';
+import { type VoiceTarget } from '../surface.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 /** 对话与记忆的输入：装配期对象与更早的工厂。 */
 export type ChatMemoryInput = {
     /** 宿主上下文（apply 收到的那一个）。 */
     ctx: HostContext;
-} & Pick<HostSetup, 'configPaths'> & Pick<HostSetup, 'log'> & Pick<HostSetup, 'memeDirsFor'> & Pick<HostSetup, 'state'> & Pick<HostSetup, 'userRoot'> & 
+} & Pick<HostSetup, 'configPaths'> & Pick<HostSetup, 'log'> & Pick<HostSetup, 'memeDirsFor'> & Pick<HostSetup, 'playback'> & Pick<HostSetup, 'state'> & Pick<HostSetup, 'userRoot'> & 
 /** 长期记忆（事实）：对话前拼进 system、对话后抽取。可选——独立/测试用法可省略（等同关闭）。 */
 Partial<Pick<MemoryFacts, 'readFacts' | 'factsPromptSection' | 'extractFacts'>> & {
     /** 是否启用长期记忆（proactive.longMemory），按该宠物所属条目判。缺省 = 关闭。 */
@@ -23,15 +24,16 @@ export declare function createChatMemory(deps: ChatMemoryInput): {
         messages: ChatMemoryMessage[];
     }>>>;
     memoryRounds: (conf: Record<string, unknown>) => number;
-    publishWhisper: (petId: string) => Promise<{
+    publishWhisper: (petId: string, image?: string, voiceTo?: VoiceTarget, kind?: "whisper" | "manual") => Promise<{
         ok: true;
         text: string;
         image?: string;
     } | {
         ok: false;
-        reason: "provider-missing" | "generate-error" | "unknown-pet";
+        reason: "provider-missing" | "generate-error" | "unknown-pet" | "unknown-image";
         message?: string;
     }>;
+    publishSleepTalk: (petId: string) => Promise<boolean>;
     chatWithPet: (petId: string, text: string, image?: PetImageRef) => Promise<{
         ok: true;
         text: string;

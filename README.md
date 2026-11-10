@@ -1,6 +1,6 @@
 # dsh-zdd-pet 🐾
 
-> **本仓库是 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的二次开发分支（fork）**，项目名 `dsh-zdd-pet`。
+> **本仓库是 [PC2005-cloud/dsh-zdd-pet](https://github.com/PC2005-cloud/dsh-pet) 的二次开发分支（fork）**，项目名 `dsh-zdd-pet`。
 > 在原版基础上新增了下面这些功能，其余行为与上游一致；原作者的署名与素材授权约定见文末「许可」。
 >
 > ## 本分支新增 / 改动
@@ -48,14 +48,15 @@ dsh plugin --profile desktop add "github:zz555z/dsh-zdd-pet#path:/dsh-zdd-pet"
 > 想自己改代码从源码装：clone 后 `cd dsh-zdd-pet && npm install && npm run build`，再 `dsh plugin --profile desktop add file:/绝对路径/dsh-zdd-pet/dsh-zdd-pet`。
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-pet?label=npm&color=blue"></a>
-  <a href="https://www.npmjs.com/package/dsh-pet"><img alt="npm monthly downloads" src="https://img.shields.io/npm/dm/dsh-pet?label=%E6%9C%88%E4%B8%8B%E8%BD%BD&color=brightgreen"></a>
-  <a href="https://www.npmjs.com/package/dsh-pet"><img alt="total downloads" src="https://img.shields.io/npm/dt/dsh-pet?label=%E6%80%BB%E4%B8%8B%E8%BD%BD&color=success"></a>
-  <a href="https://github.com/PC2005-cloud/dsh-pet"><img alt="stars" src="https://img.shields.io/github/stars/PC2005-cloud/dsh-pet?style=social"></a>
-  <a href="https://github.com/PC2005-cloud/dsh-pet/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/PC2005-cloud/dsh-pet?color=orange"></a>
+  <a href="https://www.npmjs.com/package/dsh-zdd-pet"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-zdd-pet?label=npm&color=blue"></a>
+  <a href="https://www.npmjs.com/package/dsh-zdd-pet"><img alt="npm monthly downloads" src="https://img.shields.io/npm/dm/dsh-zdd-pet?label=%E6%9C%88%E4%B8%8B%E8%BD%BD&color=brightgreen"></a>
+  <a href="https://www.npmjs.com/package/dsh-zdd-pet"><img alt="total downloads" src="https://img.shields.io/npm/dt/dsh-zdd-pet?label=%E6%80%BB%E4%B8%8B%E8%BD%BD&color=success"></a>
+  <a href="https://github.com/PC2005-cloud/dsh-pet/releases"><img alt="release downloads" src="https://img.shields.io/github/downloads/PC2005-cloud/dsh-zdd-pet/total?label=Release%20%E4%B8%8B%E8%BD%BD&color=5C6BC0"></a>
+  <a href="https://github.com/PC2005-cloud/dsh-pet"><img alt="stars" src="https://img.shields.io/github/stars/PC2005-cloud/dsh-zdd-pet?style=social"></a>
+  <a href="https://github.com/PC2005-cloud/dsh-pet/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/PC2005-cloud/dsh-zdd-pet?color=orange"></a>
   <a href="https://awesome-dsh-plugin.com"><img alt="awesome dsh plugin" src="https://awesome-dsh-plugin.com/badge.svg"></a>
-  <a href="https://github.com/PC2005-cloud/dsh-pet"><img alt="repo size" src="https://img.shields.io/github/repo-size/PC2005-cloud/dsh-pet"></a>
-  <a href="https://github.com/PC2005-cloud/dsh-pet/issues"><img alt="issues" src="https://img.shields.io/github/issues/PC2005-cloud/dsh-pet"></a>
+  <a href="https://github.com/PC2005-cloud/dsh-pet"><img alt="repo size" src="https://img.shields.io/github/repo-size/PC2005-cloud/dsh-zdd-pet"></a>
+  <a href="https://github.com/PC2005-cloud/dsh-pet/issues"><img alt="issues" src="https://img.shields.io/github/issues/PC2005-cloud/dsh-zdd-pet"></a>
   <img alt="platform" src="https://img.shields.io/badge/platform-DeepSeek%20Harness%20Web-8A2BE2">
   <img alt="assets" src="https://img.shields.io/badge/assets-dynamic%20animations-ff69b4">
 </p>
@@ -75,13 +76,14 @@ AI 生成动画的配方     源视频 → 透明动画的管线    运行在 DS
 
 ## 快速开始（安装插件）
 
-装法取决于你在用哪个 DSH：
+两种装法，任选一种：
 
-### 🪟 桌面应用（Electron 版）
+- **图形化（桌面应用内）**：打开「插件管理」页，在安装框里填 `dsh-zdd-pet`，不用开终端。
+- **命令行**：`dsh plugin --profile <profile> add dsh-zdd-pet`，`<profile>` 按你在用的界面填——`dsh web` 填 `web`，桌面应用（Electron 版）填 `desktop`。
 
-直接在应用内「插件管理」页的安装框里填 `dsh-pet`，不用开终端；需要在终端里操作插件时，用桌面应用自带的那份 CLI。
+**不想装 DSH？** Release 里提供 Windows x64 绿色包 `dsh-pet-win-x64.zip`，解压后双击 `dsh-pet.exe` 就能跑——那是独立模式，不依赖 DSH 环境。
 
-### 🌐 `dsh web`
+装完**重开 DSH**（`dsh web` 用户则重启 `dsh web`）才生效——运行中的进程持有内存里的旧插件。宠物默认落在界面右上角。
 
 > 以下命令都在你的**命令行终端**（PowerShell / CMD 等）中运行。前提是 DSH 环境已就绪：
 
@@ -94,7 +96,7 @@ npm install -g @deepseek-ai/dsh pnpm
 dsh --version   # 验证 dsh 命令可用
 
 # ③ 安装本插件（web 模式用 --profile web）
-dsh plugin --profile web add dsh-pet
+dsh plugin --profile web add dsh-zdd-pet
 ```
 
 装完**重开桌面应用**（`dsh web` 用户则重启 `dsh web`）才生效——运行中的进程持有内存里的旧插件。宠物出现在界面右上角（默认配置角落，可在设置页修改）。
@@ -132,10 +134,10 @@ dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 2. **宿主自动补桌面运行时。** 本机没有 Electron 时，插件会自己下载一份（落在 `~/.dsh/electron`，同一版本只下一次；默认走 npmmirror 镜像）。进度直接打在 DSH 的控制台里，形如：
 
    ```
-   [dsh-pet] Electron not found, downloading to <用户目录>/.dsh/electron/electron.exe ...
-   [dsh-pet] Electron not found, downloading v43.3.0 (win32-x64) ...
-   [dsh-pet] downloading 42.3MB / 104.1MB
-   [dsh-pet] download complete (37.5s), extracting to <用户目录>/.dsh/electron ...
+   [ensure-electron] Electron not found, downloading to <用户目录>/.dsh/electron/electron.exe ...
+   [ensure-electron] Electron not found, downloading v43.3.0 (win32-x64) ...
+   [ensure-electron] downloading 42.3MB / 104.1MB
+   [ensure-electron] download complete (37.5s), extracting to <用户目录>/.dsh/electron ...
    ```
 
    这一步在**后台**进行，浏览器里的宠物照常可用；要等多久取决于网速（几十秒到几分钟），期间不用管它。
@@ -186,8 +188,6 @@ dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 - [`tools/api-tester.html`](tools/api-tester.html) —— HTTP 侧示例：桌宠控制台，扮演第三方消费方，可直观试用（`node tools/api-tester.cjs` 启动）
 - [`tools/cordis-probe`](tools/cordis-probe/README.md) —— Cordis 侧示例：扮演同页客户端插件，用 `ctx.get()` 消费服务
 
-扩展做出来后欢迎分享：统一收录在 [PC2005-cloud/petE](https://github.com/PC2005-cloud/petE)——本项目的扩展收录仓库，每个扩展占一个目录、元信息写在 `plugin.json`，列表由流水线生成。想把自己的加进去，按仓库里的 `CONTRIBUTING.md` 提 PR 即可。安装：`dsh plugin --profile web add "github:PC2005-cloud/petE#path:/<扩展目录>"`。收录不代表对功能或安全性的审核，安装前请自行阅读代码。
-
 ## 兼容性
 
 - **操作系统**：Windows / Linux / macOS 三端均可运行——浏览器 overlay 与桌面模式（Electron 透明置顶窗）行为完全一致；Electron 按平台自动探测/下载（`electron.exe` / `Electron.app` / linux 单文件），无需手动安装
@@ -199,20 +199,20 @@ dsh plugin --profile web add file:D:/path/to/dsh-zdd-pet/dsh-zdd-pet
 
 插件内建**双模式**：安装后默认会拉起**独立透明置顶小窗**——为每只桌面宠物各开一个局部窗口（跟随宠物移动，**不铺满屏幕**），与浏览器 overlay 严格同行为、功能完全对齐：
 
-- **依赖**：首次启动自动探测/下载 Electron（`~/.dsh/electron/`，也可 `cd dsh-pet && npm run ensure:electron` 手动触发）；缺失时仅日志告警，不影响浏览器形态
+- **依赖**：首次启动自动探测/下载 Electron（`~/.dsh/electron/`，也可 `cd dsh-zdd-pet && npm run ensure:electron` 手动触发）；缺失时仅日志告警，不影响浏览器形态
 - **开关 = 每只宠物的必填字段 `display`**：`web` = 仅浏览器 / `desktop` = 仅桌面 / `both` = 两者 / `none` = 都不显示；桌面模式渲染 display 含 desktop 的**全部**宠物（多开同屏，与浏览器一致），设置页「桌宠配置」编辑即时生效
 - 桌面端数据走独立进程管道，不依赖 DSH 的 HTTP 路由，不受 web 访问闸门影响
-- 本地调试：`cd dsh-pet && npm run start:desktop -- http://127.0.0.1:3080/dsh-zdd-pet-7340/config`（无宿主时自动回落 HTTP 路径）
+- 本地调试：`cd dsh-zdd-pet && npm run start:desktop -- http://127.0.0.1:3080/dsh-zdd-pet-7340/config`（无宿主时自动回落 HTTP 路径）
 
 ## 🧍 独立运行（完全不打开 DSH）
 
 连 DSH 都不用开：插件的宿主半边跑在伪 ctx 上，由一个本机 HTTP 服务接管路由（**路由表仍是插件那一份**）。
 
 ```sh
-npm install -g dsh-pet        # 必须 npm 装；dsh plugin add 装进 profile，bin 不在 PATH 上
-dsh-pet-standalone            # http://127.0.0.1:3080/dsh-zdd-pet-7340/（占用则顺延）
-dsh-pet-standalone --check    # 只体检
-dsh-pet-standalone --port 3100
+npm install -g dsh-zdd-pet        # 必须 npm 装；dsh plugin add 装进 profile，bin 不在 PATH 上
+dsh-zdd-pet-standalone            # http://127.0.0.1:3080/dsh-zdd-pet-7340/（占用则顺延）
+dsh-zdd-pet-standalone --check    # 只体检
+dsh-zdd-pet-standalone --port 3100
 
 npm run build && npm run standalone   # 仓库里（先构建）
 ```
@@ -221,7 +221,7 @@ npm run build && npm run standalone   # 仓库里（先构建）
 - **不可用**：余额、碎碎念、对话、系统通知——返回带 `reason` 的结构化失败（见 [`API.md`](API.md)）。
 - **配置**：与 DSH 同一份（`$DSH_HOME/dsh-zdd-pet/main-config.jsonc` → 包内默认）。
 - **只显示 `display` 含 `desktop`/`both` 的实例**；端口默认 3080；`Ctrl+C` 或 `POST /shutdown` 退出。
-- **与 DSH 内运行可同时开**，但共用 `%APPDATA%\dsh-pet-electron-helper`，可能互相踩缓存（仅告警）。
+- **与 DSH 内运行可同时开**，但共用 `%APPDATA%\dsh-zdd-pet-electron-helper`，可能互相踩缓存（仅告警）。
 
 ## ⚙️ 余额展示（Balance）
 
@@ -263,14 +263,14 @@ npm run build && npm run standalone   # 仓库里（先构建）
 宠物实际运行在 DSH Web 界面中的样子：
 
 <p>
-  <img src="assets/screenshots/dsh-pet-running-1.png" width="380" alt="dsh-pet 运行效果 1" title="dsh-pet 运行效果 1">
-  <img src="assets/screenshots/dsh-pet-running-2.png" width="380" alt="dsh-pet 运行效果 2" title="dsh-pet 运行效果 2">
-  <img src="assets/screenshots/dsh-pet-running-3.png" width="380" alt="dsh-pet 运行效果 3" title="dsh-pet 运行效果 3">
-  <img src="assets/screenshots/dsh-pet-running-4.png" width="380" alt="dsh-pet 运行效果 4" title="dsh-pet 运行效果 4">
-  <img src="assets/screenshots/dsh-pet-running-5.png" width="380" alt="dsh-pet 运行效果 5" title="dsh-pet 运行效果 5">
-  <img src="assets/screenshots/dsh-pet-running-6.png" width="380" alt="dsh-pet 运行效果 6" title="dsh-pet 运行效果 6">
-  <img src="assets/screenshots/dsh-pet-running-7.png" width="380" alt="dsh-pet 运行效果 7" title="dsh-pet 运行效果 7">
-  <img src="assets/screenshots/dsh-pet-running-8.png" width="380" alt="dsh-pet 运行效果 8" title="dsh-pet 运行效果 8">
+  <img src="assets/screenshots/dsh-pet-running-1.png" width="380" alt="dsh-zdd-pet 运行效果 1" title="dsh-zdd-pet 运行效果 1">
+  <img src="assets/screenshots/dsh-pet-running-2.png" width="380" alt="dsh-zdd-pet 运行效果 2" title="dsh-zdd-pet 运行效果 2">
+  <img src="assets/screenshots/dsh-pet-running-3.png" width="380" alt="dsh-zdd-pet 运行效果 3" title="dsh-zdd-pet 运行效果 3">
+  <img src="assets/screenshots/dsh-pet-running-4.png" width="380" alt="dsh-zdd-pet 运行效果 4" title="dsh-zdd-pet 运行效果 4">
+  <img src="assets/screenshots/dsh-pet-running-5.png" width="380" alt="dsh-zdd-pet 运行效果 5" title="dsh-zdd-pet 运行效果 5">
+  <img src="assets/screenshots/dsh-pet-running-6.png" width="380" alt="dsh-zdd-pet 运行效果 6" title="dsh-zdd-pet 运行效果 6">
+  <img src="assets/screenshots/dsh-pet-running-7.png" width="380" alt="dsh-zdd-pet 运行效果 7" title="dsh-zdd-pet 运行效果 7">
+  <img src="assets/screenshots/dsh-pet-running-8.png" width="380" alt="dsh-zdd-pet 运行效果 8" title="dsh-zdd-pet 运行效果 8">
 </p>
 
 ## 效果预览
@@ -443,6 +443,14 @@ npm run build && npm run standalone   # 仓库里（先构建）
   <img src="dsh-zdd-pet/assets/preview/gongzuozhuangtai-chuitou-tanqi-maohan.gif" width="160" alt="工作状态-垂头叹气冒汗" title="工作状态-垂头叹气冒汗">
 </p>
 
+**睡觉**（右键「睡觉」或鼠标停上去按 `S`；睡着时点一下叫醒）
+
+<p>
+  <img src="dsh-zdd-pet/assets/preview/shuijiao-kaishi.gif" width="160" alt="睡觉-开始" title="睡觉-开始">
+  <img src="dsh-zdd-pet/assets/preview/shuijiao-xunhuan.gif" width="160" alt="睡觉-循环" title="睡觉-循环">
+  <img src="dsh-zdd-pet/assets/preview/shuijiao-qilai.gif" width="160" alt="睡觉-起来" title="睡觉-起来">
+</p>
+
 > 注：动画为透明背景；GIF 预览中透明部分显示为页面底色，实际 webm 播放为透明。
 
 ## 从零生成你自己的宠物
@@ -456,7 +464,7 @@ AI 提示词 → 绿幕视频 → 透明动画 → 插件，换角色、换动�
 只列代码与发布相关目录；素材链的 video / scripts / step / pr 见 [MAKE-YOUR-OWN-PET.md](MAKE-YOUR-OWN-PET.md) 的 ② 章节（gitignore 的本地目录不列）：
 
 ```
-├── README.md  MAKE-YOUR-OWN-PET.md  CONFIG.md  API.md  CORDIS.md  openapi.yaml   # 说明 / 宠物制作指南 / 配置 / HTTP 接口 / Cordis 服务 / OpenAPI 规范
+├── README.md  INSTALL.md  FEATURES.md  MAKE-YOUR-OWN-PET.md  CONFIG.md  API.md  CORDIS.md  openapi.yaml   # 说明 / 安装 / 功能详解 / 宠物制作指南 / 配置 / HTTP 接口 / Cordis 服务 / OpenAPI 规范
 ├── prompts/           # ① 动画生成提示词配方（绿幕规范 + 按秒分解）
 ├── assets/            # 仓库展示用截图
 ├── tools/             # 开发工具：API 调试页、cordis-probe mock 服务商、DPI 探针
@@ -474,18 +482,22 @@ AI 提示词 → 绿幕视频 → 透明动画 → 插件，换角色、换动�
 └── LICENSE             # MIT
 ```
 
+## 相关项目
+
+- **[aipets](https://github.com/kallen-noelle/aipets)** —— Windows 11 桌面宠物，五个角色可多开，透明置顶、点击穿透、甩动带惯性。特色在**动作由大模型决定**：每轮对话后模型结合时间、天气、电量与好感度挑动作，无人说话时还能排出接近一整天的编排，模型不可用时回退内置规则。聊天接任意 OpenAI 兼容接口，带长期记忆、贴纸、画图与工具调用（联网搜索 / Home Assistant / MCP），支持语音朗读与语音输入；同一套代码既有单文件 `aipets.exe` 桌面版，也有浏览器里的整页舞台版。
+
 ## 💬 反馈与发版节奏
 
-欢迎提 [issue](https://github.com/PC2005-cloud/dsh-pet/issues) 与 PR——bug、体验问题随时反馈。**新功能请先开 issue** 说明使用场景，由维护者判断是否实现、以及放在插件本体还是作为第三方扩展，不要在确认前直接提交实现 PR。与桌宠本身关系不大、或实现特别复杂的功能，通常不会进本体，而是通过现有接口由第三方扩展实现。动手前也请先翻一眼 [提交记录](https://github.com/PC2005-cloud/dsh-pet/commits/main)，确认不是已经修掉的同款问题（有些问题可能已经在 `main` 上修好了，只是还没发版）。
+欢迎提 [issue](https://github.com/PC2005-cloud/dsh-pet/issues) 与 PR——bug、体验问题随时反馈。**新功能请先开 issue** 说明使用场景，确认后再动手，不要在确认前直接提交实现 PR。这个插件专注桌宠与 DSH 本身，偏离太远的需求一般不会做。动手前也请先翻一眼 [提交记录](https://github.com/PC2005-cloud/dsh-pet/commits/main)，确认不是已经修掉的同款问题（有些问题可能已经在 `main` 上修好了，只是还没发版）。
 
 - **小修不单独发版**：不影响使用的小 bug 与优化会**累计**到下一个版本一起发，避免版本更迭过于频繁。所以「`main` 上已经修了」不等于「你装的这版已经包含」——`latest` 没更新时，以 `main` 的提交记录为准。
-- **想立刻用上未发布的修复**：按上面的「从源码安装」把插件指向本地仓库即可；注意**宿主半侧**的代码改动要**重开 DSH** 才生效（浏览器半侧刷新页面即可）。
+- **想立刻用上未发布的修复**：按 [INSTALL.md](INSTALL.md) 的「从源码安装」把插件指向本地仓库即可；注意**宿主半侧**的代码改动要**重开 DSH** 才生效（浏览器半侧刷新页面即可）。
 - **报 bug 时请带上**：插件版本、`dsh` 版本、操作系统、复现步骤（有日志或截图更好）。
 
 ## 许可
 
 - 代码：MIT
-- 素材（动画/提示词/源视频）：允许开源使用，**禁止商用**
+- 素材（动画/提示词/源视频）：允许开源使用，具体授权参考角色原型的形象授权（见下方「形象授权」）
 - **二次创作（二创）约定**：基于本项目的衍生 / 改版 / 换皮作品，在 **GitHub 仓库、产品官网等公开渠道**上须附上原作者 GitHub 地址：<https://github.com/PC2005-cloud/dsh-pet>
 - **形象出处**：宠物形象为社区二创的 DeepSeek「大肥鱼」（鲸鱼娘），**非 DeepSeek 官方形象**；原型「溟月」出自 B 站 [@上善无形](https://space.bilibili.com/4456176)，DeepSeek 版（女仆鲸鱼娘）设计出自 B 站 [@ZipZipPipe](https://space.bilibili.com/4168597)
 - **形象授权**：[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans)（署名 · 非商业 · 相同方式共享），[声明原文](https://www.bilibili.com/opus/1247156596114456581)：「大肥鱼是遵守CC BY-NC-SA 4.0协议的形象，不可以以任何形式商业化。若您非常喜爱该形象，希望其拥有实体，您可以自行定制。」

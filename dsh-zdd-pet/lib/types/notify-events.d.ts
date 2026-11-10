@@ -51,6 +51,16 @@ export declare function isCompletionTurnEnd(event: unknown): boolean;
  * 形状不对 / 空 / 非数组 / 未知族 → 放行：宿主加一族或改字段不该让通知整体失效。
  */
 export declare function hasBlockingActivity(activity: unknown): boolean;
+/**
+ * 从一条 `assistant/message` 事件里取最后一段文本，压平空白并截断。
+ *
+ * 只认 `data.message.content[]` 里最后一个 `{ type: 'text' }` 块：reasoning 块与工具块不是给用户看的，
+ * 混进来只会把内部过程推上锁屏。取不到、形状不对一律返回 null（放行而不是报错）。
+ */
+export declare function lastAssistantText(event: {
+    type?: string;
+    data?: Record<string, unknown>;
+}): string | null;
 /** turn/end reason.kind → 通知类别；不弹的分支返回 null（与 shared/notify.ts 过滤一致）。 */
 export declare function turnEndNotifyKind(kind: string | undefined): 'completed' | 'error' | 'max-tokens' | null;
 /** 解析 tool/call 的 arguments（JSON 字符串）→ questions 数组；解析失败或非数组 → null。 */
@@ -61,11 +71,14 @@ export declare function parseToolQuestions(args: unknown): Array<{
  * 把一条 session/event 子事件压缩成通知帧；不关心或被过滤的事件返回 null。
  * 帧形状与 shared/notify.ts 的 frameToToast 期望完全一致（浏览器侧映射零改动）。
  * data 按宽松 Record 接收（approval/asked 的 reason 是字符串、turn/end 的是对象），内部各自安全取值。
+ *
+ * @param event - 会话子事件。
+ * @param replyText - 本回合最后一段回复的开头；只在 completed 时挂进帧，缺省则不写该字段。
  */
 export declare function reduceNotifyFrame(event: {
     type?: string;
     data?: Record<string, unknown>;
-}): HostNotifyFrame | null;
+}, replyText?: string): HostNotifyFrame | null;
 /**
  * agent/error（无回合位置的失败）→ host/agent-error 帧（与 shared 期望的 message 字段一致）。
  * 它的载荷只有 { turn, step, error }，不带会话标识，过不了会话门——子代理的生成失败仍会弹；

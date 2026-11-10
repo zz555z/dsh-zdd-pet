@@ -5,9 +5,9 @@
  * 必须始终成立：模块外只经本文件使用 Helper 能力，不得旁路拉起进程。
  * @module dsh-zdd-pet/src/host/helper-process
  */
-export { defaultElectronExe, defaultHelperMain, defaultLaunch, dshHomeDir, electronLandingDir, ensureElectronDownload, hasGraphicalDisplay, packageRoot, resolveElectronPath, } from './helper/electron.ts';
+export { defaultElectronExe, defaultHelperMain, defaultLaunch, dshHomeDir, electronLandingDir, ensureElectronDownload, hasGraphicalDisplay, packageRoot, readElectronVersion, resolveElectronPath, } from './helper/electron.ts';
 export type { ElectronDownloadLog, EnsureElectronOptions } from './helper/electron.ts';
 export { BRIDGE_PREFIX } from './helper/bridge.ts';
 export type { BridgeHandler, BridgeRequest, BridgeResponse } from './helper/bridge.ts';
-export { HELPER_STABLE_MS, HELPER_STOP_GRACE_MS, HELPER_STOP_TIMEOUT_MS, helperRunIsStable, restartBackoffDelayMs, shouldCircuitBreak, } from './helper/restart.ts';
-export { HelperProcess, helperSpawnEnv } from './helper/child.ts';
+export { HELPER_STABLE_MS, HELPER_STOP_GRACE_MS, HELPER_STOP_TIMEOUT_MS, crashLoopAdvice, describeExit, helperRunIsStable, restartBackoffDelayMs, shouldCircuitBreak, shouldFallbackToNoSandbox, } from './helper/restart.ts';
+export { HelperProcess, helperLaunchArgs, helperSpawnEnv } from './helper/child.ts';

@@ -11,8 +11,6 @@ export interface DragCard {
     halfW: number;
     /** 盒半高（px）。 */
     halfH: number;
-    /** 舞台脚底垫高（px）。 */
-    bottomPad: number;
     /** 该宠物的物理参数。 */
     physics: PhysicsParams;
     /** 拖拽动画池。 */
@@ -38,8 +36,6 @@ export interface DragCard {
     bumpSeq: () => void;
     /** 标记「等新首帧就位后压 Q 弹」。 */
     markSquash: () => void;
-    /** 拖拽态：控制舞台位移与指针样式。 */
-    setDragging: (on: boolean) => void;
     /** 恢复非终态工作循环；返回 false 表示没有可恢复的状态。 */
     resumeWork: () => boolean;
     /** 停走位与位置跟随。 */
@@ -65,8 +61,6 @@ export interface DragCard {
     placeTip: (x: number, y: number) => void;
     /** 切换提示显隐。 */
     setTipOn: (on: boolean) => void;
-    /** 舞台元素。 */
-    stage: () => HTMLDivElement | null;
     /** 根元素。 */
     root: () => HTMLDivElement | null;
     /** 当前包围盒位置。 */
@@ -88,6 +82,8 @@ export interface Drag {
     onClick(): void;
     /** 停弹簧跟随，不碰指针捕获状态。 */
     stopFollow(): void;
+    /** 摘掉鼠标松开兜底监听；卸载时调用，之后这个驱动不可再用。 */
+    dispose(): void;
     /** 指针是否按着（含未超过拖动阈值）。 */
     isActive(): boolean;
     /** 是否刚拖完：松手后的短窗口内为真，右键菜单要忽略这段时间。 */

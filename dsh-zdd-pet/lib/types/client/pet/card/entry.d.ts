@@ -29,6 +29,10 @@ export interface CardEntryInput {
     menuItemsRef: ReactNS.MutableRefObject<MenuMoreItem[]>;
     /** 菜单动作派发。 */
     runMenuAction: MenuActions['run'];
+    /** 打开待办面板：面板占气泡槽，显隐归气泡单槽管。 */
+    showTodo: () => void;
+    /** 开关待办面板：D 键用，已开则收起。 */
+    toggleTodo: () => void;
     /** 悬浮提示节点：位置由本模块直接写 style。 */
     tipRef: ReactNS.MutableRefObject<HTMLDivElement | null>;
     /** 舞台节点：对话弹窗贴命中区右上角。 */
@@ -44,6 +48,8 @@ export interface CardEntry {
     handleContextMenu: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
     /** 打开对话弹窗：菜单里「对话」那一项走这里；带图时直接进入待发送状态（拖拽用）。 */
     openChat: (image?: File) => void;
+    /** 打开待办面板（右键菜单入口）。 */
+    openTodo: () => void;
     /** 指针进入：先摆位再显示。 */
     onPointerEnter: (e: ReactNS.PointerEvent<HTMLDivElement>) => void;
     /** 指针离开：收起提示。 */

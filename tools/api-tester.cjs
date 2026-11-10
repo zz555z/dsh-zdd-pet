@@ -17,7 +17,7 @@
  * 另外它还扮演**第三方素材托管方**，让测试页能把"自己托管的 url"这条路走通：
  *   POST /__upload?name=<原文件名>   请求体 = 文件原始字节 → { ok, url, bytes }
  *   GET  /__uploads/<文件名>         把刚上传的文件原样送回去（带 CORS）
- * 上传落在系统临时目录（`<tmp>/dsh-pet-tester-uploads`），**不污染仓库**。
+ * 上传落在系统临时目录（`<tmp>/dsh-zdd-pet-tester-uploads`），**不污染仓库**。
  *
  * 注意 /__uploads 的响应**必须带 CORS**：测试页在 8741、DSH 页面在另一个端口，浏览器端素材
  * 走的是 `fetch`，跨源就会被拦。这正是"外站 url 要对方自己配 CORS"那条规则的真实演示——
@@ -46,7 +46,7 @@ const NO_OPEN = argv.includes('--no-open');
 let hostPort = Number(argOf('--port', '3080'));
 
 /** 路由前缀：与 src/host/index.ts 的 ROUTE_PREFIX 一致（7340 是名字，不是端口） */
-const PREFIX = '/dsh-pet-7340';
+const PREFIX = '/dsh-zdd-pet-7340';
 
 /** 这一跳要补的 CORS 头。注意：**只给本机测试代理补**，不改宿主行为。 */
 const CORS = {
@@ -60,7 +60,7 @@ const CORS = {
 const isApi = (url) => url === PREFIX || url.startsWith(PREFIX + '/') || url.startsWith(PREFIX + '?');
 
 /** 上传落盘目录：系统临时目录，**不污染仓库**（测试页在这里扮演"第三方托管素材"） */
-const UPLOAD_DIR = path.join(os.tmpdir(), 'dsh-pet-tester-uploads');
+const UPLOAD_DIR = path.join(os.tmpdir(), 'dsh-zdd-pet-tester-uploads');
 /** 单个上传上限：防手滑传个几 GB 把临时盘塞满 */
 const UPLOAD_MAX = 512 * 1024 * 1024;
 /** 上传/回读用的 MIME（`<video>` / `<img>` 靠它解码；认不出的按二进制流送） */

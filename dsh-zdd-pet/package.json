@@ -1,6 +1,6 @@
 {
   "name": "dsh-zdd-pet",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "吃白饭的蓝色大肥鱼，赖在 DeepSeek Harness 里不走了。平时爱玩魔方、爱吃各种零食、偶尔打个盹，闲不住就在桌面上溜达两圈，被你拖来甩去也照旧赖着；你忙起来它跟着忙前忙后，也会帮你打理余额钱包，闲下来爱碎碎念，还乐意陪你唠两句。",
   "icon": "assets/logo.png",
   "keywords": [
@@ -30,7 +30,7 @@
     "exports['./client'] —— 浏览器半侧入口，DSH 模块系统按它提供 /plugins/dsh-zdd-pet/client.js",
     "dsh.bundle.patch —— 声明本包是 bundle，patch 文件是 cordis.patch.yml（安装后自动进层栈）",
     "dsh.client —— 声明浏览器半侧的注入依赖和平台（web）",
-    "dsh.compatibility.dshReleases —— 对官方 DSH 完整版本逐项声明 compatible/incompatible/unknown；只写宽泛范围不算证据，商城最新三版至少需要一个 compatible",
+    "dsh.compatibility.dshReleases —— 对官方 DSH 完整版本逐项声明 compatible/incompatible/unknown；只写宽泛范围不算证据，商城最新三版至少需要一个 compatible。列表只保最新三版，新增一版就删最旧一版：DSH 自己只按 engines.dsh 与 peerDependencies 判定能不能装，这份列表不进安装闸门，无限叠加只会变成维护负担",
     "files —— npm publish 只发这些目录/文件（assets/webm 播放资源（VP9-alpha，浏览器 Chrome/Edge/Firefox 与桌面模式共用）；Safari/HEVC 兼容由仓库流水线支持、fork 定制，不随包发布；assets/preview 的 GIF 仅 README 展示、不入包）",
     "scripts.encode:webm —— 转码管线（step03 母版 → assets/webm 640×360 VP9-alpha）",
     "scripts.build —— 构建完整产物 + files 收敛（node scripts/prepare.js）。克隆后手动跑一次；npm publish / npm pack 由 prepack 自动调用",
@@ -69,6 +69,7 @@
     "assets/sound",
     "assets/config.jsonc",
     "assets/logo.png",
+    "assets/main-character.png",
     "scripts/ensure-electron.mjs",
     "cordis.patch.yml"
   ],
@@ -82,6 +83,7 @@
     "start:app": "node scripts/start-app.mjs",
     "dist": "node scripts/dist.mjs",
     "dev:mock": "node scripts/dev/mock-server.mjs",
+    "dev:subpath": "node scripts/dev/subpath-proxy.mjs",
     "build": "node scripts/prepare.js",
     "prepack": "npm run build && npm run typecheck && npm run lint && npm run check:cycles && npm run check:runtime && npm run format:check && node scripts/prepack-check.js && npm run check:openapi",
     "check:openapi": "node scripts/check-openapi.mjs",
@@ -100,6 +102,7 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
+    "@andresaya/edge-tts": "^1.9.1",
     "@anthropic-ai/sdk": "0.135.0",
     "@electron-internal/extract-zip": "^1.0.5",
     "@electron/get": "^5.1.0",
@@ -112,11 +115,9 @@
     },
     "compatibility": {
       "dshReleases": {
-        "0.1.7-rc.2": "incompatible",
-        "0.2.0-rc.1": "compatible",
-        "0.2.0-rc.2": "compatible",
-        "0.2.1-rc.2": "compatible",
-        "0.2.1-rc.3": "compatible"
+        "0.2.1-rc.3": "compatible",
+        "0.2.2-alpha.2": "compatible",
+        "0.2.2-rc.1": "compatible"
       }
     },
     "client": {

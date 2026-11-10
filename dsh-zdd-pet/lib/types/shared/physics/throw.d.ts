@@ -1,11 +1,13 @@
 /**
- * 抛掷物理：甩抛初速估算、重力积分、地面反弹与屏间穿越。
+ * 抛掷物理：甩抛初速估算、重力积分、边界反弹与屏间穿越。
  *
  * 不处理指针事件与渲染；输入是坐标与 dt，输出是下一帧状态。
+ * 撞击统一交给 contact.ts 按接触面法向分解：法向反弹、切向摩擦。
  * 必须始终成立：同一输入必得同一输出，两端（浏览器与桌面）手感一致。
  * @module dsh-zdd-pet/src/shared/physics/throw
  */
 import { type PhysicsParams, type Rect } from '../types.ts';
+import { type ContactEdge } from './contact.ts';
 /** 一次轨迹采样（t = performance.now() 时间戳 ms；x/y = 指针绝对坐标 px）。 */
 export interface DragSample {
     t: number;
@@ -60,12 +62,26 @@ export declare const throwSpace: (o: {
 }) => ThrowSpace;
 /** 宠物当前该归属哪块屏：身体中心所在屏，落在空洞里时取最近的一块。 */
 export declare const screenOfBox: (space: ThrowSpace, x: number, y: number) => number;
+/** 本步撞到的边与撞击速度。 */
+export interface ThrowHit {
+    /** 撞的是哪条边。 */
+    edge: ContactEdge;
+    /** 撞击前的法向速度绝对值（px/s）：振动强度与挤压强度都按它算。 */
+    speed: number;
+}
+/** 平面重力向量（px/s²）：体感模式把重力方向交给手机姿态，默认仍是竖直向下。 */
+export interface GravityVector {
+    readonly gx: number;
+    readonly gy: number;
+}
 /** 抛体单步积分与边界反弹。返回值带上两个标志：bounced = 本步是否碰边或落地，
- *  atRest = 贴地且低速（或碰边后整体低速），调用方应停止循环。
- *  physics 取成品配置的物理参数，缺失时用默认值兜底。 */
-export declare const throwStep: (s: ThrowState, dtRaw: number, b: ThrowBounds, physics?: PhysicsParams) => ThrowState & {
+ *  atRest = 所有接触面都已贴住且切向低速，调用方应停止循环；contacts = 本步接触到的边。
+ *  physics 取成品配置的物理参数，缺失时用默认值兜底；gravity 覆盖重力方向与大小（缺省竖直向下）。 */
+export declare const throwStep: (s: ThrowState, dtRaw: number, b: ThrowBounds, physics?: PhysicsParams, gravity?: GravityVector) => ThrowState & {
     bounced: boolean;
     atRest: boolean;
+    hit: ThrowHit | null;
+    contacts: ContactEdge[];
 };
 /** 多屏抛掷步进：物理与 throwStep 同一套，区别是边界取自身体中心所在屏，越界后多问一句越界侧有没有屏。
  *  越界侧有别的屏就原样放行（不夹不弹，自然跨屏飞行或落到下一块屏），什么都没有才按该边反弹。
@@ -75,10 +91,12 @@ export declare const throwStep: (s: ThrowState, dtRaw: number, b: ThrowBounds, p
  *  2×sideAllow 宽的重叠盲区，改成「越界即切屏」会在盲区里逐帧对跳。
  *  lockScreen ≥ 0 表示锁定该屏（confineToScreen）：边界恒取该屏、跳过邻屏探测，屏缝与空洞一样当墙；
  *  索引越界（飞行途中拔掉显示器）即退回不锁定，免得拿一块不存在的屏当边界。 */
-export declare const throwStepRegion: (s: ThrowState, dtRaw: number, space: ThrowSpace, physics?: PhysicsParams, lockScreen?: number) => ThrowState & {
+export declare const throwStepRegion: (s: ThrowState, dtRaw: number, space: ThrowSpace, physics?: PhysicsParams, lockScreen?: number, gravity?: GravityVector) => ThrowState & {
     screen: number;
     bounced: boolean;
     atRest: boolean;
+    hit: ThrowHit | null;
+    contacts: ContactEdge[];
 };
 /** 一帧该积几步（整数 ≥ 1）。N = 1 是常态：普通甩抛一帧位移远小于 8px；
  *  只有弹弓拉得很远、初速几千 px/s 时才拆多步，否则一帧跨过上百 px 会跳过落地与反弹那几帧。

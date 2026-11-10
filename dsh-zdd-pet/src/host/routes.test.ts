@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { Writable } from 'node:stream';
 
 import { apply } from './index.ts';
+import { activeChatMemoryProvider } from './chat-memory-provider.ts';
 
 /** 用户根之外的诱饵内容：任何响应体出现它都说明越根读盘成功 */
 const SECRET = 'TOP-SECRET-BYTES';
@@ -206,7 +207,14 @@ describe('/state + /balance —— 轮询统一状态与余额动作端点', () 
       sections: Record<string, { counter: number; data: unknown }>;
       pets: Record<string, unknown>;
     };
-    assert.deepEqual(Object.keys(body.sections).sort(), ['balance', 'config', 'menu', 'notify', 'workStatus']);
+    assert.deepEqual(Object.keys(body.sections).sort(), [
+      'balance',
+      'config',
+      'focusSession',
+      'menu',
+      'notify',
+      'workStatus',
+    ]);
     assert.equal(body.sections.balance.counter, 0, '没人写过时 counter=0（前端首拉当基线）');
     assert.equal(body.sections.balance.data, null);
     assert.equal(body.sections.config.data, null, '配置变更信号也没人写过（counter=0 / data=null）');
@@ -772,7 +780,12 @@ describe('/work-status —— 外部写入工作状态', () => {
   type StateBody = {
     sections: {
       workStatus: {
-        data: { state: string | null; task: string | null; progress: { done: number; total: number } | null };
+        data: {
+          state: string | null;
+          task: string | null;
+          progress: { done: number; total: number } | null;
+          sessionId: string | null;
+        };
       };
     };
   };
@@ -782,11 +795,13 @@ describe('/work-status —— 外部写入工作状态', () => {
     const r = await call('/dsh-zdd-pet-7340/work-status', 'POST', JSON.stringify({ state: 'working', task: '编译中' }));
     assert.equal(r.status, 200);
     assert.deepEqual(JSON.parse(r.body), { state: 'working', task: '编译中' });
-    // 外部写入不带清单进度：/state 里 progress 为 null（快照固定字段）。
+    // 外部写入不带清单进度：/state 里 progress 为 null（快照固定字段）；
+    // 外部槽（`api`）不是真实会话：sessionId 也归 null（气泡因此不可点）。
     assert.deepEqual((await work()).sections.workStatus.data, {
       state: 'working',
       task: '编译中',
       progress: null,
+      sessionId: null,
     });
   });
 
@@ -817,7 +832,12 @@ describe('/work-status —— 外部写入工作状态', () => {
     const del = await call('/dsh-zdd-pet-7340/work-status', 'DELETE');
     assert.equal(del.status, 204);
     assert.equal(del.body, '');
-    assert.deepEqual((await work()).sections.workStatus.data, { state: null, task: null, progress: null });
+    assert.deepEqual((await work()).sections.workStatus.data, {
+      state: null,
+      task: null,
+      progress: null,
+      sessionId: null,
+    });
 
     const again = await call('/dsh-zdd-pet-7340/work-status', 'DELETE');
     assert.equal(again.status, 204);
@@ -879,5 +899,75 @@ describe('对外 Cordis 服务 —— 第三方注册余额查询', () => {
       dispose();
     }
     assert.equal(api().list().external.includes('route-test-plugin'), false);
+  });
+});
+
+describe('对外 Cordis 服务 —— 第三方注册记忆', () => {
+  interface MemoryApi {
+    register: (def: { id: string; recall?: () => Promise<{ userText?: string }> }) => () => void;
+    list: () => { builtin: string[]; external: string[] };
+  }
+  const api = (): MemoryApi => {
+    const value = provided.get('petApiZdd') as { memory?: MemoryApi } | undefined;
+    assert.ok(value?.memory, 'apply() 必须挂出 petApiZdd.memory');
+    return value.memory;
+  };
+
+  test('挂出的是 register + list（没有 unregister：注销走 register 的返回值）', () => {
+    const memory = api() as unknown as Record<string, unknown>;
+    assert.equal(typeof memory.register, 'function');
+    assert.equal(typeof memory.list, 'function');
+    assert.equal('unregister' in memory, false);
+  });
+
+  test('通过服务注册后 list 与聊天路径都看得到，disposer 后回落原生', () => {
+    const def = { id: 'route-test-memory', recall: async () => ({ userText: '改后的问题' }) };
+    const dispose = api().register(def);
+    try {
+      assert.ok(api().list().external.includes('route-test-memory'));
+      assert.equal(activeChatMemoryProvider(), def, '聊天路径读到的必须是服务注册的这一份');
+    } finally {
+      dispose();
+    }
+    assert.equal(api().list().external.includes('route-test-memory'), false);
+    assert.equal(activeChatMemoryProvider(), null);
+  });
+});
+
+describe('/todos —— 待办清单的完整往返', () => {
+  test('新建 → 列表 → 勾选 → 删除', async () => {
+    const create = await call(
+      '/dsh-zdd-pet-7340/todos',
+      'POST',
+      JSON.stringify({ text: '交周报', dueAt: 1793000000000 }),
+    );
+    assert.equal(create.status, 200);
+    const created = JSON.parse(create.body) as { ok: boolean; todo: { id: string; text: string; dueAt: number } };
+    assert.equal(created.ok, true);
+    assert.equal(created.todo.text, '交周报');
+    assert.equal(created.todo.dueAt, 1793000000000);
+
+    const listed = JSON.parse((await call('/dsh-zdd-pet-7340/todos')).body) as { todos: Array<{ id: string }> };
+    assert.ok(
+      listed.todos.some((todo) => todo.id === created.todo.id),
+      '新建的待办必须出现在清单里',
+    );
+
+    const patched = JSON.parse(
+      (await call('/dsh-zdd-pet-7340/todos/' + created.todo.id, 'PATCH', JSON.stringify({ done: true }))).body,
+    ) as { ok: boolean; todo: { done: boolean } };
+    assert.equal(patched.ok, true);
+    assert.equal(patched.todo.done, true);
+
+    const removed = JSON.parse((await call('/dsh-zdd-pet-7340/todos/' + created.todo.id, 'DELETE')).body) as {
+      removed: number;
+    };
+    assert.equal(removed.removed, 1);
+    const after = JSON.parse((await call('/dsh-zdd-pet-7340/todos')).body) as { todos: Array<{ id: string }> };
+    assert.equal(
+      after.todos.some((todo) => todo.id === created.todo.id),
+      false,
+      '删除后不得再出现在清单里',
+    );
   });
 });

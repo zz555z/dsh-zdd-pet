@@ -22,6 +22,19 @@ export declare function balanceBubbleView(state: BalanceState): BalanceBubbleRow
  */
 export declare function balanceDetailView(state: BalanceState): BalanceBubbleRow[];
 /**
+ * 余额气泡的可翻页数：不可用只有一页说明；windows 至少两页（收起态 + 窗口明细），
+ * 服务商给了区间用量就多一页；custom 以节点树页数为准，其余形态点开没有新内容。
+ *
+ * 页数与 {@link balancePageView} 必须同源：两边各判一次就会翻出一页空白。
+ */
+export declare function balancePageCount(state: BalanceState): number;
+/**
+ * 指定页的气泡行数据：windows 下 0 为收起态、1 为窗口明细、2 为区间用量。
+ *
+ * 越界页回落到最后一页有内容的页，不返回空数组——空白气泡比停在前一页更像坏了。
+ */
+export declare function balancePageView(state: BalanceState, page: number): BalanceBubbleRow[];
+/**
  * 多页节点树：只对 custom 形态有值，其余形态返回 undefined，调用方据此回落行数据。
  * 第一项是初始页；多于一项时气泡可点，点一下切下一页，末页回第一页。
  */

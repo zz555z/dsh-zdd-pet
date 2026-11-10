@@ -1,6 +1,7 @@
 /**
- * 对话弹窗的 DOM 装配：输入框、上传/截屏按钮、待发送图片缩略图、提示行与错误行。
- * 只建元素并绑定"选中图片后怎么显示"，不发送、不定位、不管关闭。
+ * 对话输入弹窗的 DOM 装配：输入框、上传/截屏/按住说话三枚按钮、待发送图片缩略图、提示行与错误行。
+ * 只建元素并把能力接上，不发送、不定位、不管关闭；录音的状态机在 chat/hear-control。
+ * 借用气泡时（container）输入框不随文本自适应宽度，由气泡决定宽高。
  * @module dsh-zdd-pet/src/shared/chat/dom
  */
 import { type EncodedImage } from './encode.ts';
@@ -25,13 +26,20 @@ export interface ChatDom {
     readonly isEncoding: () => boolean;
     /** 临时提示（不是错误），超时自动收起。 */
     readonly flash: (text: string) => void;
-    /** 收起提示并清计时器；关闭弹窗时调用。 */
+    /** 从外部开录（快捷键「按住说话」用）；录不了时给一句原因，已在录时什么都不做。 */
+    readonly startHear: () => void;
+    /** 从外部收尾（快捷键松手用）；没在录时什么都不做。 */
+    readonly stopHear: () => void;
+    /** 此刻是否真的在采集；全局快捷键据此把「开/关」合成一个动作。 */
+    readonly isHearing: () => boolean;
+    /** 收起提示、停掉正在进行的录音并清计时器；关闭弹窗时调用。 */
     readonly dispose: () => void;
 }
 /**
  * 建好弹窗的全部元素并挂到 `document.body` 下。
  *
- * @param opts - 可选的截屏实现；不传时按钮只给"当前环境不支持"的提示。
+ * @param opts - 可选的截屏实现（不传时按钮只给"当前环境不支持"的提示）与识别地址
+ *   （录不了时按住说话的按钮照样在，点它给一句原因）；挂载容器与宽度自适应开关。
  * @returns 元素引用与行为（清理附件、临时提示、自适应、释放计时器）。
  */
 export declare function createChatDom(opts?: {
@@ -40,4 +48,6 @@ export declare function createChatDom(opts?: {
     container?: HTMLElement;
     /** 是否让输入框随文本自适应宽度；借用气泡时关掉，由气泡宽高决定。 */
     autoWidth?: boolean;
+    /** 识别地址（POST /voice/hear）；缺省为空串，此时点话筒只给一句原因。 */
+    hearUrl?: string;
 }): ChatDom;

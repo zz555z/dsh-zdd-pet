@@ -32,18 +32,23 @@ export interface WorkStatusSnapshot {
   state: WorkStatusState | null; // null = 空闲
   task: string | null; // 当前任务详情（todo/write 提供，可 null）
   progress: TaskProgress | null; // 清单进度 done/total（todo/write 提供，可 null）
+  /** 当前展示条目所属会话；空闲 / 外部槽 / 老版本宿主缺该字段时都不出现，气泡因此不可点。 */
+  sessionId?: string | null;
 }
 
 /** 快照解析：档位不认识 → 归一成 null（空闲）；形状非法 → null，消费端跳过这一拍。
  *  progress 是后加的字段：老 host / 老快照里没有它 → 归一成 null（等价于「无清单进度」），
- *  因此新旧 host 与两端渲染可以任意混搭，不必同步升级。 */
+ *  因此新旧 host 与两端渲染可以任意混搭，不必同步升级。
+ *  sessionId 同理：老 host 没有它 → null（气泡不可点，不影响其余展示）。 */
 export function toWorkStatus(raw: unknown): WorkStatusSnapshot | null {
   if (!raw || typeof raw !== 'object') return null;
-  const r = raw as { state?: unknown; task?: unknown; progress?: unknown };
+  const r = raw as { state?: unknown; task?: unknown; progress?: unknown; sessionId?: unknown };
   const state: WorkStatusState | null =
     r.state === null || (typeof r.state === 'string' && (WORK_STATUS_STATES as readonly string[]).includes(r.state))
       ? (r.state as WorkStatusState | null)
       : null;
+  const sessionId =
+    typeof r.sessionId === 'string' && r.sessionId !== '' && r.sessionId !== 'unknown' ? r.sessionId : null;
   const p = r.progress as { done?: unknown; total?: unknown } | null | undefined;
   const done = Number(p?.done);
   const total = Number(p?.total);
@@ -51,7 +56,7 @@ export function toWorkStatus(raw: unknown): WorkStatusSnapshot | null {
     p && typeof p === 'object' && Number.isInteger(done) && Number.isInteger(total) && total > 0 && done >= 0
       ? { done: Math.min(done, total), total }
       : null;
-  return { state, task: typeof r.task === 'string' ? r.task : null, progress };
+  return { state, task: typeof r.task === 'string' ? r.task : null, progress, sessionId };
 }
 
 /** 任务详情是否「正在展示」：有清单进度或有任务文案。

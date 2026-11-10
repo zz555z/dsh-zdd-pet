@@ -1,13 +1,13 @@
-import { appendFileSync, closeSync, createReadStream, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, createReadStream, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize, resolve, sep } from "node:path";
 import { resolveDshHome } from "@deepseek-ai/dsh-home-paths";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import { BlockAssembler, ReasoningEffortId, createAssistantMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { createHash } from "node:crypto";
 
 //#region src/host/balance/internal.ts
 /**
@@ -110,6 +110,26 @@ async function fetchJson(url, key, label) {
 	if (!res.ok) throw new Error("commandcode " + label + " HTTP " + res.status);
 	return await res.json();
 }
+/**
+* 从 usage 响应读区间用量（本期累计）；五个字段齐全才返回，缺一个即视为没有这项数据。
+*
+* 这些字段来自批量聚合（窗口百分比才是实时的），所以宁可整页不出，也不拿半份数字拼一张会漂的卡片。
+*/
+function readUsage(summary) {
+	const totalTokens = looseNum(summary?.totalTokens);
+	const inputTokens = looseNum(summary?.totalTokensIn);
+	const outputTokens = looseNum(summary?.totalTokensOut);
+	const requests = looseNum(summary?.totalCount);
+	const spentUsd = looseNum(summary?.totalCost);
+	if (totalTokens === void 0 || inputTokens === void 0 || outputTokens === void 0 || requests === void 0 || spentUsd === void 0) return void 0;
+	return {
+		totalTokens,
+		inputTokens,
+		outputTokens,
+		requests,
+		spentUsd
+	};
+}
 function parseCommandCode(creditsBody, subscriptionBody, summaryBody, provider) {
 	const root = obj(creditsBody);
 	const credits = obj(root?.credits);
@@ -128,6 +148,8 @@ function parseCommandCode(creditsBody, subscriptionBody, summaryBody, provider) 
 	const pool = spent + remaining;
 	const data = { monthly: pool > 0 ? spent / pool * 100 : 0 };
 	if (pool > 0) data.monthlyCapUsd = pool;
+	const usage = readUsage(summary);
+	if (usage) data.usage = usage;
 	const subscription = obj(obj(subscriptionBody)?.data);
 	const periodEnd = subscription?.currentPeriodEnd;
 	if (typeof periodEnd === "string" && periodEnd.length > 0) data.monthlyResetsAt = periodEnd;
@@ -171,11 +193,7 @@ const commandCode = {
 		} catch {
 			subscription = void 0;
 		}
-		const periodStart = obj(obj(subscription)?.data)?.currentPeriodStart;
-		const summary = await fetchJson(API_BASE + "/alpha/usage/summary" + queryString({
-			since: typeof periodStart === "string" ? periodStart : void 0,
-			orgId
-		}), key, "/alpha/usage/summary");
+		const summary = await fetchJson(API_BASE + "/alpha/usage/summary" + queryString({ orgId }), key, "/alpha/usage/summary");
 		return parseCommandCode(credits, subscription, summary, provider);
 	}
 };
@@ -431,6 +449,81 @@ async function queryBalance(provider, resolveKey, resolveAccount) {
 }
 
 //#endregion
+//#region src/host/voice/registry.ts
+const BUILTIN_VOICE_ID = "edge";
+/** 当前生效的第三方实现；`null` = 没注册，合成走内置实现。 */
+let current$2 = null;
+function registerVoiceProvider(def) {
+	if (!def || typeof def !== "object") throw new TypeError("voice provider 定义必须是对象");
+	if (typeof def.id !== "string" || def.id.length === 0) throw new TypeError("id 必须是非空字符串");
+	if (def.id === BUILTIN_VOICE_ID) throw new TypeError("不能与内置实现同名: " + BUILTIN_VOICE_ID);
+	if (typeof def.synthesize !== "function") throw new TypeError("synthesize 必须是函数");
+	current$2 = def;
+	return () => {
+		if (current$2 === def) current$2 = null;
+	};
+}
+function activeVoiceProvider() {
+	return current$2;
+}
+function listVoiceProviders() {
+	return {
+		builtin: [BUILTIN_VOICE_ID],
+		external: current$2 ? [current$2.id] : []
+	};
+}
+
+//#endregion
+//#region src/host/voice/speech-registry.ts
+const BUILTIN_SPEECH_ID = "dsh";
+/** 当前生效的第三方实现；`null` = 没注册，识别走宿主自带能力。 */
+let current$1 = null;
+function registerSpeechProvider(def) {
+	if (!def || typeof def !== "object") throw new TypeError("speech provider 定义必须是对象");
+	if (typeof def.id !== "string" || def.id.length === 0) throw new TypeError("id 必须是非空字符串");
+	if (def.id === BUILTIN_SPEECH_ID) throw new TypeError("不能与内置来源同名: " + BUILTIN_SPEECH_ID);
+	if (typeof def.transcribe !== "function") throw new TypeError("transcribe 必须是函数");
+	current$1 = def;
+	return () => {
+		if (current$1 === def) current$1 = null;
+	};
+}
+function activeSpeechProvider() {
+	return current$1;
+}
+function listSpeechProviders() {
+	return {
+		builtin: [BUILTIN_SPEECH_ID],
+		external: current$1 ? [current$1.id] : []
+	};
+}
+
+//#endregion
+//#region src/host/chat-memory-provider.ts
+const NATIVE_MEMORY_ID = "native";
+/** 当前生效的第三方实现；null = 没注册，走原生路径。 */
+let current = null;
+function registerChatMemoryProvider(def) {
+	if (!def || typeof def !== "object") throw new TypeError("memory provider 定义必须是对象");
+	if (typeof def.id !== "string" || def.id.length === 0) throw new TypeError("id 必须是非空字符串");
+	if (def.id === NATIVE_MEMORY_ID) throw new TypeError("不能占用原生实现标识: " + NATIVE_MEMORY_ID);
+	if (typeof def.recall !== "function" && typeof def.capture !== "function") throw new TypeError("recall 与 capture 至少要有一个是函数");
+	current = def;
+	return () => {
+		if (current === def) current = null;
+	};
+}
+function activeChatMemoryProvider() {
+	return current;
+}
+function listChatMemoryProviders() {
+	return {
+		builtin: [NATIVE_MEMORY_ID],
+		external: current ? [current.id] : []
+	};
+}
+
+//#endregion
 //#region src/shared/fonts.ts
 const FONT_PRESETS = [
 	{
@@ -509,7 +602,7 @@ function createFileLogger(options) {
 	const debugEnabled = options.debugEnabled ?? false;
 	const now = options.now ?? (() => new Date());
 	let pending = [];
-	let dropped = 0;
+	let dropped$1 = 0;
 	/** 已离开 pending、尚未提交到文件的文本；退出与 dispose 靠它补写。 */
 	let activeChunk = "";
 	let flushing = null;
@@ -519,10 +612,10 @@ function createFileLogger(options) {
 	const ensureDir = () => dirReady ?? (dirReady = mkdir(dirname(file), { recursive: true }).then(() => void 0).catch(() => void 0));
 	/** 取走当前缓冲（含溢出提示）；取出后 pending 为空，文本改由调用方保管。 */
 	const takePending = () => {
-		const note = dropped > 0 ? formatLogLine("warn", `日志缓冲溢出，丢弃 ${dropped} 条`, now()) : "";
+		const note = dropped$1 > 0 ? formatLogLine("warn", `日志缓冲溢出，丢弃 ${dropped$1} 条`, now()) : "";
 		const chunk = note + pending.join("");
 		pending = [];
-		dropped = 0;
+		dropped$1 = 0;
 		return chunk;
 	};
 	/** 同步提交 activeChunk；提交后这批文本与内存无关，退出路径不会重复写。 */
@@ -550,7 +643,7 @@ function createFileLogger(options) {
 		} catch {}
 		pending.push(formatLogLine(level, redactSensitive(String(message)), now()));
 		if (pending.length > maxPending) {
-			dropped += pending.length - maxPending;
+			dropped$1 += pending.length - maxPending;
 			pending.splice(0, pending.length - maxPending);
 		}
 		if (disposed) flushSync();
@@ -649,11 +742,19 @@ function isValidPetId(value) {
 }
 const GLOBAL_DEFAULT_KEYS = [
 	"physics",
+	"animationWeights",
 	"font",
 	"confineToScreen",
 	"bubbleImageEnabled",
+	"voiceEnabled",
+	"voiceName",
+	"voiceVolume",
+	"voiceWhisperEnabled",
+	"voiceTodoEnabled",
+	"voiceNotifyEnabled",
 	"whisperImageEnabled",
 	"chatImageEnabled",
+	"chatAnimationEnabled",
 	"chatImageLimit",
 	"chatMemoryRounds",
 	"whisperModel",
@@ -724,6 +825,40 @@ function effectiveUserFile(paths) {
 	if (existsSync(paths.userFile)) return paths.userFile;
 	if (paths.legacyUserFile && existsSync(paths.legacyUserFile)) return paths.legacyUserFile;
 	return void 0;
+}
+
+//#endregion
+//#region src/shared/constants.ts
+const HIT_BOX = {
+	x0: 200,
+	y0: 50,
+	x1: 440,
+	y1: 335
+};
+const ROUTE_SEGMENT = "/dsh-zdd-pet-7340";
+function mountPrefixOf(baseURI) {
+	if (baseURI === void 0 || baseURI === "") return "";
+	try {
+		const url = new URL(baseURI);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+		return url.pathname.replace(/\/+$/, "");
+	} catch {
+		return "";
+	}
+}
+function routePathOf(baseURI) {
+	return mountPrefixOf(baseURI) + ROUTE_SEGMENT;
+}
+const ROUTE_PATH = routePathOf(typeof document === "undefined" ? void 0 : document.baseURI);
+
+//#endregion
+//#region src/shared/pet-size.ts
+/** 人物本体宽度占画框宽度的比例；由命中框反推（240/640），不在别处再写一份 0.375。 */
+const BODY_WIDTH_RATIO = (HIT_BOX.x1 - HIT_BOX.x0) / 640;
+const SIZE_PERCENT_MIN = 1;
+const SIZE_PERCENT_DEFAULT = 20;
+function isValidSizePercent(value) {
+	return typeof value === "number" && Number.isFinite(value) && value >= SIZE_PERCENT_MIN;
 }
 
 //#endregion
@@ -1065,7 +1200,42 @@ function festivalValid(value) {
 }
 
 //#endregion
+//#region src/host/voice/voices.ts
+const VOICES = [
+	{
+		id: "zh-CN-XiaoxiaoNeural",
+		name: "晓晓",
+		tag: "女 · 通用",
+		default: false
+	},
+	{
+		id: "zh-CN-XiaoyiNeural",
+		name: "晓伊",
+		tag: "女 · 活泼",
+		default: true
+	},
+	{
+		id: "zh-CN-YunxiNeural",
+		name: "云希",
+		tag: "男 · 年轻",
+		default: false
+	},
+	{
+		id: "zh-CN-YunjianNeural",
+		name: "云健",
+		tag: "男 · 沉稳",
+		default: false
+	}
+];
+const DEFAULT_VOICE = "zh-CN-XiaoyiNeural";
+function isKnownVoice(id) {
+	return VOICES.some((voice) => voice.id === id);
+}
+
+//#endregion
 //#region src/host/config/validate.ts
+/** 内置玩法动画的槽位数：`animations.baifan` 必须恰好这么多个（顺序是玩法契约，见 shared/types 的 Animations）。 */
+const ACTIVITY_SLOTS = 5;
 /** animations 段完整性校验（与旧 assertAnimationsHost 同一套规则；不 throw，非法返回 false） */
 function animationsValid(a) {
 	if (!a || typeof a !== "object") return false;
@@ -1092,7 +1262,34 @@ function animationsValid(a) {
 		} else return false;
 	}
 	const balance = evEntries.balance;
-	return Array.isArray(balance) && balance.length > 0;
+	if (!Array.isArray(balance) || balance.length === 0) return false;
+	if (anims.baifan !== void 0 && !activitySlotsValid(anims.baifan)) return false;
+	return anims.sleep === void 0 || sleepValid(anims.sleep);
+}
+/** sleep 段校验：非空套数组，每套都必须有非空的 start / loop / end 字符串数组。
+*  未写由调用方放行（可选字段）；这里只处理「写了」的形态。 */
+function sleepValid(value) {
+	if (!Array.isArray(value) || value.length === 0) return false;
+	for (const set of value) {
+		if (!set || typeof set !== "object" || Array.isArray(set)) return false;
+		const entry = set;
+		for (const phase of [
+			"start",
+			"loop",
+			"end"
+		]) {
+			const pool = entry[phase];
+			if (!Array.isArray(pool) || pool.length === 0) return false;
+			for (const name$1 of pool) if (typeof name$1 !== "string" || name$1.length === 0) return false;
+		}
+	}
+	return true;
+}
+/** baifan 段校验：恰好 {@link ACTIVITY_SLOTS} 个非空动画名。
+*  写少写多都算非法——槽位按索引取，缺一个就是那个时机没有动画可播。 */
+function activitySlotsValid(value) {
+	if (!Array.isArray(value) || value.length !== ACTIVITY_SLOTS) return false;
+	return value.every((name$1) => typeof name$1 === "string" && name$1.length > 0);
 }
 /** animationWeights 段校验（idle/turn/move 三个非负数字） */
 function weightsValid(w) {
@@ -1115,7 +1312,7 @@ function physicsValid(value) {
 	const r = Number(p.restitution);
 	const f = Number(p.groundFriction);
 	const tp = Number(p.throwPower);
-	return Number.isFinite(g) && g >= 0 && Number.isFinite(r) && r >= 0 && r <= 1 && Number.isFinite(f) && f >= 0 && typeof p.ceilingBounce === "boolean" && Number.isFinite(tp) && tp > 0 && typeof p.petCollision === "boolean";
+	return Number.isFinite(g) && g >= 0 && Number.isFinite(r) && r >= 0 && r <= 1 && Number.isFinite(f) && f >= 0 && typeof p.ceilingBounce === "boolean" && Number.isFinite(tp) && tp > 0 && typeof p.petCollision === "boolean" && (p.hapticEnabled === void 0 || typeof p.hapticEnabled === "boolean") && (p.tiltGravity === void 0 || typeof p.tiltGravity === "boolean") && (p.shakeThrow === void 0 || typeof p.shakeThrow === "boolean");
 }
 function fontValid(value) {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -1155,7 +1352,14 @@ function topFieldValid(key, value) {
 		case "clickSoundEnabled": return typeof value === "boolean";
 		case "bubbleImageEnabled": return typeof value === "boolean";
 		case "whisperImageEnabled": return typeof value === "boolean";
+		case "voiceEnabled": return typeof value === "boolean";
+		case "voiceName": return typeof value === "string" && isKnownVoice(value);
+		case "voiceVolume": return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+		case "voiceWhisperEnabled": return typeof value === "boolean";
+		case "voiceTodoEnabled": return typeof value === "boolean";
+		case "voiceNotifyEnabled": return typeof value === "boolean";
 		case "chatImageEnabled": return typeof value === "boolean";
+		case "chatAnimationEnabled": return typeof value === "boolean";
 		case "confineToScreen": return typeof value === "boolean";
 		case "trayEnabled": return typeof value === "boolean";
 		case "animations": return animationsValid(value);
@@ -1174,6 +1378,12 @@ function topFieldValid(key, value) {
 		case "whisperModel":
 		case "chatModel": return modelSelectionValid(value);
 		case "workStatusTexts": return workStatusTextsValid(value);
+		case "sleepRefuseTexts":
+		case "sleepStartTexts":
+		case "sleepEndTexts": {
+			if (!Array.isArray(value) || value.length === 0) return false;
+			return value.every((text) => typeof text === "string" && text.length > 0);
+		}
 		default: return true;
 	}
 }
@@ -1249,6 +1459,15 @@ function petNumber(own$1, def, min, label, field, id) {
 	if (own$1 !== void 0 && own$1 !== null) warnOnce(`${label}:${field}:${id}`, `宠物「${id}」的 ${field} 非法，已取默认值`);
 	return Number(def);
 }
+/** 实例级 sizePercent：写了合法值才落键；缺省与越界都不落键，渲染侧按默认值处理。
+*  不补默认值——补了会让「没动过」在保存时变成显式值，配置文件凭空长大，且没有用户层时形状不一致。 */
+function petSizePercentField(own$1, def, label, id) {
+	const value = own$1 ?? def;
+	if (value === void 0 || value === null) return {};
+	if (isValidSizePercent(value)) return { sizePercent: value };
+	warnOnce(`${label}:sizePercent:${id}`, `宠物「${id}」的 sizePercent 非法（应为不小于 ${SIZE_PERCENT_MIN} 的数字），已忽略（按默认 ${SIZE_PERCENT_DEFAULT} 处理）`);
+	return {};
+}
 /** 宠物实例字段取布尔；缺失 → 静默取默认；显式写但非法 → 告警 + 默认 */
 function petBool(own$1, def, label, field, id) {
 	if (typeof own$1 === "boolean") return own$1;
@@ -1279,6 +1498,7 @@ function mergePet(base, raw, label, seenIds) {
 		id,
 		name: name$1,
 		size: petNumber(p.size, base.size, 1, label, "size", id),
+		...petSizePercentField(p.sizePercent, base.sizePercent, label, id),
 		balanceEnabled: petBool(p.balanceEnabled, base.balanceEnabled, label, "balanceEnabled", id),
 		whisperEnabled: petBool(p.whisperEnabled, base.whisperEnabled, label, "whisperEnabled", id),
 		workStatusEnabled: petBool(p.workStatusEnabled, base.workStatusEnabled, label, "workStatusEnabled", id),
@@ -1390,6 +1610,8 @@ function saveUserConfig(raw, existing) {
 		seenIds.add(id);
 		const size = Number(pp.size);
 		if (!Number.isFinite(size) || size <= 0) return null;
+		const sizePercent = pp.sizePercent;
+		if (sizePercent !== void 0 && sizePercent !== null && !isValidSizePercent(sizePercent)) return null;
 		let name$1 = typeof pp.name === "string" ? pp.name.trim() : "";
 		if (!name$1) {
 			defaultLog("warn", `dsh-zdd-pet: pet「${id}」缺少 name，已按默认 ${id}（宠物 id）处理`);
@@ -1430,6 +1652,7 @@ function saveUserConfig(raw, existing) {
 			}
 		};
 		if (persona) pet.whisperPrompt = persona;
+		if (sizePercent !== void 0 && sizePercent !== null) pet.sizePercent = sizePercent;
 		out.push(pet);
 	}
 	const ne = o.notificationsEnabled;
@@ -1442,12 +1665,28 @@ function saveUserConfig(raw, existing) {
 	if (wie !== void 0 && typeof wie !== "boolean") return null;
 	const cie = o.chatImageEnabled;
 	if (cie !== void 0 && typeof cie !== "boolean") return null;
+	const cae = o.chatAnimationEnabled;
+	if (cae !== void 0 && typeof cae !== "boolean") return null;
 	const cts = o.confineToScreen;
 	if (cts !== void 0 && typeof cts !== "boolean") return null;
+	const ve = o.voiceEnabled;
+	if (ve !== void 0 && typeof ve !== "boolean") return null;
+	const vn = o.voiceName;
+	if (vn !== void 0 && !topFieldValid("voiceName", vn)) return null;
+	const vv = o.voiceVolume;
+	if (vv !== void 0 && !topFieldValid("voiceVolume", vv)) return null;
+	const vwe = o.voiceWhisperEnabled;
+	if (vwe !== void 0 && !topFieldValid("voiceWhisperEnabled", vwe)) return null;
+	const vte = o.voiceTodoEnabled;
+	if (vte !== void 0 && !topFieldValid("voiceTodoEnabled", vte)) return null;
+	const vne = o.voiceNotifyEnabled;
+	if (vne !== void 0 && !topFieldValid("voiceNotifyEnabled", vne)) return null;
 	const te = o.trayEnabled;
 	if (te !== void 0 && typeof te !== "boolean") return null;
 	const ph = o.physics;
 	if (ph !== void 0 && !physicsValid(ph)) return null;
+	const aw = o.animationWeights;
+	if (aw !== void 0 && !topFieldValid("animationWeights", aw)) return null;
 	const fo = o.font;
 	if (fo !== void 0 && !fontValid(fo)) return null;
 	const po = o.pomodoro;
@@ -1476,15 +1715,28 @@ function saveUserConfig(raw, existing) {
 		provider: String(v.provider).trim(),
 		model: String(v.model).trim()
 	});
+	const cleanWeights = (v) => ({
+		idle: Number(v.idle),
+		turn: Number(v.turn),
+		move: Number(v.move)
+	});
 	const outConfig = { pets: out };
 	if (ne !== void 0) outConfig.notificationsEnabled = ne;
 	if (cse !== void 0) outConfig.clickSoundEnabled = cse;
 	if (bid !== void 0) outConfig.bubbleImageEnabled = bid;
 	if (wie !== void 0) outConfig.whisperImageEnabled = wie;
 	if (cie !== void 0) outConfig.chatImageEnabled = cie;
+	if (cae !== void 0) outConfig.chatAnimationEnabled = cae;
 	if (cts !== void 0) outConfig.confineToScreen = cts;
+	if (ve !== void 0) outConfig.voiceEnabled = ve;
+	if (vn !== void 0) outConfig.voiceName = vn;
+	if (vv !== void 0) outConfig.voiceVolume = vv;
+	if (vwe !== void 0) outConfig.voiceWhisperEnabled = vwe;
+	if (vte !== void 0) outConfig.voiceTodoEnabled = vte;
+	if (vne !== void 0) outConfig.voiceNotifyEnabled = vne;
 	if (te !== void 0) outConfig.trayEnabled = te;
 	if (ph !== void 0) outConfig.physics = ph;
+	if (aw !== void 0) outConfig.animationWeights = cleanWeights(aw);
 	if (fo !== void 0) outConfig.font = fo;
 	if (po !== void 0) {
 		const pv = po;
@@ -1570,9 +1822,17 @@ function saveUserConfig(raw, existing) {
 	if (bid !== void 0) bodyOwned.add("bubbleImageEnabled");
 	if (wie !== void 0) bodyOwned.add("whisperImageEnabled");
 	if (cie !== void 0) bodyOwned.add("chatImageEnabled");
+	if (cae !== void 0) bodyOwned.add("chatAnimationEnabled");
 	if (cts !== void 0) bodyOwned.add("confineToScreen");
+	if (ve !== void 0) bodyOwned.add("voiceEnabled");
+	if (vn !== void 0) bodyOwned.add("voiceName");
+	if (vv !== void 0) bodyOwned.add("voiceVolume");
+	if (vwe !== void 0) bodyOwned.add("voiceWhisperEnabled");
+	if (vte !== void 0) bodyOwned.add("voiceTodoEnabled");
+	if (vne !== void 0) bodyOwned.add("voiceNotifyEnabled");
 	if (te !== void 0) bodyOwned.add("trayEnabled");
 	if (ph !== void 0) bodyOwned.add("physics");
+	if (aw !== void 0) bodyOwned.add("animationWeights");
 	if (fo !== void 0) bodyOwned.add("font");
 	if (po !== void 0) bodyOwned.add("pomodoro");
 	if (gr !== void 0) bodyOwned.add("greeting");
@@ -1799,12 +2059,12 @@ var MenuRegistry = class {
 			hold.timer = setTimeout(finish, Math.min(waitMs, MENU_WAIT_MAX_MS));
 			set.add(finish);
 		});
-		const current = this.owners.get(owner);
-		if (!current) return null;
+		const current$3 = this.owners.get(owner);
+		if (!current$3) return null;
 		const out = {};
-		for (const [label, pet] of current.items) {
+		for (const [label, pet] of current$3.items) {
 			out[label] = pet;
-			current.items.set(label, null);
+			current$3.items.set(label, null);
 		}
 		return out;
 	}
@@ -2041,6 +2301,10 @@ const MIME = {
 	".mov": "video/quicktime",
 	".mp4": "video/mp4",
 	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".webp": "image/webp",
+	".gif": "image/gif",
 	".wav": "audio/wav",
 	".json": "application/json; charset=utf-8",
 	".jsonc": "application/json; charset=utf-8",
@@ -2048,6 +2312,24 @@ const MIME = {
 	".woff": "font/woff",
 	".woff2": "font/woff2"
 };
+const IMAGE_HEAD_BYTES = 16;
+function imageTypeOf(header, size) {
+	if (size >= 8 && header.readUInt32BE(0) === 2303741511 && header.readUInt32BE(4) === 218765834) return "image/png";
+	if (size >= 3 && header[0] === 255 && header[1] === 216 && header[2] === 255) return "image/jpeg";
+	if (size >= 6) {
+		const tag = header.toString("latin1", 0, 6);
+		if (tag === "GIF87a" || tag === "GIF89a") return "image/gif";
+	}
+	if (size >= 12 && header.toString("latin1", 0, 4) === "RIFF" && header.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+	return void 0;
+}
+function imageExtOf(contentType) {
+	if (contentType === "image/png") return ".png";
+	if (contentType === "image/jpeg") return ".jpg";
+	if (contentType === "image/webp") return ".webp";
+	if (contentType === "image/gif") return ".gif";
+	return void 0;
+}
 function resolveAsset(root, rel) {
 	if (rel.length === 0) return void 0;
 	const candidate = normalize(join(root, rel));
@@ -2192,7 +2474,7 @@ function readBody(req) {
 
 //#endregion
 //#region src/shared/timings.ts
-const BUBBLE_DURATION_MS = 10 * 1e3;
+const BUBBLE_DURATION_MS$1 = 10 * 1e3;
 const WORK_BUBBLE_MS = 15 * 1e3;
 const SAY_BUBBLE_MIN_MS = 10 * 1e3;
 const SAY_BUBBLE_MAX_MS = 60 * 1e3;
@@ -2347,7 +2629,8 @@ var PollStateStore = class {
 			workStatus: emptyLeaf(),
 			notify: emptyLeaf(),
 			config: emptyLeaf(),
-			menu: emptyLeaf()
+			menu: emptyLeaf(),
+			focusSession: emptyLeaf()
 		};
 		this.pets = new Map();
 		this.waiters = new Set();
@@ -2407,7 +2690,8 @@ var PollStateStore = class {
 				anim: emptyLeaf(),
 				position: emptyLeaf(),
 				throw: emptyLeaf(),
-				lock: emptyLeaf()
+				lock: emptyLeaf(),
+				sleep: emptyLeaf()
 			};
 			this.pets.set(petId, entry);
 		}
@@ -2556,10 +2840,10 @@ function todoViewFromTodo(event) {
 		task: null,
 		progress: null
 	};
-	let current;
-	for (const t of todos) if (t?.status === "in_progress") current = t;
-	const next = current ? void 0 : todos.find((t) => t?.status === "pending");
-	const task = current ? taskStepText(current.content) : next ? taskStepText("接下来：" + String(next.content ?? "")) : null;
+	let current$3;
+	for (const t of todos) if (t?.status === "in_progress") current$3 = t;
+	const next = current$3 ? void 0 : todos.find((t) => t?.status === "pending");
+	const task = current$3 ? taskStepText(current$3.content) : next ? taskStepText("接下来：" + String(next.content ?? "")) : null;
 	if (!task) return {
 		task: null,
 		progress: null
@@ -2597,6 +2881,7 @@ var WorkStatusStore = class {
 			state: null,
 			task: null,
 			progress: null,
+			sessionId: null,
 			ts: 0
 		};
 	}
@@ -2624,7 +2909,8 @@ var WorkStatusStore = class {
 			state,
 			seq,
 			task: prev?.task ?? null,
-			progress: prev?.progress ?? null
+			progress: prev?.progress ?? null,
+			sessionId
 		});
 		this.refresh();
 		return true;
@@ -2686,16 +2972,18 @@ var WorkStatusStore = class {
 	snapshot() {
 		return this.snap;
 	}
-	/** 重算展示：state / task / progress 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
+	/** 重算展示：state / task / progress / sessionId 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
 	refresh() {
 		const best = pickDisplayed(this.sessions.values());
 		const nextState = best?.state ?? null;
 		const nextTask = best?.task ?? null;
 		const nextProgress = best?.progress ?? null;
-		if (nextState === this.snap.state && nextTask === this.snap.task && sameProgress(nextProgress, this.snap.progress)) return;
+		const nextSession = best?.sessionId ?? null;
+		if (nextState === this.snap.state && nextTask === this.snap.task && sameProgress(nextProgress, this.snap.progress) && nextSession === this.snap.sessionId) return;
 		this.snap.state = nextState;
 		this.snap.task = nextTask;
 		this.snap.progress = nextProgress;
+		this.snap.sessionId = nextSession;
 		this.snap.ts = Date.now();
 	}
 };
@@ -2730,6 +3018,11 @@ function createHostSetup(ctx) {
 	};
 	/** 独立模式的碎碎念授权策略（可选能力）：DSH 宿主里是 undefined → 回落到只看 pet.whisperEnabled。 */
 	const standaloneAiPolicy = () => optionalService("standaloneAi");
+	/** 独立模式的余额凭证（可选能力）：DSH 宿主里是 undefined → 回落到模型服务商与 credential store。 */
+	const standaloneAiBalance = () => {
+		const service = optionalService("standaloneAi");
+		return service?.balanceAuth?.();
+	};
 	const userConfigPath = join(userRoot, "main-config.jsonc");
 	const legacyUserConfigPath = join(userRoot, "main-config.json");
 	const petConfigDir = join(userRoot, "pet");
@@ -2755,10 +3048,24 @@ function createHostSetup(ctx) {
 	};
 	const state = new PollStateStore();
 	const menuRegistry = new MenuRegistry();
-	ctx.provide("petApiZdd", { balance: {
-		register: registerBalanceProvider,
-		list: listBalanceProviders
-	} });
+	ctx.provide("petApiZdd", {
+		balance: {
+			register: registerBalanceProvider,
+			list: listBalanceProviders
+		},
+		voice: {
+			register: registerVoiceProvider,
+			list: listVoiceProviders
+		},
+		speech: {
+			register: registerSpeechProvider,
+			list: listSpeechProviders
+		},
+		memory: {
+			register: registerChatMemoryProvider,
+			list: listChatMemoryProviders
+		}
+	});
 	const playback = new PlaybackStore();
 	const workStatus = new WorkStatusStore();
 	/** 外部写入槽：固定会话 id，最后写入者生效；不做多写者仲裁/租约/会话管理 */
@@ -2777,6 +3084,7 @@ function createHostSetup(ctx) {
 		memeDirsFor,
 		optionalService,
 		standaloneAiPolicy,
+		standaloneAiBalance,
 		state,
 		menuRegistry,
 		playback,
@@ -2785,10 +3093,6 @@ function createHostSetup(ctx) {
 		nextExternalWorkSeq
 	};
 }
-
-//#endregion
-//#region src/shared/constants.ts
-const ROUTE_PATH = "/dsh-zdd-pet-7340";
 
 //#endregion
 //#region src/host/routes/result.ts
@@ -2834,10 +3138,73 @@ function rejected(status, reason, message) {
 }
 
 //#endregion
+//#region src/host/pet-avatar.ts
+/** 探测顺序：正常情况下同一素材根只有一个头像文件，顺序只影响同时存在多份时的遍历次序。 */
+const AVATAR_EXTS = [
+	".png",
+	".jpg",
+	".jpeg",
+	".webp",
+	".gif"
+];
+function petAvatarFile(avatarDir, petId) {
+	let best;
+	let bestMtime = -Infinity;
+	for (const ext of AVATAR_EXTS) {
+		const file = resolveAsset(avatarDir, petId + "-avatar" + ext);
+		if (file === void 0 || !existsSync(file)) continue;
+		let mtime;
+		try {
+			mtime = statSync(file).mtimeMs;
+		} catch {
+			continue;
+		}
+		if (mtime > bestMtime) {
+			bestMtime = mtime;
+			best = {
+				file,
+				contentType: MIME[ext] ?? "application/octet-stream"
+			};
+		}
+	}
+	return best;
+}
+function savePetAvatar(avatarDir, petId, bytes) {
+	const contentType = imageTypeOf(bytes, Math.min(bytes.length, IMAGE_HEAD_BYTES));
+	const ext = contentType === void 0 ? void 0 : imageExtOf(contentType);
+	if (ext === void 0) return {
+		ok: false,
+		reason: "not-image"
+	};
+	const file = resolveAsset(avatarDir, petId + "-avatar" + ext);
+	if (file === void 0) return {
+		ok: false,
+		reason: "write-failed"
+	};
+	for (const other of AVATAR_EXTS) {
+		if (other === ext) continue;
+		const stale = resolveAsset(avatarDir, petId + "-avatar" + other);
+		if (stale === void 0) continue;
+		try {
+			unlinkSync(stale);
+		} catch {}
+	}
+	try {
+		writeFileSync(file, bytes);
+	} catch {
+		return {
+			ok: false,
+			reason: "write-failed"
+		};
+	}
+	return { ok: true };
+}
+
+//#endregion
 //#region src/host/routes/assets.ts
 async function handleAssetsRoutes(deps, input) {
 	const { assetRootFor, memeDirsFor, petConfigDir, userRootFor } = deps;
-	const { rest } = input;
+	const { rest, url } = input;
 	const [scope, ...restParts] = rest.split("/");
 	if (scope === "logo") {
 		if (restParts.length > 0) return {
@@ -2845,6 +3212,20 @@ async function handleAssetsRoutes(deps, input) {
 			status: 400,
 			body: "dsh-zdd-pet: expected /dsh-zdd-pet-7340/logo"
 		};
+		const assetRoot = (url.searchParams.get("root") ?? "").trim();
+		if (assetRoot !== "" && assetRoot !== "main") {
+			if (!isValidPetId(assetRoot)) return {
+				kind: "text",
+				status: 400,
+				body: "dsh-zdd-pet: invalid asset root"
+			};
+			const own$1 = petAvatarFile(petConfigDir, assetRoot);
+			if (own$1 !== void 0) return {
+				kind: "file",
+				file: own$1.file,
+				contentType: own$1.contentType
+			};
+		}
 		const logo = resolveExisting(join(PACKAGE_ROOT, "assets"), "logo.png");
 		if (logo === void 0) return {
 			kind: "text",
@@ -2983,8 +3364,6 @@ async function handleAssetsRoutes(deps, input) {
 //#region src/host/routes/attachment.ts
 /** 附件 id 的合法形状（与宿主附件服务同一规则）：`sha256:` + 64 位小写 hex。 */
 const ATTACHMENT_ID = /^sha256:[a-f0-9]{64}$/;
-/** 嗅探读取的文件头长度：覆盖四种格式魔数所需的最大偏移（WebP 要看到第 12 字节）。 */
-const HEAD_BYTES = 16;
 async function handleAttachmentRoutes(deps, input) {
 	const { method, rest, url } = input;
 	if (rest === "attachment") {
@@ -3035,8 +3414,8 @@ function sniffImageType(file) {
 	try {
 		const fd = openSync(file, "r");
 		try {
-			const head = Buffer.alloc(HEAD_BYTES);
-			return imageTypeOf(head, readSync(fd, head, 0, HEAD_BYTES, 0));
+			const head = Buffer.alloc(IMAGE_HEAD_BYTES);
+			return imageTypeOf(head, readSync(fd, head, 0, IMAGE_HEAD_BYTES, 0));
 		} finally {
 			closeSync(fd);
 		}
@@ -3044,22 +3423,42 @@ function sniffImageType(file) {
 		return void 0;
 	}
 }
-/**
-* 魔数判定（PNG / JPEG / GIF / WebP）。
-*
-* @param header - 文件头缓冲（可能不满 {@link HEAD_BYTES}）。
-* @param size - header 里实际读到的字节数。
-* @returns 图片的 Content-Type；不是这四种之一时返回 undefined。
-*/
-function imageTypeOf(header, size) {
-	if (size >= 8 && header.readUInt32BE(0) === 2303741511 && header.readUInt32BE(4) === 218765834) return "image/png";
-	if (size >= 3 && header[0] === 255 && header[1] === 216 && header[2] === 255) return "image/jpeg";
-	if (size >= 6) {
-		const tag = header.toString("latin1", 0, 6);
-		if (tag === "GIF87a" || tag === "GIF89a") return "image/gif";
-	}
-	if (size >= 12 && header.toString("latin1", 0, 4) === "RIFF" && header.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+
+//#endregion
+//#region src/host/routes/avatar.ts
+/** 解码后的字节上限：请求体 1 MiB 是 base64 文本的上限，解码后天然不超过 768 KiB。 */
+const MAX_AVATAR_BYTES = 768 * 1024;
+async function handleAvatarRoutes(deps, input) {
+	if (input.rest === "pet-avatar") return acceptUpload(deps, input);
 	return void 0;
+}
+/**
+* 受理一次上传。
+*
+* @param deps - 路由层依赖（只用到文件宠物目录）。
+* @param input - 已解析的请求（方法、URL、请求体）。
+* @returns 成功，或按原因分档的业务/协议失败。
+*/
+async function acceptUpload(deps, input) {
+	if (input.method !== "POST") return methodNotAllowed();
+	const assetRoot = (input.url.searchParams.get("root") ?? "").trim();
+	if (assetRoot === "") return failResult("bad-request", "缺少 root 参数（素材根）");
+	if (!isValidPetId(assetRoot)) return failResult("bad-request", "素材根不合法");
+	if (assetRoot === "main") return failResult("bad-request", "内置条目不能换头像：main 不写入 pet/ 目录");
+	let raw;
+	try {
+		raw = JSON.parse(input.body ?? "");
+	} catch {
+		return invalidJson();
+	}
+	const base64 = typeof raw === "object" && raw !== null ? raw.base64 : void 0;
+	if (typeof base64 !== "string" || base64 === "") return failResult("bad-request", "base64 必须是非空字符串");
+	const bytes = Buffer.from(base64, "base64");
+	if (bytes.length === 0 || bytes.toString("base64") !== base64) return failResult("bad-request", "base64 不合法");
+	if (bytes.length > MAX_AVATAR_BYTES) return payloadTooLarge("头像超过 768 KiB");
+	const saved = savePetAvatar(deps.petConfigDir, assetRoot, bytes);
+	if (!saved.ok) return saved.reason === "not-image" ? failResult("unsupported", "只支持 PNG / JPEG / WebP / GIF") : failResult("internal-error", "头像写入失败");
+	return okResult({ ok: true });
 }
 
 //#endregion
@@ -3071,6 +3470,63 @@ async function handleBalanceRoutes(deps, input) {
 		if (method !== "POST") return methodNotAllowed();
 		await refreshBalance(true);
 		return okResult({ ok: true });
+	}
+	return void 0;
+}
+
+//#endregion
+//#region src/host/routes/character.ts
+/** 包内 assets 根：角色图按 `<素材根>-character.<ext>` 平铺在这里，与 `logo.png` 同层。 */
+const PACKAGE_ASSETS_DIR = join(PACKAGE_ROOT, "assets");
+/** 探测顺序：正常只有一份，顺序只影响多份并存时取哪一份。 */
+const CHARACTER_EXTS = [
+	".png",
+	".jpg",
+	".jpeg",
+	".webp",
+	".gif"
+];
+async function handleCharacterRoutes(deps, input) {
+	if (input.rest !== "character") return void 0;
+	const assetRoot = (input.url.searchParams.get("root") ?? "").trim();
+	if (assetRoot === "") return {
+		kind: "text",
+		status: 400,
+		body: "dsh-zdd-pet: expected /dsh-zdd-pet-7340/character?root=<素材根>"
+	};
+	if (!isValidPetId(assetRoot)) return {
+		kind: "text",
+		status: 400,
+		body: "dsh-zdd-pet: invalid asset root"
+	};
+	const found = findCharacter(deps.petConfigDir, assetRoot);
+	if (found === void 0) return {
+		kind: "text",
+		status: 404,
+		body: "dsh-zdd-pet: character not found"
+	};
+	return {
+		kind: "file",
+		file: found.file,
+		contentType: found.contentType
+	};
+}
+/**
+* 按素材根找角色图：`pet/` 优先，包内兜底。
+*
+* 扩展名只走白名单，不按目录扫描：用户目录里可能有别的文件，扫描会把无关文件当成角色图。
+* @param petDir - `pet/` 目录（pet pack 素材根所在处）。
+* @param assetRoot - 已校验的素材根。
+* @returns 命中的文件；都没有时 undefined。
+*/
+function findCharacter(petDir, assetRoot) {
+	const name$1 = assetRoot + "-character";
+	for (const dir of [petDir, PACKAGE_ASSETS_DIR]) for (const ext of CHARACTER_EXTS) {
+		const hit = resolveExisting(dir, name$1 + ext);
+		if (hit !== void 0) return {
+			file: hit,
+			contentType: MIME[ext] ?? "application/octet-stream"
+		};
 	}
 	return void 0;
 }
@@ -3319,9 +3775,21 @@ function profileNameFrom(packageRoot$1) {
 
 //#endregion
 //#region src/host/helper/electron.ts
-const require = createRequire(import.meta.url);
 const packageRoot = PACKAGE_ROOT;
 const defaultHelperMain = resolve(packageRoot, "runtime", "electron-helper", "main.js");
+const DESKTOP_DEBUG_PORT = 0;
+/** 强制 XWayland 的 Chromium 开关：Wayland 原生下小窗的定位/置顶/穿透都不可用。 */
+const OZONE_X11_SWITCH = "--ozone-platform=x11";
+function shouldForceXWayland(env = process.env, platform = process.platform) {
+	return platform === "linux" && Boolean(env.WAYLAND_DISPLAY) && Boolean(env.DISPLAY);
+}
+function helperLaunchArgs$1(helperPath, options = {}) {
+	const debugPort = options.debugPort ?? DESKTOP_DEBUG_PORT;
+	const switches = [];
+	if (options.forceX11 === true) switches.push(OZONE_X11_SWITCH);
+	if (debugPort > 0) switches.push("--remote-debugging-port=" + debugPort);
+	return [...switches, helperPath];
+}
 /** 只做基本文件校验：不验证二进制格式，也不实际启动候选。 */
 function isNonEmptyFile(path) {
 	try {
@@ -3341,10 +3809,6 @@ function resolveElectronPath(candidates = []) {
 	};
 	for (const value of candidates) push(value);
 	if (process.env.DSH_PET_ELECTRON_PATH) push(process.env.DSH_PET_ELECTRON_PATH);
-	try {
-		const resolved = require("electron");
-		if (typeof resolved === "string" && resolved) push(resolved);
-	} catch {}
 	push(defaultElectronExe());
 	return list.find(isNonEmptyFile);
 }
@@ -3366,6 +3830,14 @@ function electronLandingDir() {
 }
 function defaultElectronExe() {
 	return join(electronLandingDir(), ELECTRON_REL);
+}
+function readElectronVersion(electronExe) {
+	try {
+		const version = readFileSync(join(dirname(electronExe), "version"), "utf8").trim();
+		return /^\d+\.\d+\.\d+/.test(version) ? version : void 0;
+	} catch {
+		return void 0;
+	}
 }
 async function ensureElectronDownload(options = {}) {
 	const version = options.version || process.env.DSH_PET_ELECTRON_VERSION || "43.3.0";
@@ -3446,7 +3918,7 @@ function defaultLaunch(options = {}) {
 	const helperPath = options.helperPath || defaultHelperMain;
 	return {
 		command: electronPath,
-		args: [helperPath]
+		args: helperLaunchArgs$1(helperPath, { forceX11: shouldForceXWayland() })
 	};
 }
 
@@ -3459,6 +3931,10 @@ const BRIDGE_PREFIX = "dsh-zdd-pet-bridge:";
 const HELPER_STOP_TIMEOUT_MS = 3e3;
 const HELPER_STOP_GRACE_MS = 1e3;
 const HELPER_STABLE_MS = 3 * 60 * 1e3;
+/** Electron 沙箱初始化失败时的退出码 0x80000003（STATUS_BREAKPOINT）；Node 的两种报法靠 `>>> 0` 归一。 */
+const SANDBOX_INIT_FAILED_CODE = 2147483651;
+/** 只有在这个时间窗内秒退、且一行输出都没有时，才把退出当成「沙箱起不来」。 */
+const SANDBOX_FALLBACK_WINDOW_MS = 5e3;
 function restartBackoffDelayMs(consecutiveFailures, baseMs = 750) {
 	const MAX = 3e4;
 	const raw = baseMs * 2 ** Math.max(0, consecutiveFailures);
@@ -3469,6 +3945,52 @@ function shouldCircuitBreak(consecutiveFailures, limit = 12) {
 }
 function helperRunIsStable(elapsedMs) {
 	return elapsedMs >= HELPER_STABLE_MS;
+}
+/** Windows NTSTATUS 退出码 → 中文短语；只收「进程被系统当场终止」这一类，其余不收录。 */
+const WINDOWS_EXIT_MEANINGS = {
+	3221225477: "访问违例",
+	[SANDBOX_INIT_FAILED_CODE]: "断点（沙箱初始化失败）",
+	3221225781: "缺少 DLL",
+	3221225794: "DLL 初始化失败"
+};
+/**
+* 把子进程退出码翻成一句人话。
+*
+* 只认 Windows 的 NTSTATUS 形态（无符号值 ≥ 0x80000000）：POSIX 退出码只有 0–255，不会撞上这张表。
+* 入参同时认 Node 的两种报法——`3221225477` 与 `-1073741819` 指向同一个 `0xC0000005`。
+* @param code - 子进程退出码；null 表示被信号终止。
+* @returns 中文短语；未收录或 code 为 null 时返回 undefined。
+*/
+function explainExitCode(code) {
+	if (code === null) return void 0;
+	return WINDOWS_EXIT_MEANINGS[code >>> 0];
+}
+function describeExit(code, signal) {
+	return `code=${String(code)}${describeCodeDetail(code)}, signal=${String(signal)}`;
+}
+/** 退出码的括号说明：形态像 NTSTATUS 才补十六进制，含义未收录时只留十六进制。 */
+function describeCodeDetail(code) {
+	if (code === null) return "";
+	const unsigned = code >>> 0;
+	if (unsigned < 2147483648) return "";
+	const hex = `0x${unsigned.toString(16).toUpperCase()}`;
+	const meaning = explainExitCode(code);
+	return ` (${meaning ? `${hex} ${meaning}` : hex})`;
+}
+function crashLoopAdvice(platform) {
+	const raise = "或设 DSH_PET_RESTART_MAX_FAILURES 提高重试上限后重启。";
+	if (platform === "win32") return `换一个 Electron 版本（删掉日志里 electron= 指向的目录，用 DSH_PET_ELECTRON_VERSION 指定可用版本后重启），或用 DSH_PET_ELECTRON_PATH 指向本机能开窗的 electron.exe；${raise}`;
+	if (platform === "linux") return `确认有可用显示环境（DISPLAY / WAYLAND_DISPLAY，无显示时用 Xvfb 并设 DSH_PET_DESKTOP_FORCE=1）；${raise}`;
+	return `用 DSH_PET_ELECTRON_PATH 指向本机能开窗的 Electron；${raise}`;
+}
+function shouldFallbackToNoSandbox(input) {
+	if (input.alreadyApplied || input.customCommand || input.sandboxOptOut) return false;
+	if (input.code === null || input.code >>> 0 !== SANDBOX_INIT_FAILED_CODE) return false;
+	if (input.sawOutput) return false;
+	return input.ranMs < SANDBOX_FALLBACK_WINDOW_MS;
+}
+function helperOutputIsMeaningful(chunk) {
+	return Boolean(chunk.trim());
 }
 const RESTART_BASE_MS_DEFAULT = 750;
 const RESTART_MAX_FAILURES_DEFAULT = 12;
@@ -3498,6 +4020,11 @@ function waitForChildExit(child, timeoutMs, onTimeout) {
 
 //#endregion
 //#region src/host/helper/child.ts
+/** 日志里的运行时身份：` · electron=<路径> (<版本>)`；版本读不到时只留路径。 */
+function electronIdentity(electronExe) {
+	const version = readElectronVersion(electronExe);
+	return ` · electron=${electronExe}${version ? ` (${version})` : ""}`;
+}
 function helperSpawnEnv(hostPid, extra) {
 	const env = {
 		...process.env,
@@ -3506,6 +4033,9 @@ function helperSpawnEnv(hostPid, extra) {
 	};
 	delete env.ELECTRON_RUN_AS_NODE;
 	return env;
+}
+function helperLaunchArgs(baseArgs, opts) {
+	return opts.sandboxFallback && !opts.customCommand ? ["--no-sandbox", ...baseArgs] : [...baseArgs];
 }
 var HelperProcess = class {
 	constructor(options = {}, logger = console) {
@@ -3517,6 +4047,9 @@ var HelperProcess = class {
 		this.restartFailures = 0;
 		this.lastStartAt = 0;
 		this.stdoutBuffer = "";
+		this.launchIdentity = "";
+		this.hasSandboxFallbackApplied = false;
+		this.hasChildOutput = false;
 	}
 	/** 拉起子进程；已有子进程在跑或正在停止时直接返回现有句柄。 */
 	start() {
@@ -3528,7 +4061,14 @@ var HelperProcess = class {
 			args: this.options.args || [helperPath]
 		} : defaultLaunch(this.options);
 		const command = launch.command;
-		const args = this.options.args || launch.args;
+		const args = helperLaunchArgs(this.options.args || launch.args, {
+			sandboxFallback: this.hasSandboxFallbackApplied,
+			customCommand: Boolean(this.options.command)
+		});
+		if (!this.options.command && shouldForceXWayland()) this.logger.info?.("dsh-zdd-pet desktop helper: Wayland 会话，强制 XWayland（--ozone-platform=x11）");
+		else if (!this.options.command && process.platform === "linux" && process.env.WAYLAND_DISPLAY) this.logger.warn?.("dsh-zdd-pet desktop helper: 纯 Wayland 无 XWayland，桌面模式的定位/置顶/穿透不可用；请改用 X11 会话");
+		this.hasChildOutput = false;
+		this.launchIdentity = electronIdentity(command);
 		const cwd = this.options.cwd || dshHomeDir();
 		mkdirSync(cwd, { recursive: true });
 		const child = spawn(command, args, {
@@ -3542,27 +4082,39 @@ var HelperProcess = class {
 			windowsHide: true
 		});
 		this.child = child;
+		const stableTimer = setTimeout(() => {
+			if (this.child === child && !this.stopping) this.logger.info?.(`dsh-zdd-pet desktop helper stable for ${HELPER_STABLE_MS / 6e4}m${this.launchIdentity}`);
+		}, HELPER_STABLE_MS);
+		stableTimer.unref?.();
 		child.once("error", (error) => {
-			this.logger.error?.(`dsh-zdd-pet desktop helper failed to start: ${error.message}`);
+			this.logger.error?.(`dsh-zdd-pet desktop helper failed to start: ${error.message}${this.launchIdentity}`);
 			if (child.pid === void 0 && this.child === child) {
 				this.child = void 0;
+				clearTimeout(stableTimer);
 				this.scheduleRestart();
 			}
 		});
 		child.once("exit", (code, signal) => {
 			if (this.child !== child) return;
 			this.child = void 0;
+			clearTimeout(stableTimer);
 			if (!this.stopping) {
-				this.logger.warn?.(`dsh-zdd-pet desktop helper exited (code=${String(code)}, signal=${String(signal)}); restarting`);
+				if (this.applySandboxFallback(code)) return;
+				this.logger.warn?.(`dsh-zdd-pet desktop helper exited (${describeExit(code, signal)})${this.launchIdentity}; restarting`);
 				this.scheduleRestart();
 			}
 		});
 		child.stdout.on("data", (chunk) => {
-			this.onStdoutChunk(String(chunk));
+			const text = String(chunk);
+			if (helperOutputIsMeaningful(text)) this.hasChildOutput = true;
+			this.onStdoutChunk(text);
 		});
 		child.stderr.on("data", (chunk) => {
 			const line = String(chunk).trim();
-			if (line) this.logger.warn?.(`[dsh-zdd-pet desktop helper] ${line}`);
+			if (helperOutputIsMeaningful(line)) {
+				this.hasChildOutput = true;
+				this.logger.warn?.(`[dsh-zdd-pet desktop helper] ${line}`);
+			}
 		});
 		child.stdin?.on("error", () => {});
 		return child;
@@ -3655,12 +4207,28 @@ var HelperProcess = class {
 			} catch {}
 		});
 	}
+	/** 沙箱初始化失败的特殊崩溃 → 改用 `--no-sandbox` 立刻重试一次，不计入退避与熔断额度。 */
+	applySandboxFallback(code) {
+		const applied = shouldFallbackToNoSandbox({
+			code,
+			sawOutput: this.hasChildOutput,
+			ranMs: Date.now() - this.lastStartAt,
+			alreadyApplied: this.hasSandboxFallbackApplied,
+			customCommand: Boolean(this.options.command),
+			sandboxOptOut: process.env.DSH_PET_GPU_SANDBOX === "1"
+		});
+		if (!applied) return false;
+		this.hasSandboxFallbackApplied = true;
+		this.logger.warn?.(`dsh-zdd-pet desktop helper 因 Chromium 沙箱初始化失败而秒退（${describeExit(code, null)}），改用 --no-sandbox 重试一次${this.launchIdentity}`);
+		this.start();
+		return true;
+	}
 	scheduleRestart() {
 		if (this.restartTimer || this.stopping) return;
 		if (helperRunIsStable(Date.now() - this.lastStartAt)) this.restartFailures = 0;
 		else this.restartFailures += 1;
 		if (shouldCircuitBreak(this.restartFailures, this.resolveMaxFailures())) {
-			this.logger.error?.(`dsh-zdd-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, no more restarts. Fix the environment (e.g. DISPLAY/headless) or set DSH_PET_RESTART_MAX_FAILURES to raise the limit.`);
+			this.logger.error?.(`dsh-zdd-pet desktop helper crashed ${this.restartFailures} consecutive times; circuit breaker tripped, no more restarts${this.launchIdentity} · 建议：${crashLoopAdvice(process.platform)} · Fix the environment (e.g. DISPLAY/headless) or set DSH_PET_RESTART_MAX_FAILURES to raise the limit.`);
 			return;
 		}
 		const base = this.resolveRestartBaseMs();
@@ -3683,6 +4251,239 @@ var HelperProcess = class {
 };
 
 //#endregion
+//#region src/host/todo/types.ts
+const TODO_FILE_VERSION = 1;
+const TODO_TEXT_MAX = 200;
+const TODO_BODY_MAX_BYTES = 16 * 1024;
+function normalizeTodoText(raw) {
+	if (typeof raw !== "string") return null;
+	const text = raw.trim();
+	if (text === "") return null;
+	if (Array.from(text).length > TODO_TEXT_MAX) return null;
+	return text;
+}
+function normalizeTodoDueAt(raw) {
+	if (raw === null || raw === void 0) return {
+		ok: true,
+		value: null
+	};
+	if (typeof raw !== "number" || !Number.isFinite(raw)) return { ok: false };
+	if (Math.abs(raw) > 864e13) return { ok: false };
+	return {
+		ok: true,
+		value: raw
+	};
+}
+/** 读一个有限数字，非法时回落。 */
+function finiteOr(raw, fallback) {
+	return typeof raw === "number" && Number.isFinite(raw) ? raw : fallback;
+}
+function parseTodoRecord(raw) {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const record = raw;
+	if (typeof record.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(record.id)) return null;
+	const text = normalizeTodoText(record.text);
+	if (text === null) return null;
+	const due = normalizeTodoDueAt(record.dueAt);
+	if (!due.ok) return null;
+	const createdAt = finiteOr(record.createdAt, 0);
+	const updatedAt = finiteOr(record.updatedAt, createdAt);
+	const done = record.done === true;
+	const completedAt = done ? finiteOr(record.completedAt, updatedAt) : null;
+	const lastRemindedAt = typeof record.lastRemindedAt === "number" && Number.isFinite(record.lastRemindedAt) ? record.lastRemindedAt : null;
+	return {
+		id: record.id,
+		text,
+		dueAt: due.value,
+		done,
+		createdAt,
+		updatedAt,
+		completedAt,
+		lastRemindedAt
+	};
+}
+function parseTodoFile(raw) {
+	const root = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+	const list = Array.isArray(root.todos) ? root.todos : [];
+	const out = [];
+	const seen = new Set();
+	for (const item of list) {
+		const todo = parseTodoRecord(item);
+		if (todo === null || seen.has(todo.id)) continue;
+		seen.add(todo.id);
+		out.push(todo);
+	}
+	return out;
+}
+function cloneTodo(todo) {
+	return { ...todo };
+}
+function sortTodos(list) {
+	return [...list].sort((a, b) => {
+		if (a.done !== b.done) return a.done ? 1 : -1;
+		if (a.done) return (b.completedAt ?? 0) - (a.completedAt ?? 0);
+		const aDue = a.dueAt ?? Number.POSITIVE_INFINITY;
+		const bDue = b.dueAt ?? Number.POSITIVE_INFINITY;
+		if (aDue !== bDue) return aDue - bDue;
+		return a.createdAt - b.createdAt;
+	});
+}
+
+//#endregion
+//#region src/host/todo/store.ts
+const TODO_FILE_NAME = "todos.json";
+/** 异常 → 一行可读原因（日志用，不外泄给 HTTP 响应）。 */
+function messageOf(error) {
+	return error instanceof Error ? error.message : String(error);
+}
+var TodoStore = class {
+	constructor(options) {
+		this.file = options.file;
+		this.log = options.log;
+		this.now = options.now ?? (() => Date.now());
+		this.queue = Promise.resolve();
+		this.cached = null;
+		this.seq = 0;
+	}
+	/** 全部待办（排序后的副本）。 */
+	list() {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			return sortTodos(this.cached ?? []).map(cloneTodo);
+		});
+	}
+	/**
+	* 新建一条。
+	*
+	* id 由时间戳 + 进程内序号生成：重启后时间戳不同，旧 id 不会撞。
+	*
+	* @param input - 已校验的正文与到期时刻。
+	* @returns 落盘成功后的记录副本。
+	*/
+	create(input) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const at = this.now();
+			this.seq += 1;
+			const todo = {
+				id: `todo-${at.toString(36)}-${this.seq.toString(36)}`,
+				text: input.text,
+				dueAt: input.dueAt,
+				done: false,
+				createdAt: at,
+				updatedAt: at,
+				completedAt: null,
+				lastRemindedAt: null
+			};
+			await this.persist([...this.cached ?? [], todo]);
+			return cloneTodo(todo);
+		});
+	}
+	/**
+	* 更新一条。
+	*
+	* 改期限或重新打开都会清空 `lastRemindedAt`：提醒按新的到期时刻重新排期。
+	*
+	* @returns 更新后的记录；id 不存在返回 null。
+	*/
+	update(id, patch) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const list = this.cached ?? [];
+			const index = list.findIndex((todo) => todo.id === id);
+			if (index < 0) return null;
+			const prev = list[index];
+			const at = this.now();
+			const next = {
+				...prev,
+				updatedAt: at
+			};
+			if (patch.text !== void 0) next.text = patch.text;
+			if (patch.dueAt !== void 0) {
+				next.dueAt = patch.dueAt;
+				next.lastRemindedAt = null;
+			}
+			if (patch.done !== void 0) {
+				next.done = patch.done;
+				next.completedAt = patch.done ? prev.completedAt ?? at : null;
+				if (!patch.done) next.lastRemindedAt = null;
+			}
+			const updated = [...list];
+			updated[index] = next;
+			await this.persist(updated);
+			return cloneTodo(next);
+		});
+	}
+	/**
+	* 删除一条。
+	*
+	* @returns 删掉的条数；0 表示本来就没有（幂等，不当成错误）。
+	*/
+	remove(id) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const list = this.cached ?? [];
+			const next = list.filter((todo) => todo.id !== id);
+			if (next.length === list.length) return 0;
+			await this.persist(next);
+			return 1;
+		});
+	}
+	/** 记下一次提醒时刻：只动 `lastRemindedAt`，不推进 `updatedAt`（那不是用户修改）。 */
+	markReminded(id, at) {
+		return this.run(async () => {
+			await this.ensureLoaded();
+			const list = this.cached ?? [];
+			const index = list.findIndex((todo) => todo.id === id);
+			if (index < 0) return;
+			const next = [...list];
+			next[index] = {
+				...list[index],
+				lastRemindedAt: at
+			};
+			await this.persist(next);
+		});
+	}
+	/** 队列：上一个任务结束后执行下一个；失败不影响后续任务。 */
+	run(task) {
+		const next = this.queue.then(task, task);
+		this.queue = next.then(() => void 0, () => void 0);
+		return next;
+	}
+	async ensureLoaded() {
+		if (this.cached !== null) return;
+		this.cached = await this.readDisk();
+	}
+	async readDisk() {
+		let raw;
+		try {
+			raw = await readFile(this.file, "utf8");
+		} catch (error) {
+			if (error.code !== "ENOENT") this.log.warn?.(`[dsh-zdd-pet] 待办文件读取失败，按空清单继续：${messageOf(error)}`);
+			return [];
+		}
+		try {
+			return parseTodoFile(JSON.parse(raw));
+		} catch (error) {
+			this.log.warn?.(`[dsh-zdd-pet] 待办文件解析失败，按空清单继续：${messageOf(error)}`);
+			return [];
+		}
+	}
+	/** 原子写：临时文件写完再 rename，进程中途退出不会留下半个 JSON。 */
+	async persist(next) {
+		const file = {
+			version: TODO_FILE_VERSION,
+			todos: [...next]
+		};
+		await mkdir(dirname(this.file), { recursive: true });
+		const temp = this.file + ".tmp";
+		await writeFile(temp, JSON.stringify(file, null, 2) + "\n", "utf8");
+		await rename(temp, this.file);
+		this.cached = [...next];
+	}
+};
+
+//#endregion
 //#region src/host/routes/config/save.ts
 async function saveConfigRoute(deps, input) {
 	if (input.method === "PUT") return saveUserLayer(deps, input);
@@ -3701,7 +4502,7 @@ async function saveUserLayer(deps, input) {
 	try {
 		const existing = readUserConfig(configPaths);
 		const clean = saveUserConfig(parsed, existing);
-		if (!clean) return failResult("bad-request", "invalid pet config: expected { pets:[{name?,id,size,balanceEnabled,display,position:{corner,marginX,marginY}}] }（id 为非空字符串且去除首尾空白后唯一；display 为 web/desktop/both/none 之一；可选顶层 notificationsEnabled / whisperImageEnabled / chatImageEnabled / trayEnabled 布尔；可选宠物布尔 whisperEnabled / workStatusEnabled / fixedEnabled）");
+		if (!clean) return failResult("bad-request", "invalid pet config: expected { pets:[{name?,id,size,sizePercent?,balanceEnabled,display,position:{corner,marginX,marginY}}] }（id 为非空字符串且去除首尾空白后唯一；sizePercent 可选，不小于 1 的数字；display 为 web/desktop/both/none 之一；可选顶层 notificationsEnabled / whisperImageEnabled / chatImageEnabled / chatAnimationEnabled / trayEnabled 布尔；可选宠物布尔 whisperEnabled / workStatusEnabled / fixedEnabled）");
 		if (input.url.searchParams.get("force") !== "1" && userConfigUnparsable(configPaths)) return failResult("user-config-unparsable", "用户配置无法解析，需确认后重建", {
 			needConfirm: true,
 			userFile: userConfigPath
@@ -3902,6 +4703,7 @@ function getMeta(deps) {
 		default: join(PACKAGE_ROOT, "assets", "config.jsonc"),
 		animations: thumbUserRoot,
 		memes: memesUserRoot,
+		todos: join(userRoot, TODO_FILE_NAME),
 		logs: log.file,
 		storage: storageEntries({
 			userDataRoot: userRoot,
@@ -3939,6 +4741,38 @@ async function handleDesktopRoutes(deps, input) {
 		return okResult({ ok: true });
 	}
 	return void 0;
+}
+
+//#endregion
+//#region src/host/surface.ts
+const SURFACES = [
+	"web",
+	"desktop",
+	"both",
+	"any"
+];
+const SURFACE_TEXT = "surface 必填：web / desktop / both / any";
+function normalizeSurface(v) {
+	return typeof v === "string" && SURFACES.includes(v) ? v : null;
+}
+function displayCovers(want, display) {
+	switch (want) {
+		case "any": return display === "web" || display === "desktop" || display === "both" || display === "none";
+		case "web": return display === "web" || display === "both";
+		case "desktop": return display === "desktop" || display === "both";
+		case "both": return display === "both";
+	}
+}
+function isDisplayed(display) {
+	return displayCovers("web", display) || displayCovers("desktop", display);
+}
+function pickVoiceSurface(display) {
+	if (displayCovers("desktop", display)) return "desktop";
+	if (displayCovers("web", display)) return "web";
+	return null;
+}
+function voiceTargetOfSurface(want) {
+	return want === "web" || want === "desktop" ? want : void 0;
 }
 
 //#endregion
@@ -3992,7 +4826,7 @@ function limitPool(pool, limit) {
 //#endregion
 //#region src/host/anim.ts
 /** 配置里的池子收窄：非数组、非字符串项一律丢弃。 */
-function strings(v) {
+function strings$1(v) {
 	return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "") : [];
 }
 /** 朝向收窄：只认两个字面量，其余（大小写、空白、非字符串）一律不算。 */
@@ -4003,14 +4837,14 @@ function animationNames(animations) {
 	const push = (names) => {
 		for (const n of names) if (!out.includes(n)) out.push(n);
 	};
-	push(strings(a.idle));
-	push(strings(a.turn));
-	push(strings(a.drag));
-	push(strings(a.clicks));
+	push(strings$1(a.idle));
+	push(strings$1(a.turn));
+	push(strings$1(a.drag));
+	push(strings$1(a.clicks));
 	const moves = a.moves && typeof a.moves === "object" ? a.moves : {};
 	push(Array.isArray(moves.actions) ? moves.actions.map((m) => m && typeof m === "object" ? m.name : void 0).filter((x) => typeof x === "string" && x !== "") : []);
 	if (Array.isArray(a.categories)) {
-		for (const c of a.categories) if (c && typeof c === "object") push(strings(c.actions));
+		for (const c of a.categories) if (c && typeof c === "object") push(strings$1(c.actions));
 	}
 	const events = a.events && typeof a.events === "object" ? a.events : {};
 	for (const key of Object.keys(events)) {
@@ -4018,9 +4852,10 @@ function animationNames(animations) {
 		if (!Array.isArray(pool)) continue;
 		const names = [];
 		for (const slot of pool) if (typeof slot === "string") names.push(slot);
-		else names.push(...strings(slot));
+		else names.push(...strings$1(slot));
 		push(names);
 	}
+	push(strings$1(a.baifan));
 	return out;
 }
 function normalizeHttpUrl(v) {
@@ -4115,6 +4950,9 @@ function normalizeBroadcastDuration(duration) {
 }
 function normalizeBroadcastAnim(anim) {
 	return anim !== false;
+}
+function normalizeBroadcastVoice(speak) {
+	return speak === true;
 }
 /**
 * `?pet=` → 实际落点（与 ./anim、./motion-cue 同一口径）：必填且必须真实存在。
@@ -4217,7 +5055,7 @@ function decideBubbleClear(args) {
 //#endregion
 //#region src/host/routes/interaction.ts
 async function handleInteractionRoutes(deps, input) {
-	const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, state, surfaceBlocked } = deps;
+	const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, sleep, state, surfaceBlocked } = deps;
 	const { body, method, rest, url } = input;
 	if (rest === "lock" || rest === "lock/release") {
 		const isRelease = rest === "lock/release";
@@ -4253,6 +5091,7 @@ async function handleInteractionRoutes(deps, input) {
 				if (d.reason === "lock-lost") extra.cause = d.cause;
 				return failResult(d.reason, d.message, extra);
 			}
+			sleep.wake(petId);
 			return okResult({
 				ok: true,
 				lockId: d.lockId,
@@ -4268,7 +5107,8 @@ async function handleInteractionRoutes(deps, input) {
 		try {
 			const who = requirePet(url.searchParams, () => readAllConfig(configPaths), { surface: true });
 			if (!who.ok) return who.res;
-			const r = await publishWhisper(who.petId);
+			const want = normalizeSurface(url.searchParams.get("surface"));
+			const r = await publishWhisper(who.petId, url.searchParams.get("image") ?? void 0, want === null ? void 0 : voiceTargetOfSurface(want));
 			if (r.ok) return okResult({
 				ok: true,
 				text: r.text,
@@ -4292,6 +5132,7 @@ async function handleInteractionRoutes(deps, input) {
 		const duration = normalizeBroadcastDuration(o.duration);
 		if (duration === null) return failResult("bad-request", "duration 必须是 ≥0 的有限数字（毫秒）");
 		const anim = normalizeBroadcastAnim(o.anim);
+		const speak = normalizeBroadcastVoice(o.speak);
 		try {
 			const cfg = readAllConfig(configPaths);
 			const d = decideBroadcast({
@@ -4310,11 +5151,14 @@ async function handleInteractionRoutes(deps, input) {
 			const blocked = lockBlocked(d.petId, url.searchParams);
 			if (blocked) return blocked;
 			const pic = d.url !== void 0 ? { url: d.url } : d.image !== void 0 ? { image: d.image } : {};
+			const want = normalizeSurface(url.searchParams.get("surface"));
+			const voiceTo = want === null ? void 0 : voiceTargetOfSurface(want);
 			state.publishSay(d.petId, {
 				text: d.text,
 				...pic,
 				duration: d.duration,
-				anim: d.anim
+				anim: d.anim,
+				...speak && voiceTo ? { voiceTo } : {}
 			}, { source: "broadcast" });
 			return okResult({ ok: true });
 		} catch (e) {
@@ -4566,27 +5410,6 @@ var PoseStore = class {
 		return this.byPet.size;
 	}
 };
-
-//#endregion
-//#region src/host/surface.ts
-const SURFACES = [
-	"web",
-	"desktop",
-	"both",
-	"any"
-];
-const SURFACE_TEXT = "surface 必填：web / desktop / both / any";
-function normalizeSurface(v) {
-	return typeof v === "string" && SURFACES.includes(v) ? v : null;
-}
-function displayCovers(want, display) {
-	switch (want) {
-		case "any": return display === "web" || display === "desktop" || display === "both" || display === "none";
-		case "web": return display === "web" || display === "both";
-		case "desktop": return display === "desktop" || display === "both";
-		case "both": return display === "both";
-	}
-}
 
 //#endregion
 //#region src/host/routes/motion.ts
@@ -4845,7 +5668,7 @@ const WEEKDAYS = [
 	"星期五",
 	"星期六"
 ];
-const DAY_MS = 864e5;
+const DAY_MS$1 = 864e5;
 const DEFAULT_AHEAD = 3;
 const DEFAULT_SPAN = 1;
 const DEFAULT_AFTER = 3;
@@ -5088,11 +5911,11 @@ function getLunarFormatter() {
 	return lunarFormatter ?? void 0;
 }
 function dayOfYear(date) {
-	return (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 1)) / DAY_MS;
+	return (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) - Date.UTC(date.getFullYear(), 0, 1)) / DAY_MS$1;
 }
 function dayOfYearOf(year, monthDay) {
 	const [month, day] = monthDay.split("-").map(Number);
-	return (Date.UTC(year, (month ?? 1) - 1, day ?? 1) - Date.UTC(year, 0, 1)) / DAY_MS;
+	return (Date.UTC(year, (month ?? 1) - 1, day ?? 1) - Date.UTC(year, 0, 1)) / DAY_MS$1;
 }
 /**
 * 公历日期 → 农历月日。
@@ -5422,6 +6245,37 @@ async function handleIntimacyRoutes(deps, input) {
 }
 
 //#endregion
+//#region src/host/routes/session.ts
+/** 会话 id 上限：DSH 的 id 形如 `session-<uuid>`（44 字符），128 已足够，更长的视为伪造输入。 */
+const MAX_SESSION_ID_CHARS = 128;
+/** 宿主在「还没有会话」时写进快照的哨兵值，不能当作跳转目标。 */
+const UNKNOWN_SESSION_ID = "unknown";
+async function handleSessionRoutes(deps, input) {
+	const isFocusSession = input.rest === "focus-session";
+	if (!isFocusSession) return void 0;
+	if (input.method !== "POST") return methodNotAllowed();
+	let payload;
+	try {
+		payload = JSON.parse(input.body ?? "");
+	} catch {
+		return invalidJson();
+	}
+	const sessionId = typeof payload?.sessionId === "string" ? payload.sessionId.trim() : "";
+	if (sessionId === "" || sessionId === UNKNOWN_SESSION_ID) return failResult("bad-request", "sessionId 必填");
+	if (sessionId.length > MAX_SESSION_ID_CHARS) return failResult("bad-request", `sessionId 超过 ${MAX_SESSION_ID_CHARS} 字符`);
+	const ts = Date.now();
+	deps.state.writeSection("focusSession", {
+		sessionId,
+		ts
+	});
+	return okResult({
+		ok: true,
+		sessionId,
+		ts
+	});
+}
+
+//#endregion
 //#region src/host/routes/state.ts
 async function handleStateRoutes(deps, input) {
 	const { EXTERNAL_WORK_SESSION, ctx, nextExternalWorkSeq, publishWorkStatus, state, workStatus } = deps;
@@ -5461,8 +6315,8 @@ async function handleStateRoutes(deps, input) {
 		const headers = { "cache-control": "no-cache, no-store" };
 		const parsed = parseStateWaitQuery(url.searchParams.get("since"), url.searchParams.get("timeout"));
 		if (parsed.kind === "error") return failResult("bad-request", parsed.error);
-		const current = state.read();
-		if (parsed.kind === "none" || current.counter !== parsed.since) return okResult(current, headers);
+		const current$3 = state.read();
+		if (parsed.kind === "none" || current$3.counter !== parsed.since) return okResult(current$3, headers);
 		const since = parsed.since;
 		return await new Promise((resolveWait) => {
 			let settled = false;
@@ -5529,6 +6383,287 @@ async function handleStateRoutes(deps, input) {
 }
 
 //#endregion
+//#region src/host/sleep.ts
+/** 文案池收窄：非数组、非字符串项一律丢弃（配置已校验，这里只防手工改坏的文件）。 */
+function textPool(value) {
+	return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item !== "") : [];
+}
+function pickSleepText(pool) {
+	return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : void 0;
+}
+function sleepTextsOf(conf) {
+	return {
+		start: textPool(conf.sleepStartTexts),
+		end: textPool(conf.sleepEndTexts),
+		refuse: textPool(conf.sleepRefuseTexts)
+	};
+}
+/** 池子收窄：非数组、非字符串项一律丢弃（配置已校验，这里只防手工改坏的文件）。 */
+function strings(value) {
+	return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item !== "") : [];
+}
+function pickSleepNames(animations, roll = Math.random) {
+	const conf = animations && typeof animations === "object" ? animations : {};
+	const sets = Array.isArray(conf.sleep) ? conf.sleep : [];
+	const usable = [];
+	for (const set of sets) {
+		if (!set || typeof set !== "object") continue;
+		const entry = set;
+		const start = strings(entry.start);
+		const loop = strings(entry.loop);
+		const end = strings(entry.end);
+		if (!start.length || !loop.length || !end.length) continue;
+		usable.push({
+			start: start[Math.floor(roll() * start.length)],
+			loop: loop[Math.floor(roll() * loop.length)],
+			end: end[Math.floor(roll() * end.length)]
+		});
+	}
+	if (!usable.length) return null;
+	return usable[Math.floor(roll() * usable.length)];
+}
+var SleepStore = class {
+	constructor(opts) {
+		this.sets = new Map();
+		this.onChange = opts?.onChange ?? (() => {});
+	}
+	/** 这只宠物此刻是否在睡。 */
+	sleeping(petId) {
+		return this.sets.has(petId);
+	}
+	/** 本次睡觉挑中的那套名字；没睡时 null。 */
+	setOf(petId) {
+		return this.sets.get(petId) ?? null;
+	}
+	/**
+	* 进睡。已经在睡时保持原套、不重写叶子——重复调用（接口被连点、命令与菜单同时触发）
+	* 不该把动画从头放一遍。
+	* @returns 这次是否真的进入了睡觉状态。
+	*/
+	enter(petId, set) {
+		if (this.sets.has(petId)) return false;
+		this.sets.set(petId, set);
+		this.onChange(petId, {
+			sleeping: true,
+			...set
+		});
+		return true;
+	}
+	/**
+	* 醒来。
+	* @returns 这次是否真的从睡眠状态退出（没在睡 = 幂等空操作）。
+	*/
+	wake(petId) {
+		if (!this.sets.delete(petId)) return false;
+		this.onChange(petId, { sleeping: false });
+		return true;
+	}
+	/** 全部唤醒（插件卸载 / 桌面 Helper 重启路径）：否则渲染端要一直停在睡姿。 */
+	wakeAll() {
+		for (const petId of [...this.sets.keys()]) this.wake(petId);
+	}
+	/** 当前是否有任意宠物在睡（余额全局拉取据此决定要不要整拍跳过）。 */
+	anySleeping() {
+		return this.sets.size > 0;
+	}
+	/** 在睡的宠物 id（测试与日志用；顺序不保证）。 */
+	ids() {
+		return [...this.sets.keys()];
+	}
+};
+
+//#endregion
+//#region src/host/routes/sleep.ts
+async function handleSleepRoutes(deps, input) {
+	const { configPaths, lock, requirePet, sleep, state } = deps;
+	const { method, rest, url } = input;
+	const isSleep = rest === "sleep";
+	const isWake = rest === "wake";
+	if (!isSleep && !isWake) return void 0;
+	if (method !== "POST") return methodNotAllowed();
+	try {
+		const who = requirePet(url.searchParams, () => readAllConfig(configPaths));
+		if (!who.ok) return who.res;
+		const texts = sleepTextsOf(who.conf);
+		if (rest === "wake") {
+			const changed$1 = sleep.wake(who.petId);
+			const text = pickSleepText(texts.end);
+			if (text !== void 0) state.writePet(who.petId, "say", {
+				text,
+				anim: false
+			});
+			return okResult({
+				ok: true,
+				sleeping: false,
+				changed: changed$1
+			});
+		}
+		if (lock.locked(who.petId)) return failResult("locked", "这只桌宠正被占用，不能睡觉");
+		const names = pickSleepNames(who.conf.animations);
+		if (names === null) return failResult("no-sleep-animations", "这只宠物没有配置睡觉动画（animations.sleep）");
+		const changed = sleep.enter(who.petId, names);
+		if (changed) {
+			const text = pickSleepText(texts.start);
+			if (text !== void 0) state.writePet(who.petId, "say", {
+				text,
+				anim: false
+			});
+		}
+		const active = sleep.setOf(who.petId) ?? names;
+		return okResult({
+			ok: true,
+			sleeping: true,
+			changed,
+			start: active.start,
+			loop: active.loop,
+			end: active.end
+		});
+	} catch (e) {
+		return failResult("generate-error", e instanceof Error ? e.message : String(e));
+	}
+}
+
+//#endregion
+//#region src/host/routes/todos.ts
+/** 路径前缀：`todos` 或 `todos/<id>`。 */
+const PREFIX = "todos";
+/** Object.prototype.hasOwnProperty 的短别名：PATCH 要把「没传」与「传了 null」分开。 */
+const has = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
+/** 解析请求体：不是 JSON 对象 → null。 */
+function parseObjectBody(body) {
+	if (body === void 0) return null;
+	let parsed;
+	try {
+		parsed = JSON.parse(body);
+	} catch {
+		return null;
+	}
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+	return parsed;
+}
+/**
+* PATCH 的字段校验：出现的键逐个校验，任一非法整包拒绝。
+*
+* @param raw - 已解析的请求体。
+* @returns 待写入的字段集合；没有可写字段时返回空对象。
+*/
+function readPatch(raw) {
+	const patch = {};
+	if (has(raw, "text")) {
+		const text = normalizeTodoText(raw.text);
+		if (text === null) return null;
+		patch.text = text;
+	}
+	if (has(raw, "dueAt")) {
+		const due = normalizeTodoDueAt(raw.dueAt);
+		if (!due.ok) return null;
+		patch.dueAt = due.value;
+	}
+	if (has(raw, "done")) {
+		if (typeof raw.done !== "boolean") return null;
+		patch.done = raw.done;
+	}
+	return patch;
+}
+async function handleTodoRoutes(deps, input) {
+	const { body, method, rest } = input;
+	if (rest !== PREFIX && !rest.startsWith(PREFIX + "/")) return void 0;
+	const { log, todos } = deps;
+	try {
+		if (rest === "todos") {
+			if (method === "GET") return okResult({
+				ok: true,
+				todos: await todos.list()
+			});
+			if (method !== "POST") return methodNotAllowed();
+			if (Buffer.byteLength(body ?? "", "utf8") > TODO_BODY_MAX_BYTES) return payloadTooLarge();
+			const raw = parseObjectBody(body);
+			if (raw === null) return invalidJson();
+			const text = normalizeTodoText(raw.text);
+			if (text === null) return failResult("bad-request", `text 必须是非空字符串，最多 ${TODO_TEXT_MAX} 个字符`);
+			const due = normalizeTodoDueAt(raw.dueAt);
+			if (!due.ok) return failResult("bad-request", "dueAt 必须是毫秒时间戳或 null");
+			return okResult({
+				ok: true,
+				todo: await todos.create({
+					text,
+					dueAt: due.value
+				})
+			});
+		}
+		const id = rest.slice(PREFIX.length + 1);
+		if (id === "" || id.includes("/")) return failResult("bad-request", "todo id 不合法");
+		if (method === "PATCH") {
+			if (Buffer.byteLength(body ?? "", "utf8") > TODO_BODY_MAX_BYTES) return payloadTooLarge();
+			const raw = parseObjectBody(body);
+			if (raw === null) return invalidJson();
+			const patch = readPatch(raw);
+			if (patch === null) return failResult("bad-request", "text / dueAt / done 至少一个字段不合法");
+			if (Object.keys(patch).length === 0) return failResult("bad-request", "没有可更新的字段");
+			const todo = await todos.update(id, patch);
+			if (todo === null) return failResult("todo-not-found", "没有这条待办");
+			return okResult({
+				ok: true,
+				todo
+			});
+		}
+		if (method === "DELETE") return okResult({
+			ok: true,
+			removed: await todos.remove(id)
+		});
+		return methodNotAllowed();
+	} catch (error) {
+		log.warn(`[dsh-zdd-pet] 待办读写失败：${error instanceof Error ? error.message : String(error)}`);
+		return failResult("internal-error", "dsh-zdd-pet: 待办读写失败");
+	}
+}
+
+//#endregion
+//#region src/host/routes/voice.ts
+async function handleVoiceRoutes(deps, input) {
+	const { body, method, rest, signal } = input;
+	if (rest === "voice/voices") {
+		if (method !== "GET") return methodNotAllowed();
+		return okResult({
+			ok: true,
+			voices: deps.voice.listVoices()
+		});
+	}
+	if (rest === "voice/speak") {
+		if (method !== "POST") return methodNotAllowed();
+		let parsed;
+		try {
+			parsed = JSON.parse(body ?? "null");
+		} catch {
+			return invalidJson();
+		}
+		const result = await deps.voice.speak(parsed);
+		if (!result.ok) return failResult(result.reason, result.message);
+		return {
+			kind: "file",
+			file: result.file,
+			contentType: "audio/mpeg"
+		};
+	}
+	if (rest === "voice/hear") {
+		if (method !== "POST") return methodNotAllowed();
+		let parsed;
+		try {
+			parsed = JSON.parse(body ?? "null");
+		} catch {
+			return invalidJson();
+		}
+		const result = await deps.speech.hear(parsed, signal);
+		if (!result.ok) return failResult(result.reason, result.message);
+		return okResult({
+			ok: true,
+			text: result.text
+		});
+	}
+	return void 0;
+}
+
+//#endregion
 //#region src/host/routes/index.ts
 /** 处理器顺序：越靠前越先匹配；素材兜底必须在末尾。 */
 const HANDLERS$1 = [
@@ -5536,18 +6671,43 @@ const HANDLERS$1 = [
 	handleDesktopRoutes,
 	handleMenuRoutes,
 	handleStateRoutes,
+	handleSessionRoutes,
 	handleBalanceRoutes,
 	handleInteractionRoutes,
 	handleMotionRoutes,
 	handlePlaybackRoutes,
 	handlePomodoroRoutes,
 	handleIntimacyRoutes,
+	handleSleepRoutes,
 	handleChatRoutes,
 	handleAttachmentRoutes,
+	handleTodoRoutes,
+	handleVoiceRoutes,
+	handleAvatarRoutes,
+	handleCharacterRoutes,
 	handleAssetsRoutes
 ];
+/**
+* 睡觉期间要拒绝的端点：只列「打扰类」。
+*
+* 刻意用白名单而不是黑名单——新增端点默认放行，不会因为忘了排除而把维护动作（改显示位置、
+* 重载配置）或拖拽链路（/position、/throw）一起锁死；反过来，漏列一个打扰端点只是它还能用，
+* 不会造成「宠物叫不醒」。
+*/
+function sleepGated(rest, method) {
+	if (rest === "chat") return method === "POST";
+	if (rest === "todos") return method === "POST" || method === "DELETE";
+	return rest === "anim" || rest === "whisper" || rest === "balance" || rest === "broadcast" || rest === "bubble/clear" || rest === "menu/click" || rest === "voice";
+}
 function createPetRouter(deps) {
 	return async (url, rest, method, body, signal) => {
+		if (sleepGated(rest, method)) {
+			const petId = String(url.searchParams.get("pet") ?? "").trim();
+			if (petId) {
+				const blocked = deps.sleepBlocked(petId, url.searchParams);
+				if (blocked) return blocked;
+			}
+		}
 		for (const handle of HANDLERS$1) {
 			const result = await handle(deps, {
 				url,
@@ -5575,7 +6735,7 @@ function createHttpRoute(deps) {
 	*  signal 可选：调用方断开时中止挂起等待（只有 /playback 的 wait 分支会用到；管道侧不传）。 */
 	const handlePetRoute = async (rawUrl, method, body, signal) => {
 		const url = new URL(rawUrl, "http://localhost");
-		const rest = decodeURIComponent(url.pathname.slice(ROUTE_PATH.length + 1));
+		const rest = decodeURIComponent(url.pathname.slice(ROUTE_SEGMENT.length + 1));
 		const run = () => dispatchPetRoute(url, rest, method, body, signal);
 		const isConfigQueue = rest === "config" || (rest === "pet-display" || rest === "pet-config") && method === "POST";
 		if (isConfigQueue) {
@@ -5591,13 +6751,14 @@ function createHttpRoute(deps) {
 function registerHttpRoute(ctx, handlePetRoute) {
 	ctx.effect(() => ctx.webServer.register({
 		kind: "prefix",
-		path: ROUTE_PATH,
+		path: ROUTE_SEGMENT,
 		handler: async (req, res) => {
 			const abort = new AbortController();
 			const onClose = () => abort.abort();
 			res.on("close", onClose);
 			try {
-				const body = req.method === "PUT" || req.method === "POST" ? await readBody(req) : void 0;
+				const readsBody = req.method === "PUT" || req.method === "POST" || req.method === "PATCH";
+				const body = readsBody ? await readBody(req) : void 0;
 				const result = await handlePetRoute(req.url ?? "/", req.method ?? "GET", body, abort.signal);
 				res.off("close", onClose);
 				if (result.kind === "json") sendJson(res, result.status, result.obj, result.headers);
@@ -5615,7 +6776,7 @@ function registerHttpRoute(ctx, handlePetRoute) {
 				}
 			}
 		}
-	}), "dsh-zdd-pet: /dsh-zdd-pet-7340 asset route");
+	}), `dsh-zdd-pet: ${ROUTE_SEGMENT} asset route`);
 }
 
 //#endregion
@@ -5636,7 +6797,7 @@ function registerLifecycle(deps) {
 //#endregion
 //#region src/host/plugin/command-chat.ts
 function registerChatCommand(deps) {
-	const { ctx, chatWithPet, log, publishWhisper, resolveActivePetId } = deps;
+	const { ctx, chatWithPet, log, publishWhisper, resolveActivePetId, sleep, sleepRefusalText } = deps;
 	ctx.effect(() => ctx.commands.register({
 		name: "chat",
 		description: "与桌宠对话：留空 = 碎碎念一句；输入消息 = 正常对话",
@@ -5646,6 +6807,10 @@ function registerChatCommand(deps) {
 			if (!petId) return {
 				kind: "error",
 				text: "没有可交互的桌宠"
+			};
+			if (sleep.sleeping(petId)) return {
+				kind: "error",
+				text: sleepRefusalText(petId)
 			};
 			const text = rawInput.trim();
 			if (!text) {
@@ -5778,17 +6943,22 @@ function automaticWhisperSchedule(policy, petEnabled, configuredPeriodSec) {
 		enabled: petEnabled,
 		periodSec: configuredPeriodSec
 	};
-	const period = policy.whisperIntervalSec();
 	return {
-		enabled: petEnabled && policy.isReady() && policy.canWhisper(),
-		periodSec: Number.isFinite(period) ? Math.max(60, period) : 300
+		enabled: petEnabled && policy.isReady(),
+		periodSec: configuredPeriodSec
 	};
 }
 
 //#endregion
 //#region src/host/plugin/loops.ts
+/** 梦话周期的兜底值（秒）：配置里 eventsRefreshSec.sleepTalk 缺失/非法时用它。 */
+const SLEEP_TALK_DEFAULT_SEC = 60;
+/** 错峰队列里相邻两只之间的间隔（ms）：同拍到点的宠物依次开口，才会错开冒泡与语音。 */
+const WHISPER_STAGGER_MS = 1e4;
+/** 错峰队列上限：6 只 × 10s = 60s，正好覆盖最短周期，队列不会追着拍跑。 */
+const WHISPER_QUEUE_MAX = 6;
 function registerLoops(deps) {
-	const { ctx, balancePeriodSec, configPaths, deliverCue, lastWhisperAt, lock, log, pickPetMeme, publishWhisper, refreshBalance, standaloneAiPolicy, whisperPeriodSec } = deps;
+	const { ctx, balancePeriodSec, configPaths, deliverCue, lastWhisperAt, lock, log, pickPetMeme, publishWhisper, publishSleepTalk, refreshBalance, sleep, standaloneAiPolicy, whisperPeriodSec } = deps;
 	ctx.effect(() => {
 		let disposed = false;
 		let timer = null;
@@ -5801,8 +6971,9 @@ function registerLoops(deps) {
 			try {
 				const cfg = readAllConfig(configPaths);
 				sec = balancePeriodSec(cfg);
-				if (flattenPetList(cfg).some((p) => p.balanceEnabled === true)) await refreshBalance();
-				else log.info("[dsh-zdd-pet] 余额周期跳过：没有启用余额的宠物");
+				const pets = flattenPetList(cfg);
+				if (pets.some((p) => p.balanceEnabled === true && !sleep.sleeping(String(p.id ?? "")))) await refreshBalance();
+				else log.info("[dsh-zdd-pet] 余额周期跳过：没有醒着且启用余额的宠物");
 			} catch (e) {
 				log.warn("[dsh-zdd-pet] 余额周期读配置失败，周期刷新已停止（重启 DSH 后恢复）：" + (e instanceof Error ? e.message : String(e)));
 				return;
@@ -5818,6 +6989,34 @@ function registerLoops(deps) {
 	ctx.effect(() => {
 		let disposed = false;
 		let timer = null;
+		/** 待发布的宠物（FIFO）；一次只发一只，两只之间隔 {@link WHISPER_STAGGER_MS}。 */
+		const pending = [];
+		/** 队列内相邻两只之间的等待句柄；与拍定时器分开计，两者都要在卸载时清掉。 */
+		let drainTimer = null;
+		/** 是否已经有一只正在生成；同一时刻只允许一只，否则两只仍会同时写出气泡。 */
+		let pumping = false;
+		/**
+		* 从队列取下一只发布，等它写完再隔一个间隔发下一只。
+		*
+		* 间隔从「文字真的写进状态」算起，而不是从发起点算：单次生成耗时在 3–15 秒之间波动，
+		* 从发起点算的固定间隔会被慢的那只吃掉，两只又撞到一起。
+		*/
+		async function pump() {
+			if (disposed || pumping || drainTimer !== null) return;
+			const petId = pending.shift();
+			if (petId === void 0) return;
+			pumping = true;
+			try {
+				await publishWhisper(petId, void 0, void 0, "whisper");
+			} catch {} finally {
+				pumping = false;
+			}
+			if (disposed || pending.length === 0) return;
+			drainTimer = setTimeout(() => {
+				drainTimer = null;
+				pump();
+			}, WHISPER_STAGGER_MS);
+		}
 		function arm(sec) {
 			if (disposed) return;
 			timer = setTimeout(() => void tick(), Math.max(1e3, sec * 1e3));
@@ -5840,7 +7039,12 @@ function registerLoops(deps) {
 					checked += 1;
 					const schedule = automaticWhisperSchedule(standaloneAiPolicy(), pet.whisperEnabled === true, whisperPeriodSec(found.conf));
 					if (!schedule.enabled) {
-						skipped.push(petId + ": " + (pet.whisperEnabled === true ? "独立模式未授权自动碎碎念" : "whisperEnabled=false"));
+						skipped.push(petId + ": " + (pet.whisperEnabled === true ? "独立模式 AI 未就绪" : "whisperEnabled=false"));
+						continue;
+					}
+					const display = String(pet.display ?? "");
+					if (!isDisplayed(display)) {
+						skipped.push(petId + ": display=none");
 						continue;
 					}
 					const sec = schedule.periodSec;
@@ -5853,13 +7057,22 @@ function registerLoops(deps) {
 						skipped.push(petId + ": 占用锁跳过");
 						continue;
 					}
+					if (sleep.sleeping(petId)) {
+						skipped.push(petId + ": 睡觉中");
+						continue;
+					}
+					if (pending.length >= WHISPER_QUEUE_MAX) {
+						skipped.push(petId + ": 错峰队列已满");
+						continue;
+					}
 					due += 1;
-					log.info(`[dsh-zdd-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），开始生成`);
 					lastWhisperAt.set(petId, now);
-					publishWhisper(petId).catch(() => {});
+					log.info(`[dsh-zdd-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），入队待发`);
+					pending.push(petId);
 				}
+				pump();
 				if (Number.isFinite(min)) next = min;
-				log.info(`[dsh-zdd-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` + (skipped.length > 0 ? `（${skipped.join("；")}）` : "") + `；下一拍 ${next}s`);
+				log.info(`[dsh-zdd-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` + (due > 1 ? `；${due} 只按 ${WHISPER_STAGGER_MS / 1e3}s 间隔依次说` : "") + (skipped.length > 0 ? `（${skipped.join("；")}）` : "") + `；下一拍 ${next}s`);
 			} catch (e) {
 				log.warn("[dsh-zdd-pet] 碎碎念调度读配置失败，自动碎碎念已停止（重启 DSH 后恢复）：" + (e instanceof Error ? e.message : String(e)));
 				return;
@@ -5870,6 +7083,7 @@ function registerLoops(deps) {
 		return () => {
 			disposed = true;
 			if (timer !== null) clearTimeout(timer);
+			if (drainTimer !== null) clearTimeout(drainTimer);
 		};
 	}, "dsh-zdd-pet: whisper poll");
 	ctx.effect(() => {
@@ -5923,16 +7137,64 @@ function registerLoops(deps) {
 			if (timer !== null) clearTimeout(timer);
 		};
 	}, "dsh-zdd-pet: pomodoro poll");
+	ctx.effect(() => {
+		let disposed = false;
+		let timer = null;
+		/** petId → 上一次说梦话的时刻；醒来不清，下次睡着时按周期自然接着算。 */
+		const lastTalkAt = new Map();
+		function arm(sec) {
+			if (disposed) return;
+			timer = setTimeout(() => void tick(), Math.max(1e3, sec * 1e3));
+		}
+		function tick() {
+			let next = SLEEP_TALK_DEFAULT_SEC;
+			try {
+				const cfg = readAllConfig(configPaths);
+				const now = Date.now();
+				let min = Infinity;
+				for (const petId of sleep.ids()) {
+					const found = findPetInstance(cfg, petId);
+					if (!found) continue;
+					const sec = sleepTalkPeriodSec(found.conf);
+					min = Math.min(min, sec);
+					if (now - (lastTalkAt.get(petId) ?? 0) < sec * 1e3) continue;
+					lastTalkAt.set(petId, now);
+					publishSleepTalk(petId).catch(() => {});
+				}
+				if (Number.isFinite(min)) next = min;
+			} catch (e) {
+				log.warn("[dsh-zdd-pet] 梦话调度读配置失败，说梦话已停止（重启 DSH 后恢复）：" + (e instanceof Error ? e.message : String(e)));
+				return;
+			}
+			arm(next);
+		}
+		tick();
+		return () => {
+			disposed = true;
+			if (timer !== null) clearTimeout(timer);
+		};
+	}, "dsh-zdd-pet: sleep talk poll");
+}
+/** 梦话周期（秒）：条目级 eventsRefreshSec.sleepTalk，读不到按 60 兜底（与配置注释同一口径）。 */
+function sleepTalkPeriodSec(conf) {
+	const table = conf.eventsRefreshSec;
+	const sec = Number(table?.sleepTalk);
+	return Number.isFinite(sec) && sec > 0 ? sec : SLEEP_TALK_DEFAULT_SEC;
 }
 
 //#endregion
 //#region src/host/plugin/command-balance.ts
 function registerBalanceCommand(deps) {
-	const { ctx, refreshBalance } = deps;
+	const { ctx, effectivePetList, refreshBalance, sleep, sleepRefusalText } = deps;
 	ctx.effect(() => ctx.commands.register({
 		name: "balance",
 		description: "手动触发桌宠余额显示（立即弹出余额气泡）",
 		handler: () => {
+			const visible = effectivePetList().filter((pet) => String(pet.display ?? "") !== "none");
+			if (visible.length > 0 && visible.every((pet) => sleep.sleeping(String(pet.id ?? "")))) return {
+				kind: "error",
+				text: sleepRefusalText(String(visible[0].id ?? ""))
+			};
 			refreshBalance(true);
 			return {
 				kind: "success",
@@ -6014,12 +7276,12 @@ function trimEdges(token) {
 }
 function tokenizeCommand(command) {
 	const tokens = [];
-	let current = "";
+	let current$3 = "";
 	let quote = null;
 	for (const ch of command) {
 		if (quote !== null) {
 			if (ch === quote) quote = null;
-			else current += ch;
+			else current$3 += ch;
 			continue;
 		}
 		if (ch === "\"" || ch === "'" || ch === "`") {
@@ -6027,13 +7289,13 @@ function tokenizeCommand(command) {
 			continue;
 		}
 		if (/\s/.test(ch) || ch === ";" || ch === "|") {
-			if (current !== "") tokens.push(current);
-			current = "";
+			if (current$3 !== "") tokens.push(current$3);
+			current$3 = "";
 			continue;
 		}
-		current += ch;
+		current$3 += ch;
 	}
-	if (current !== "") tokens.push(current);
+	if (current$3 !== "") tokens.push(current$3);
 	return tokens.map(trimEdges).filter((token) => token !== "");
 }
 /** arguments 的解析上限（UTF-16 码元数）：超过就不解析（write / edit 会带上整个文件内容）。 */
@@ -6522,6 +7784,21 @@ function hasBlockingActivity(activity) {
 	}
 	return false;
 }
+/** 回复开头在会话状态里的缓存上限：只用于一条 toast，留太长没有意义。 */
+const MAX_REPLY_TEXT = 200;
+function lastAssistantText(event) {
+	if (event?.type !== "assistant/message") return null;
+	const content = event.data?.message?.content;
+	if (!Array.isArray(content)) return null;
+	for (let i = content.length - 1; i >= 0; i -= 1) {
+		const block = content[i];
+		if (block?.type !== "text" || typeof block.text !== "string") continue;
+		const text = block.text.replace(/\s+/g, " ").trim();
+		if (text === "") continue;
+		return text.length > MAX_REPLY_TEXT ? text.slice(0, MAX_REPLY_TEXT) : text;
+	}
+	return null;
+}
 function turnEndNotifyKind(kind) {
 	if (kind === "completed") return "completed";
 	if (kind === "error" || kind === "max-tokens") return kind;
@@ -6540,7 +7817,7 @@ function parseToolQuestions(args) {
 		return null;
 	}
 }
-function reduceNotifyFrame(event) {
+function reduceNotifyFrame(event, replyText) {
 	if (!event?.type) return null;
 	switch (event.type) {
 		case "turn/end": {
@@ -6551,7 +7828,10 @@ function reduceNotifyFrame(event) {
 				type: "session/event",
 				event: {
 					type: "turn/end",
-					data: { reason }
+					data: kind === "completed" && replyText ? {
+						reason,
+						text: replyText
+					} : { reason }
 				}
 			};
 		}
@@ -6699,7 +7979,7 @@ function trackToolEvent(ledger, sessionId, input) {
 	return void 0;
 }
 function registerSessionWatch(deps) {
-	const { ctx, cancelTerminalCleanup, clearConfirm, deliverComplete, deliverConfirm, deliverEasterEgg, lastTodoText, log, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
+	const { ctx, cancelTerminalCleanup, clearConfirm, deliverComplete, deliverConfirm, deliverEasterEgg, lastTodoText, log, lastReplyText, notifyActivityTimers, publishWorkStatus, pushNotifyFrame, scheduleCompletionNotify, scheduleTerminalCleanup, terminalTimers, toolsInFlight, turnFlags, workStatus } = deps;
 	ctx.effect(() => {
 		/** 当前正在等待用户确认的会话集合：确认气泡是常驻的，收到结果后要按会话清掉。 */
 		const pendingConfirms = new Set();
@@ -6820,11 +8100,16 @@ function registerSessionWatch(deps) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- session/event 载荷无公开类型，any 只用于接收，函数内立刻交给 shouldNotifySession / reduceNotifyFrame 推导
 			(session, event) => {
 				if (!shouldNotifySession(session)) return;
+				if (event?.type === "assistant/message") {
+					const text = lastAssistantText(event);
+					if (text) lastReplyText.set(sessionIdOf(session), text);
+				}
 				if (isCompletionTurnEnd(event)) {
 					deliverComplete("done", completeText("done"));
 					scheduleCompletionNotify(sessionIdOf(session), event);
 					return;
 				}
+				if (event?.type === "turn/end") lastReplyText.delete(sessionIdOf(session));
 				const frame = reduceNotifyFrame(event);
 				const errKind = turnEndNotifyKind(event?.type === "turn/end" ? event.data?.reason?.kind : void 0);
 				if (errKind === "error" || errKind === "max-tokens") {
@@ -6948,6 +8233,10 @@ function toBridgeResponse(id, result) {
 //#region src/host/plugin/desktop/spawn.ts
 /** 宿主是不是 DSH 桌面应用（Electron 宿主）。 */
 const isDesktopHost = () => Boolean(process.versions.electron);
+function resolveOpenTarget(siteUrl, desktopHost) {
+	if (desktopHost) return "desktop";
+	return siteUrl.includes("/standalone-ai/") ? "standalone" : "web";
+}
 function createDesktopSpawn(deps) {
 	const { ctx, getHandlePetRoute, log, reportDownload, thumbUserRoot, getHasDesktopPet, desktopPetList, getTrayOn } = deps;
 	let desktopModeEverActive = false;
@@ -6978,15 +8267,18 @@ function createDesktopSpawn(deps) {
 			return;
 		}
 		portWaitAttempts = 0;
-		const origin = `http://127.0.0.1:${port}`;
+		let origin = `http://127.0.0.1:${port}`;
+		try {
+			origin = ctx.webServer.getOrigin();
+		} catch {}
 		const siteUrl = ctx.connection.authenticatedUrl(origin);
-		const configUrl = `${origin}${ROUTE_PATH}/config`;
+		const configUrl = `${origin}${ROUTE_SEGMENT}/config`;
 		helper = new HelperProcess({
 			electronPath,
 			env: {
 				DSH_PET_CONFIG_URL: configUrl,
 				DSH_PET_SITE_URL: siteUrl,
-				DSH_PET_OPEN_TARGET: isDesktopHost() ? "desktop" : "site",
+				DSH_PET_OPEN_TARGET: resolveOpenTarget(siteUrl, isDesktopHost()),
 				DSH_PET_SCALE: "1",
 				DSH_PET_BRIDGE: "1",
 				DSH_PET_PETS: JSON.stringify(desktopPetList())
@@ -7075,11 +8367,18 @@ function createDesktopSpawn(deps) {
 //#endregion
 //#region src/host/plugin/desktop/sync.ts
 function createDesktopSync(deps) {
-	const { log, logDesktopDecision, startHelper, stopHelperAndWait } = deps;
+	const { log, logDesktopDecision, desktopPetList, startHelper, stopHelperAndWait } = deps;
+	/** 同进程内跑 helper（打包应用）：没有子进程可重启，只能让 helper 自己重建窗口。 */
+	const inProcessHost = process.env.DSH_PET_IN_PROCESS === "1";
 	let desktopSyncQueue = Promise.resolve();
 	const restartDesktop = () => {
 		desktopSyncQueue = desktopSyncQueue.then(async () => {
 			logDesktopDecision();
+			if (inProcessHost) {
+				process.env.DSH_PET_PETS = JSON.stringify(desktopPetList());
+				await globalThis.__dshPetRebuildUi?.();
+				return;
+			}
 			await stopHelperAndWait("desktop-config-change");
 			startHelper();
 		}).catch((e) => {
@@ -7348,10 +8647,46 @@ function windowsDetail(v) {
 	}
 	return rows.length > 0 ? rows : windowsRows(v);
 }
+/** 紧凑计数：1.2B / 96.0M / 478.3K，千以下取整。固定一位小数——同一页三个数字宽度稳定，不随取值跳动。 */
+function compactCount(n) {
+	if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+	if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+	if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+	return String(Math.round(n));
+}
+/**
+* 第三页：本期累计用量。一行 `usage` 承载整张卡，两端摆成三行两列——
+* 「Token / 总量」「输入 / 输出」「本期请求数 / 花费」，总量是唯一的大字。
+*
+* 服务商没给这项数据时返回 undefined，由页数判定决定气泡只有两页；给的一半数字不会被拼进来。
+*/
+function windowsUsage(v) {
+	const u = v.usage;
+	if (!u) return void 0;
+	const total = compactCount(u.totalTokens);
+	const input = compactCount(u.inputTokens) + " 入";
+	const output = compactCount(u.outputTokens) + " 出";
+	const period = "本期 " + u.requests + " 次";
+	const spend = "$" + u.spentUsd.toFixed(2);
+	const sum = u.inputTokens + u.outputTokens;
+	const inputPercent = sum > 0 ? u.inputTokens / sum * 100 : void 0;
+	return [{
+		role: "usage",
+		text: "Token " + total + " · " + input + " / " + output + " · " + period + " · " + spend,
+		title: "Token",
+		total,
+		input,
+		output,
+		period,
+		spend,
+		inputPercent
+	}];
+}
 const windowsHandler = {
 	percent: windowsPercent,
 	rows: windowsRows,
-	detail: windowsDetail
+	detail: windowsDetail,
+	usage: windowsUsage
 };
 
 //#endregion
@@ -7430,7 +8765,7 @@ function pickBalanceGag(cfg, rand = Math.random) {
 //#endregion
 //#region src/host/plugin/balance-poll.ts
 function createBalancePoll(deps) {
-	const { ctx, configPaths, deliverCue, getActivePetId, log, memeValid, state } = deps;
+	const { ctx, configPaths, deliverCue, getActivePetId, log, memeValid, state, standaloneAiBalance } = deps;
 	const gagStates = new Map();
 	/**
 	* 余额告急演出：额度快用光时让桌宠跳出来演一段（带表情包）。
@@ -7513,10 +8848,12 @@ function createBalancePoll(deps) {
 			manual: true
 		} : v;
 		try {
-			const sel = ctx.agentDefaultModel.currentSelection();
+			const standalone = standaloneAiBalance();
+			const provider = standalone?.provider || ctx.agentDefaultModel.currentSelection().provider;
 			const result = await queryBalance(
-				sel.provider,
+				provider,
 				async (ref) => {
+					if (standalone?.apiKey) return standalone.apiKey;
 					const rc = await ctx.credentials.resolve(credentialRef(ref));
 					return rc?.value;
 				},
@@ -7568,6 +8905,44 @@ function createBalancePoll(deps) {
 		refreshBalance,
 		resolveActivePetId,
 		petDisplayName
+	};
+}
+
+//#endregion
+//#region src/host/chat-action.ts
+function chatActionNames(animations) {
+	const a = animations && typeof animations === "object" ? animations : {};
+	if (!Array.isArray(a.categories)) return [];
+	const out = [];
+	for (const category of a.categories) {
+		if (!category || typeof category !== "object") continue;
+		const actions = category.actions;
+		if (!Array.isArray(actions)) continue;
+		for (const name$1 of actions) {
+			if (typeof name$1 !== "string" || name$1 === "") continue;
+			if (!out.includes(name$1)) out.push(name$1);
+		}
+	}
+	return out;
+}
+function actionInstruction(names) {
+	return "\n\n[动作] 回复结尾可选做一个动作给用户看，从下列清单里挑最贴合当前语境的：\n" + names.map((name$1) => "- " + name$1).join("\n") + "\n挑中就在回复最后另起一行写 [动作:名称]（名称原样照抄）；没有合适的就完全不要写这个标记。";
+}
+function extractChatAction(text, names) {
+	const tag = /\[动作[:：]\s*([^\]\n]+?)\s*\]/g;
+	let action;
+	let tagged = false;
+	const cleaned = text.replace(tag, (_tag, raw) => {
+		tagged = true;
+		const name$1 = raw.trim();
+		if (action === void 0 && names.includes(name$1)) action = name$1;
+		return "";
+	});
+	if (!tagged) return { text };
+	const body = cleaned.replace(/[ \t]+$/gm, "").replace(/\n{2,}/g, "\n").trim();
+	return action === void 0 ? { text: body } : {
+		text: body,
+		action
 	};
 }
 
@@ -7636,125 +9011,6 @@ function modelCandidates(ctx, preferred) {
 }
 function modelLabel(m) {
 	return m.provider + "/" + m.model;
-}
-
-//#endregion
-//#region src/host/chat.ts
-/** 单次生成超时（ms）：对话等 LLM 回复，60s 足够。 */
-const TIMEOUT_MS$1 = 6e4;
-/** 配图指令：附在 user 正文之后（紧邻回答位置，模型更容易遵守）。
-*  交给模型选而不是随机抽：对话有真实上下文（用户输入 + 历史），按语境挑才贴合。 */
-function imageInstruction(pool) {
-	return "\n\n[配图] 回复结尾可选附一张表情包给用户看，从下列清单里挑最贴合当前语境的：\n" + memeCatalog(pool) + "\n挑中就在回复最后另起一行写 [图:名称]（名称原样照抄）；没有合适的就完全不要写这个标记。";
-}
-async function generateChat(input) {
-	const { ctx, system, history, userText, preferred, image } = input;
-	const pool = [...input.pool ?? []];
-	const candidates = modelCandidates(ctx, preferred);
-	if (candidates.length === 0) return {
-		ok: false,
-		reason: "provider-missing",
-		message: "当前对话未配置模型"
-	};
-	const llm = ctx.llm;
-	if (!llm || typeof llm.stream !== "function") return {
-		ok: false,
-		reason: "generate-error",
-		message: "LLM 服务不可用"
-	};
-	let last = {
-		ok: false,
-		reason: "generate-error",
-		message: noTextReason(void 0)
-	};
-	for (const [i, sel] of candidates.entries()) {
-		const result = await generateWith$1(ctx, {
-			llm,
-			sel,
-			system,
-			history,
-			userText,
-			pool,
-			image
-		});
-		if (result.ok) return result;
-		last = result;
-		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 对话用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
-	}
-	return last;
-}
-/** 用一个确定的 provider/model 跑一次对话生成（失败原样返回结构化原因，不吞）。 */
-async function generateWith$1(ctx, once) {
-	const { llm, sel, system, history, userText, pool, image } = once;
-	const historyMessages = history.map((m) => m.role === "user" ? createUserMessage({
-		content: [{
-			type: "text",
-			text: m.content
-		}],
-		source: { kind: "user" }
-	}) : createAssistantMessage({
-		content: [{
-			type: "text",
-			text: m.content
-		}],
-		source: {
-			provider: sel.provider,
-			model: sel.model
-		}
-	}));
-	const deadline = AbortSignal.timeout(TIMEOUT_MS$1);
-	const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
-	const wantImage = pool.length > 0;
-	const content = [{
-		type: "text",
-		text: wantImage ? userText + imageInstruction(pool) : userText
-	}];
-	if (image !== void 0) content.push({
-		type: "image",
-		attachment: image
-	});
-	const options = {
-		provider: sel.provider,
-		model: sel.model,
-		sessionId: PET_CALL_IDENTITY,
-		messages: [...historyMessages, createUserMessage({
-			content,
-			source: { kind: "user" }
-		})],
-		system,
-		temperature: 1,
-		...supportsOff ? { reasoningEffort: ReasoningEffortId("off") } : {},
-		signal: deadline
-	};
-	const assembler = new BlockAssembler();
-	try {
-		for await (const chunk of llm.stream(options)) assembler.push(chunk);
-	} catch (e) {
-		return {
-			ok: false,
-			reason: "generate-error",
-			message: e instanceof Error ? e.message : String(e)
-		};
-	}
-	const text = assembler.blocks().filter((b) => b.type === "text").map((b) => "text" in b ? b.text : "").join("").trim();
-	if (!text) return {
-		ok: false,
-		reason: "generate-error",
-		message: noTextReason(assembler.finish)
-	};
-	if (!wantImage) return {
-		ok: true,
-		text
-	};
-	const picked = extractChatImage(text, pool);
-	return picked.image ? {
-		ok: true,
-		text: picked.text,
-		image: picked.image
-	} : {
-		ok: true,
-		text: picked.text
-	};
 }
 
 //#endregion
@@ -7857,41 +9113,63 @@ function timeContextOf(date) {
 	const holiday = holidayClauseOf(date);
 	return "【当下】现在是" + date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日" + (WEEKDAYS[day] ?? "星期?") + " " + pad2(hour) + ":" + pad2(date.getMinutes()) + "，" + timeSlotOf(hour) + "，" + dayKindOf(day) + (holiday ? "，" + holiday : "") + "。这只是背景，不必刻意报时，也别句句都提节日——多数时候正常说话就好，真贴切时才顺口带一句。";
 }
-
-//#endregion
-//#region src/host/persona.ts
-function petPersona(conf, pet) {
-	const own$1 = pet.whisperPrompt;
-	if (typeof own$1 === "string" && own$1.trim() !== "") return own$1;
-	const entry = conf.whisperPrompt;
-	return typeof entry === "string" ? entry : "";
-}
-function composeSystemPrompt(parts) {
-	const name$1 = String(parts.name || parts.id);
-	const nameLine = name$1 ? "你的名字是“" + name$1 + "”。" : "";
-	const lines = [parts.prompt, nameLine].filter((line) => line !== "");
-	const time = timeContextOf(parts.now);
-	if (time) lines.push(time);
-	return lines.join("\n");
+function historyStampOf(ts, now) {
+	const at = new Date(ts);
+	if (Number.isNaN(at.getTime()) || Number.isNaN(now.getTime())) return "";
+	const date = (at.getFullYear() === now.getFullYear() ? "" : at.getFullYear() + "年") + (at.getMonth() + 1) + "月" + at.getDate() + "日";
+	return date + " " + pad2(at.getHours()) + ":" + pad2(at.getMinutes());
 }
 
 //#endregion
-//#region src/host/whisper.ts
-/** 单次生成超时（ms）：碎碎念不需要长输出，30s 足够。 */
-const TIMEOUT_MS = 3e4;
-/** 碎碎念指令：纯文本（没有配图时的原样请求）。 */
-const USER_TEXT = "随便说一句日常碎碎念，一句就好，20 字以内。";
+//#region src/host/chat.ts
+/** 单次生成超时（ms）：对话等 LLM 回复，60s 足够。 */
+const TIMEOUT_MS$1 = 6e4;
+/** 历史消息打时间前缀的阈值（ms）：30 分钟内的连续对话不加，避免每句都多几个 token。 */
+const HISTORY_STAMP_GAP_MS = 30 * 60 * 1e3;
 /**
-* 碎碎念指令：带表情包时要求模型配合作画说一句。
+* user 历史消息的正文：距现在超过阈值时，前面加 `[10月31日 22:53]`。
 *
-* 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
-* 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
-* 交模型选只能盲选，还多一层幻觉风险。
+* 只给 user 打：同一轮 user / assistant 共享同一个 ts，标一条就够；标在 assistant 上时，
+* 模型会把这行当成自己的说话格式照抄（实际出现过回复以 `[11:54]` 开头）。
+* 阈值内的连续对话不加前缀——否则一段正常闲聊会变成每句一个时间戳。
+*
+* @param message - 历史消息（带 ts）。
+* @param nowMs - 本次生成时刻（毫秒），整批历史共用一个，避免逐条取时钟导致同批时间不一致。
+* @returns 需要前缀时返回 `[时:分] 原文`，否则原样返回 `content`。
 */
-function userTextWithMeme(meme) {
-	return "随便说一句日常碎碎念，一句就好，20 字以内。\n这次会配一张表情包一起显示，图的内容是：" + meme.name + "（" + meme.desc + "）。\n请让这句话和这张图的情绪/场景自然契合，像是配合画面说出来的；不要描述画面本身。";
+function userHistoryTextOf(message, nowMs) {
+	if (!Number.isFinite(message.ts)) return message.content;
+	if (!(nowMs - message.ts > HISTORY_STAMP_GAP_MS)) return message.content;
+	const stamp = historyStampOf(message.ts, new Date(nowMs));
+	return stamp === "" ? message.content : "[" + stamp + "] " + message.content;
 }
-async function generateWhisper(ctx, system, meme, preferred, userPrompt) {
+/**
+* 历史里回填的配图 / 动作标记（`[动作:名称]` 与 `[图:名称]`，各占一行，顺序固定）。
+*
+* 记忆里只存名字、正文里的标记在落盘前已被剥掉；不回填的话模型看不到自己前几轮配过哪张图、
+* 演过什么动作，用户说“换一个”时它连换的是什么都不知道，只会重复挑同一张或答非所问。
+* 只回填 assistant：user 的附件引用依旧不带（旧图不重发给模型）。
+* 名称可能为空串（手改过记忆文件）——空值不回填，纯文本历史逐字不变。
+*
+* @param message - 历史消息。
+* @returns 需要回填时返回 `\n[动作:…]\n[图:…]`，否则空串。
+*/
+function historyMarkersOf(message) {
+	if (message.role !== "assistant") return "";
+	const lines = [];
+	if (typeof message.action === "string" && message.action !== "") lines.push("[动作:" + message.action + "]");
+	if (typeof message.meme === "string" && message.meme !== "") lines.push("[图:" + message.meme + "]");
+	return lines.length === 0 ? "" : "\n" + lines.join("\n");
+}
+/** 配图指令：附在 user 正文之后（紧邻回答位置，模型更容易遵守）。
+*  交给模型选而不是随机抽：对话有真实上下文（用户输入 + 历史），按语境挑才贴合。 */
+function imageInstruction(pool) {
+	return "\n\n[配图] 回复结尾可选附一张表情包给用户看，从下列清单里挑最贴合当前语境的：\n" + memeCatalog(pool) + "\n挑中就在回复最后另起一行写 [图:名称]（名称原样照抄）；没有合适的就完全不要写这个标记。";
+}
+async function generateChat(input) {
+	const { ctx, system, history, userText, preferred, image } = input;
+	const pool = [...input.pool ?? []];
+	const actions = [...input.actions ?? []];
 	const candidates = modelCandidates(ctx, preferred);
 	if (candidates.length === 0) return {
 		ok: false,
@@ -7910,26 +9188,61 @@ async function generateWhisper(ctx, system, meme, preferred, userPrompt) {
 		message: noTextReason(void 0)
 	};
 	for (const [i, sel] of candidates.entries()) {
-		const result = await generateWith(ctx, llm, sel, system, meme, userPrompt);
+		const result = await generateWith$1(ctx, {
+			llm,
+			sel,
+			system,
+			history,
+			userText,
+			pool,
+			actions,
+			image
+		});
 		if (result.ok) return result;
 		last = result;
-		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
+		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 对话用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
 	}
 	return last;
 }
-/** 用一个确定的 provider/model 跑一次生成（候选链的一环；失败原样返回结构化原因，不吞）。 */
-async function generateWith(ctx, llm, sel, system, meme, userPrompt) {
-	const deadline = AbortSignal.timeout(TIMEOUT_MS);
+/** 用一个确定的 provider/model 跑一次对话生成（失败原样返回结构化原因，不吞）。 */
+async function generateWith$1(ctx, once) {
+	const { llm, sel, system, history, userText, pool, actions, image } = once;
+	const nowMs = Date.now();
+	const historyMessages = history.map((m) => m.role === "user" ? createUserMessage({
+		content: [{
+			type: "text",
+			text: userHistoryTextOf(m, nowMs)
+		}],
+		source: { kind: "user" }
+	}) : createAssistantMessage({
+		content: [{
+			type: "text",
+			text: m.content + historyMarkersOf(m)
+		}],
+		source: {
+			provider: sel.provider,
+			model: sel.model
+		}
+	}));
+	const deadline = AbortSignal.timeout(TIMEOUT_MS$1);
 	const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
+	const wantImage = pool.length > 0;
+	const wantAction = actions.length > 0;
+	const instruction = (wantImage ? imageInstruction(pool) : "") + (wantAction ? actionInstruction(actions) : "");
+	const content = [{
+		type: "text",
+		text: instruction === "" ? userText : userText + instruction
+	}];
+	if (image !== void 0) content.push({
+		type: "image",
+		attachment: image
+	});
 	const options = {
 		provider: sel.provider,
 		model: sel.model,
 		sessionId: PET_CALL_IDENTITY,
-		messages: [createUserMessage({
-			content: [{
-				type: "text",
-				text: meme ? userTextWithMeme(meme) : userPrompt ?? USER_TEXT
-			}],
+		messages: [...historyMessages, createUserMessage({
+			content,
 			source: { kind: "user" }
 		})],
 		system,
@@ -7953,10 +9266,162 @@ async function generateWith(ctx, llm, sel, system, meme, userPrompt) {
 		reason: "generate-error",
 		message: noTextReason(assembler.finish)
 	};
-	return meme ? {
+	if (!wantImage && !wantAction) return {
+		ok: true,
+		text
+	};
+	const acted = wantAction ? extractChatAction(text, actions) : { text };
+	const picked = wantImage ? extractChatImage(acted.text, pool) : { text: acted.text };
+	return {
+		ok: true,
+		text: picked.text,
+		...picked.image ? { image: picked.image } : {},
+		...acted.action ? { action: acted.action } : {}
+	};
+}
+
+//#endregion
+//#region src/host/persona.ts
+/**
+* 历史时间说明：历史里 user 消息带 `[月日 时:分]` 前缀时追加，让模型知道那些时刻可以用来算跨度。
+*
+* 措辞把前缀限定为「对话记录里的时间标注」而不是「回复格式」；前缀只标在 user 消息上——
+* 标在 assistant 上时模型会照抄成自己的说话格式（出现过回复以 `[11:54]` 开头）。
+*/
+const HISTORY_TIMES_LINE = "【历史】对话记录里，主人的话前面标着 [月日 时:分]，那是那句话发生的时刻；它只是记录里的时间标注，不是你的说话格式。判断“多久以前”“隔了几天”时按它换算，别把隔了很久的话当成刚说过的。你的回复直接从正文开始，不要写时间、不要加方括号前缀。";
+function petPersona(conf, pet) {
+	const own$1 = pet.whisperPrompt;
+	if (typeof own$1 === "string" && own$1.trim() !== "") return own$1;
+	const entry = conf.whisperPrompt;
+	return typeof entry === "string" ? entry : "";
+}
+function composeSystemPrompt(parts) {
+	const name$1 = String(parts.name || parts.id);
+	const nameLine = name$1 ? "你的名字是“" + name$1 + "”。" : "";
+	const lines = [parts.prompt, nameLine].filter((line) => line !== "");
+	const time = timeContextOf(parts.now);
+	if (time) {
+		lines.push(time);
+		if (parts.historyTimes === true) lines.push(HISTORY_TIMES_LINE);
+	}
+	return lines.join("\n");
+}
+
+//#endregion
+//#region src/host/whisper.ts
+/** 单次生成超时（ms）：碎碎念不需要长输出，30s 足够。 */
+const TIMEOUT_MS = 3e4;
+/** 碎碎念指令：纯文本（没有配图时的原样请求）。 */
+const USER_TEXT = "随便说一句日常碎碎念，一句就好，20 字以内。";
+/** 梦话指令：睡觉期间嘟囔一句。与碎碎念指令同属「功能指令」，不进配置（配置里只有人设）。 */
+const SLEEP_TALK_TEXT = "你正在睡觉，随便嘟囔一句梦话，一句就好，20 字以内；含糊、半梦半醒，不要清醒地回应任何人。";
+const SLEEP_TALK_INSTRUCTION = SLEEP_TALK_TEXT;
+/**
+* 配图说明：告诉模型「这次会配一张表情包」，让正文与画面情绪契合。
+*
+* 单独抽出来是为了让「带配图的碎碎念」与「自定义指令 + 配图」共用同一段说明——
+* 前者是上游的碎碎念配图，后者是 fork 的主动关心（自定义指令 + 配图）。
+*/
+function memeGuide(meme) {
+	return "这次会配一张表情包一起显示，图的内容是：" + meme.name + "（" + meme.desc + "）。\n请让这句话和这张图的情绪/场景自然契合，像是配合画面说出来的；不要描述画面本身。";
+}
+/**
+* 碎碎念指令：带表情包时要求模型配合作画说一句。
+*
+* 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
+* 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
+* 交模型选只能盲选，还多一层幻觉风险。
+*/
+function userTextWithMeme(meme) {
+	return USER_TEXT + "\n" + memeGuide(meme);
+}
+/**
+* 拼出这一次的用户指令正文。
+*
+* 三条来源，按优先级：
+* 1. 自定义指令（instruction）——梦话 / 主动关心 / 吉祥话池都走这里；
+* 2. 带配图的碎碎念——「一句日常碎碎念 + 配图说明」；
+* 3. 纯文本碎碎念。
+*
+* 自定义指令与配图同时存在时（fork 的主动关心）：指令为准，再补一段配图说明，
+* 两边的诉求都保住——既说该说的话，又知道这张配图画的是什么。
+*/
+function buildUserText(request) {
+	if (request.instruction) return request.meme ? request.instruction + "\n" + memeGuide(request.meme) : request.instruction;
+	return request.meme ? userTextWithMeme(request.meme) : USER_TEXT;
+}
+async function generateWhisper(ctx, requestOrSystem, legacyMeme, legacyPreferred, legacyUserPrompt) {
+	const request = typeof requestOrSystem === "string" ? {
+		system: requestOrSystem,
+		meme: legacyMeme,
+		preferred: legacyPreferred,
+		instruction: legacyUserPrompt
+	} : requestOrSystem;
+	const candidates = modelCandidates(ctx, request.preferred);
+	if (candidates.length === 0) return {
+		ok: false,
+		reason: "provider-missing",
+		message: "当前对话未配置模型"
+	};
+	const llm = ctx.llm;
+	if (!llm || typeof llm.stream !== "function") return {
+		ok: false,
+		reason: "generate-error",
+		message: "LLM 服务不可用"
+	};
+	let last = {
+		ok: false,
+		reason: "generate-error",
+		message: noTextReason(void 0)
+	};
+	for (const [i, sel] of candidates.entries()) {
+		const result = await generateWith(ctx, llm, sel, request);
+		if (result.ok) return result;
+		last = result;
+		if (i + 1 < candidates.length) defaultLog("warn", `dsh-zdd-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`);
+	}
+	return last;
+}
+/** 用一个确定的 provider/model 跑一次生成（候选链的一环；失败原样返回结构化原因，不吞）。 */
+async function generateWith(ctx, llm, sel, request) {
+	const deadline = AbortSignal.timeout(TIMEOUT_MS);
+	const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
+	const options = {
+		provider: sel.provider,
+		model: sel.model,
+		sessionId: PET_CALL_IDENTITY,
+		messages: [createUserMessage({
+			content: [{
+				type: "text",
+				text: buildUserText(request)
+			}],
+			source: { kind: "user" }
+		})],
+		system: request.system,
+		temperature: 1,
+		...supportsOff ? { reasoningEffort: ReasoningEffortId("off") } : {},
+		signal: deadline
+	};
+	const assembler = new BlockAssembler();
+	try {
+		for await (const chunk of llm.stream(options)) assembler.push(chunk);
+	} catch (e) {
+		return {
+			ok: false,
+			reason: "generate-error",
+			message: e instanceof Error ? e.message : String(e)
+		};
+	}
+	const text = assembler.blocks().filter((b) => b.type === "text").map((b) => "text" in b ? b.text : "").join("").trim();
+	if (!text) return {
+		ok: false,
+		reason: "generate-error",
+		message: noTextReason(assembler.finish)
+	};
+	return request.meme ? {
 		ok: true,
 		text,
-		image: meme.name
+		image: request.meme.name
 	} : {
 		ok: true,
 		text
@@ -8019,6 +9484,17 @@ function createMemoryOrphans(deps) {
 
 //#endregion
 //#region src/host/plugin/chat-memory.ts
+/** 第三方召回的硬超时（ms）：到点按“不修改内容”继续生成，不拖住这一轮对话。 */
+const RECALL_TIMEOUT_MS = 1500;
+/** 校验召回补丁里的历史项：形状不对的整段丢弃，避免坏数据把生成打崩。 */
+function isChatTurn(value) {
+	const turn = value;
+	return (turn?.role === "user" || turn?.role === "assistant") && typeof turn?.content === "string" && typeof turn?.ts === "number";
+}
+/** 这一句该由哪一端念：取宠物实例的 display 推导（桌面优先）；两端都不显示时为 `undefined`。 */
+function voiceTargetFor(pet) {
+	return pickVoiceSurface(String(pet.display ?? "")) ?? void 0;
+}
 /** 记忆文件最多保留的轮数（1 轮 = 2 条消息）；超出按最旧截断，避免文件无限增长。 */
 const MEMORY_MAX_ROUNDS = 200;
 /** 每个会话按轮数裁剪到上限；就地修改，调用方随后序列化。 */
@@ -8027,7 +9503,7 @@ function pruneMemory(mem) {
 	for (const entry of Object.values(mem)) for (const bucket of Object.values(entry)) if (Array.isArray(bucket.messages) && bucket.messages.length > keep) bucket.messages = bucket.messages.slice(-keep);
 }
 function createChatMemory(deps) {
-	const { ctx, configPaths, log, memeDirsFor, state, userRoot } = deps;
+	const { ctx, configPaths, log, memeDirsFor, playback, state, userRoot } = deps;
 	const longMemoryEnabled = deps.longMemoryEnabled ?? (() => false);
 	const readFacts = deps.readFacts ?? (async () => []);
 	const factsPromptSection = deps.factsPromptSection ?? (() => "");
@@ -8071,14 +9547,16 @@ function createChatMemory(deps) {
 		return run;
 	};
 	/** 某宠物的最终人设 system：实例级 `pets[].whisperPrompt` 优先，没写回落到所属条目的那份。
-	*  拼装在 ./persona（纯函数）：人设正文 + 名字声明 + 一行时间背景，时间每次现算。
+	*  拼装在 ./persona（纯函数）：人设正文 + 名字声明 + 一行时间背景，时间每次现算；
+	*  对话路径传 `{ historyTimes: true }` 追加【历史】说明，碎碎念没有历史，不传。
 	*  收 `findPetInstance` 的命中结果而不是 (petId, cfg)：调用方都已解析过，再查只会多一处
 	*  「查不到就兜底 main」的不可达分支。 */
-	const petSystemPrompt = (found) => composeSystemPrompt({
+	const petSystemPrompt = (found, options = {}) => composeSystemPrompt({
 		prompt: petPersona(found.conf, found.pet),
 		name: String(found.pet.name ?? ""),
 		id: String(found.pet.id ?? ""),
-		now: new Date()
+		now: new Date(),
+		...options.historyTimes === true ? { historyTimes: true } : {}
 	});
 	/** 对话记忆轮数（1 轮 = 1 问 1 答）：该宠物所属条目的 chatMemoryRounds（合并器已填默认）。
 	*  收已解析的条目配置：调用方都已拿到 `findPetInstance` 的结果。 */
@@ -8086,11 +9564,73 @@ function createChatMemory(deps) {
 		const v = Number(conf.chatMemoryRounds);
 		return Number.isFinite(v) && v >= 0 ? Math.floor(v) : 5;
 	};
-	/** 生成并返回某宠物的一句碎碎念（周期调度与菜单手动触发共用）：人设取它自己的 whisperPrompt，
+	/**
+	* 对话前修改内容：召回钩子返回要覆盖的字段，核心合并后再交给模型。
+	*
+	* 超时、抛错、返回非法形状都当“不修改”，只记提供者 id 与原因。
+	*
+	* @param petId - 目标宠物；第三方按它区分记忆空间。
+	* @param content - 本轮将要发给模型的 system/history/userText。
+	* @returns 合法的覆盖字段；没有可应用的字段时 undefined。
+	*/
+	const recallPatch = async (petId, content) => {
+		const provider = activeChatMemoryProvider();
+		const recall = provider?.recall;
+		if (!provider || !recall) return void 0;
+		let timer;
+		try {
+			const timeout = new Promise((resolve$1) => {
+				timer = setTimeout(() => resolve$1(void 0), RECALL_TIMEOUT_MS);
+				timer.unref?.();
+			});
+			const result = await Promise.race([Promise.resolve(recall.call(provider, {
+				petId,
+				...content
+			})), timeout]);
+			if (!result || typeof result !== "object") return void 0;
+			const patch = {};
+			if (typeof result.system === "string") patch.system = result.system;
+			if (typeof result.userText === "string") patch.userText = result.userText;
+			if (Array.isArray(result.history) && result.history.every(isChatTurn)) patch.history = result.history;
+			return Object.keys(patch).length === 0 ? void 0 : patch;
+		} catch (error) {
+			log.warn("[dsh-zdd-pet] 记忆召回失败 id=" + provider.id + "：" + (error instanceof Error ? error.message : String(error)));
+			return void 0;
+		} finally {
+			if (timer !== void 0) clearTimeout(timer);
+		}
+	};
+	/**
+	* 落盘后接收这一轮问答：核心不等待，失败只记提供者 id 与原因。
+	*
+	* @param petId - 目标宠物。
+	* @param turn - 本轮问答与元信息；action/image 只是名字，不含素材本体。
+	*/
+	const captureTurn = (petId, turn) => {
+		const provider = activeChatMemoryProvider();
+		const capture = provider?.capture;
+		if (!provider || !capture) return;
+		Promise.resolve().then(() => capture.call(provider, {
+			petId,
+			...turn
+		})).catch((error) => {
+			log.warn("[dsh-zdd-pet] 记忆接收失败 id=" + provider.id + "：" + (error instanceof Error ? error.message : String(error)));
+		});
+	};
+	/** 生成并返回某宠物的一句碎碎念（周期调度、菜单手动触发与命令行共用）：人设取它自己的 whisperPrompt，
 	*  没写回落到所属条目；成功写进 S 的 pets.<id>.say——碎碎念 / 命令气泡 / 对话回复在前端是同一条
 	*  展示链路，所以共用一个叶子。配图开关开启时从表情包池随机抽 1 张。
-	*  失败带回真实 reason（含 unknown-pet），成功带回生成的文本——调用方不必再拉一拍 /state。 */
-	const publishWhisper = async (petId) => {
+	*  失败带回真实 reason（含 unknown-pet / unknown-image），成功带回生成的文本——调用方不必再拉一拍 /state。
+	*
+	*  @param petId - 目标宠物实例 id。
+	*  @param image - 指定配图的名称：给了就只用这张（不受 whisperImageEnabled 门控，手动点图是显式意图），
+	*  不在池内返回 unknown-image；缺省 = 按开关随机抽或纯文本。
+	*  @param voiceTo - 这一句该由哪一端念；缺省按它自己的 display 推导（桌面优先，见 {@link pickVoiceSurface}）。
+	*  路由层带 `?surface=` 的会显式传请求面，其余调用点留空即可。
+	*  @param kind - 这次生成的来源：`whisper` = 周期调度，受 `voiceWhisperEnabled` 管；`manual` = 菜单、
+	*  斜杠命令、路由主动触发，不看那个开关（用户主动点的就是这一句）。缺省 `manual`。
+	*/
+	const publishWhisper = async (petId, image, voiceTo, kind = "manual") => {
 		const cfg = readAllConfig(configPaths);
 		const found = findPetInstance(cfg, petId);
 		if (!found) return {
@@ -8098,23 +9638,64 @@ function createChatMemory(deps) {
 			reason: "unknown-pet",
 			message: "没有这只桌宠：" + petId
 		};
+		const whisperVoiceOn = cfg.main?.voiceWhisperEnabled === true;
+		const manualVoiceOn = cfg.main?.voiceEnabled === true;
+		const voiceOff = kind === "whisper" ? !whisperVoiceOn : !manualVoiceOn;
+		const target = voiceOff ? void 0 : voiceTo ?? voiceTargetFor(found.pet);
 		const system = petSystemPrompt(found);
-		const meme = found.conf.bubbleImageEnabled !== false ? pickMeme(readMemePool(found.conf.memes, memeDirsFor(found.entry))) : void 0;
-		const result = await generateWhisper(ctx, system, meme, configuredModel(found.conf, "whisperModel"));
+		const pool = readMemePool(found.conf.memes, memeDirsFor(found.entry));
+		const forced = image === void 0 ? void 0 : matchMeme(pool, image);
+		if (image !== void 0 && forced === void 0) return {
+			ok: false,
+			reason: "unknown-image",
+			message: "表情包不在池内：" + image
+		};
+		const memeAllowed = found.conf.bubbleImageEnabled !== false && found.conf.whisperImageEnabled === true;
+		const meme = forced ?? (memeAllowed ? pickMeme(pool) : void 0);
+		const result = await generateWhisper(ctx, {
+			system,
+			meme,
+			preferred: configuredModel(found.conf, "whisperModel")
+		});
 		if (!result.ok) {
 			log.warn("[dsh-zdd-pet] 碎碎念生成失败 pet=" + petId + " reason=" + result.reason + (result.message ? " " + result.message : ""));
 			return result;
 		}
-		state.publishSay(petId, result.image ? {
+		state.publishSay(petId, {
 			text: result.text,
-			image: result.image
-		} : { text: result.text }, { source: "whisper" });
+			...result.image ? { image: result.image } : {},
+			...target ? { voiceTo: target } : {}
+		}, { source: "whisper" });
 		log.info(`[dsh-zdd-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` + (result.image ? `，配图=${result.image}` : ""));
 		return {
 			ok: true,
 			text: result.text,
 			...result.image ? { image: result.image } : {}
 		};
+	};
+	/** 生成并写一句梦话：system 只用人设，功能指令在 whisper（与碎碎念同属代码常量）；不配图、不念、不换动画。
+	*  睡着时「换动画」本身就是打扰，所以写 `say` 显式 `anim: false`，也不写 `voiceTo`。
+	*  @returns 是否真的生成并写进了 S；失败只留一行日志，调度下一拍再试。 */
+	const publishSleepTalk = async (petId) => {
+		const cfg = readAllConfig(configPaths);
+		const found = findPetInstance(cfg, petId);
+		if (!found) return false;
+		const system = petSystemPrompt(found);
+		const result = await generateWhisper(ctx, {
+			system,
+			preferred: configuredModel(found.conf, "whisperModel"),
+			instruction: SLEEP_TALK_INSTRUCTION
+		});
+		if (!result.ok) {
+			log.warn("[dsh-zdd-pet] 梦话生成失败 pet=" + petId + " reason=" + result.reason + (result.message ? " " + result.message : ""));
+			return false;
+		}
+		state.publishSay(petId, {
+			text: result.text,
+			anim: false
+		}, { source: "sleep-talk" });
+		log.info(`[dsh-zdd-pet] 梦话生成成功 pet=${petId}，${result.text.length} 字`);
+		return true;
 	};
 	/** 与某只宠物对话：截取最近记忆 → 生成回复 → 写入记忆 → 写进 S 的 pets.<id>.say。
 	*  供 POST /chat 与 /chat 命令共用（锁内读写，防两端交错写盘）；成功带回回复文本。 */
@@ -8127,24 +9708,35 @@ function createChatMemory(deps) {
 			message: "没有这只桌宠：" + petId
 		};
 		const rounds = memoryRounds(found.conf);
-		const baseSystem = petSystemPrompt(found);
 		const facts = longMemoryEnabled(found.conf) ? await readFacts(petId) : [];
 		const factsSection = factsPromptSection(facts);
-		const system = factsSection ? baseSystem + "\n" + factsSection : baseSystem;
-		const pool = found.conf.bubbleImageEnabled !== false ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit)) : [];
+		const pool = found.conf.bubbleImageEnabled !== false && found.conf.chatImageEnabled === true ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit)) : [];
+		const actions = found.conf.chatAnimationEnabled === true ? chatActionNames(found.conf.animations) : [];
 		const mem = await readMemory();
 		const bucket = mem[found.entry] && typeof mem[found.entry] === "object" && !Array.isArray(mem[found.entry]) ? mem[found.entry] : mem[found.entry] = {};
 		const existing = bucket[petId];
 		if (existing !== void 0 && (!existing || !Array.isArray(existing.messages))) log.error(`[dsh-zdd-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按新会话处理：${memoryPath}`);
 		const entry = existing && Array.isArray(existing.messages) ? existing : bucket[petId] = { messages: [] };
 		const list = sliceMemoryRounds(entry.messages, rounds);
+		const baseSystem = petSystemPrompt(found, { historyTimes: list.length > 0 });
+		const system = factsSection ? baseSystem + "\n" + factsSection : baseSystem;
 		if (image !== void 0) log.info(`[dsh-zdd-pet] 对话附带图片 pet=${petId}，${image.width}x${image.height}，${image.bytes} 字节（模型不支持读图时内核会以占位文本代替）`);
+		const patch = await recallPatch(petId, {
+			system,
+			history: list.map(({ role, content, ts }) => ({
+				role,
+				content,
+				ts
+			})),
+			userText: text
+		});
 		const generated = await generateChat({
 			ctx,
-			system,
-			history: list,
-			userText: text,
+			system: patch?.system ?? system,
+			history: patch?.history ?? list,
+			userText: patch?.userText ?? text,
 			pool,
+			actions,
 			preferred: configuredModel(found.conf, "chatModel"),
 			image
 		});
@@ -8160,17 +9752,35 @@ function createChatMemory(deps) {
 			role: "assistant",
 			content: generated.text,
 			ts: now,
-			...generated.image ? { meme: generated.image } : {}
+			...generated.image ? { meme: generated.image } : {},
+			...generated.action ? { action: generated.action } : {}
 		});
 		await writeMemory(mem);
 		if (longMemoryEnabled(found.conf)) {
 			const extractSystem = petSystemPrompt(found);
 			extractFacts(petId, extractSystem, text, generated.text, configuredModel(found.conf, "whisperModel")).catch(() => {});
 		}
-		state.publishSay(petId, generated.image ? {
+		captureTurn(petId, {
+			userText: text,
+			replyText: generated.text,
+			ts: now,
+			...generated.action !== void 0 ? { action: generated.action } : {},
+			...generated.image !== void 0 ? { image: generated.image } : {}
+		});
+		if (generated.action !== void 0) {
+			const record = playback.create(petId, generated.action);
+			state.writePet(petId, "anim", {
+				name: generated.action,
+				playbackId: record.playbackId
+			});
+		}
+		const replyVoiceTo = cfg.main?.voiceEnabled === true ? voiceTargetFor(found.pet) : void 0;
+		if (generated.text !== "") state.publishSay(petId, {
 			text: generated.text,
-			image: generated.image
-		} : { text: generated.text }, { source: "chat" });
+			...generated.image ? { image: generated.image } : {},
+			...generated.action !== void 0 ? { anim: false } : {},
+			...replyVoiceTo ? { voiceTo: replyVoiceTo } : {}
+		}, { source: "chat" });
 		return {
 			ok: true,
 			text: generated.text,
@@ -8229,6 +9839,7 @@ function createChatMemory(deps) {
 		readMemory,
 		memoryRounds,
 		publishWhisper,
+		publishSleepTalk,
 		chatWithPet,
 		deleteHistory,
 		orphanHistory,
@@ -8344,7 +9955,7 @@ function createMemoryFacts(deps) {
 //#endregion
 //#region src/host/plugin/proactive.ts
 /** 检查间隔（ms）：主动关心是低频事件，5 分钟一拍足够，开销可忽略。 */
-const TICK_MS = 5 * 60 * 1e3;
+const TICK_MS$1 = 5 * 60 * 1e3;
 /** 触发原因对应的生成指令。 */
 function promptFor(reason) {
 	switch (reason) {
@@ -8429,9 +10040,9 @@ function createProactive(deps) {
 				} catch (e) {
 					log.warn("[dsh-zdd-pet] 主动关心检查失败：" + (e instanceof Error ? e.message : String(e)));
 				}
-				timer = setTimeout(tick, TICK_MS);
+				timer = setTimeout(tick, TICK_MS$1);
 			};
-			timer = setTimeout(tick, TICK_MS);
+			timer = setTimeout(tick, TICK_MS$1);
 			return () => {
 				disposed = true;
 				if (timer !== null) clearTimeout(timer);
@@ -9082,6 +10693,11 @@ function createSessionNotify(deps) {
 	*/
 	const lastTodoText = new Map();
 	/**
+	* 每会话最后一段回复文本：完成通知的正文靠它。排活动门定时器时取用即出队——活动门会把它延后
+	* 1.5s，但待确认期间文本不会再变；留到定时器里再删，遇到「判定还有活」提前返回就成了长期残留。
+	*/
+	const lastReplyText = new Map();
+	/**
 	* 每会话在途调用的详情：键为调用标识（缺标识时用临时 `Symbol`），值为气泡文案。
 	* 结果事件只删自己那一条，并行调用因此不会互相顶掉，全部删完才回落 todo 文案。
 	*/
@@ -9125,13 +10741,15 @@ function createSessionNotify(deps) {
 	};
 	/** 排一个活动门定时器：到点确认空闲才推这一帧 */
 	const scheduleCompletionNotify = (sessionId, event) => {
+		const replyText = lastReplyText.get(sessionId);
+		lastReplyText.delete(sessionId);
 		const prev = notifyActivityTimers.get(sessionId);
 		if (prev !== void 0) clearTimeout(prev);
 		notifyActivityTimers.set(sessionId, setTimeout(() => {
 			notifyActivityTimers.delete(sessionId);
 			(async () => {
 				if (await sessionHasRunningWork(sessionId)) return;
-				const frame = reduceNotifyFrame(event);
+				const frame = reduceNotifyFrame(event, replyText);
 				if (frame) pushNotifyFrame(withSessionId(frame, sessionId));
 			})();
 		}, NOTIFY_ACTIVITY_DELAY_MS));
@@ -9141,6 +10759,7 @@ function createSessionNotify(deps) {
 		turnFlags,
 		terminalTimers,
 		lastTodoText,
+		lastReplyText,
 		toolsInFlight,
 		cancelTerminalCleanup,
 		scheduleTerminalCleanup,
@@ -9396,9 +11015,37 @@ var LockStore = class {
 //#endregion
 //#region src/host/plugin/pet-lookup.ts
 function createPetLookup(deps) {
-	const { state } = deps;
+	const { configPaths, state } = deps;
 	const lock = new LockStore({ onChange: (petId, data) => state.writePet(petId, "lock", data) });
 	const pose = new PoseStore();
+	const sleep = new SleepStore({ onChange: (petId, data) => state.writePet(petId, "sleep", data) });
+	/** 该条目的睡觉拒绝台词。台词只有配置一个来源（默认值在 assets/config.jsonc，合并层负责回落）；
+	*  池为空说明配置损坏，这时返回 undefined，宁可不说话也不在代码里另抄一份文案。 */
+	const refuseText = (petId) => {
+		try {
+			const found = findPetInstance(readAllConfig(configPaths), petId);
+			return pickSleepText(sleepTextsOf(found?.conf ?? {}).refuse);
+		} catch {
+			return void 0;
+		}
+	};
+	/**
+	* 睡觉闸门（手动触发与第三方调用共用）：在睡 → 弹一句拒绝台词并返回 `sleeping`；否则放行回 null。
+	*
+	* 持锁时让路：取锁时会先把宠物叫醒，正常情况下走不到这里；留着它是「锁叶子回到渲染端之前」
+	* 那一小段竞态的兜底（宿主已受理锁、渲染端状态还没跟上）。
+	* 拒绝台词写进 `say` 且 `anim: false`——睡觉期间不换动画，只弹气泡。
+	*/
+	const sleepBlocked = (petId) => {
+		if (!sleep.sleeping(petId)) return null;
+		if (lock.locked(petId)) return null;
+		const text = refuseText(petId);
+		if (text !== void 0) state.writePet(petId, "say", {
+			text,
+			anim: false
+		});
+		return failResult("sleeping", "桌宠正在睡觉，先叫醒它");
+	};
 	/**
 	* `?surface=` 的参数级校验（缺省 / 非法 → `bad-request`）。放在读盘之前：必然失败的请求不碰磁盘；
 	* 通过则给出收窄后的取值。
@@ -9491,6 +11138,9 @@ function createPetLookup(deps) {
 	return {
 		lock,
 		pose,
+		sleep,
+		sleepBlocked,
+		sleepRefusalText: refuseText,
 		surfaceBlocked,
 		requirePet,
 		lockBlocked
@@ -9540,7 +11190,7 @@ function createDownloadReport(deps) {
 //#endregion
 //#region src/host/plugin/work-status-bridge.ts
 function createWorkStatusBridge(deps) {
-	const { state, workStatus } = deps;
+	const { state, workStatus, EXTERNAL_WORK_SESSION } = deps;
 	const WORK_STATE_GAP_MS = 5e3;
 	let publishedWork = "\0";
 	let publishedState = null;
@@ -9549,7 +11199,7 @@ function createWorkStatusBridge(deps) {
 	const publishWorkStatus = () => {
 		const snap = workStatus.snapshot();
 		const progressKey = snap.progress ? `${snap.progress.done}/${snap.progress.total}` : "";
-		const key = String(snap.state) + "\0" + String(snap.task) + "\0" + progressKey;
+		const key = String(snap.state) + "\0" + String(snap.task) + "\0" + progressKey + "\0" + String(snap.sessionId ?? "");
 		if (key === publishedWork) return;
 		const busyFlip = publishedState === "working" && snap.state === "result";
 		const wait = WORK_STATE_GAP_MS - (Date.now() - publishedWorkAt);
@@ -9567,10 +11217,12 @@ function createWorkStatusBridge(deps) {
 		publishedWork = key;
 		publishedState = snap.state;
 		publishedWorkAt = Date.now();
+		const sessionId = snap.sessionId === null || snap.sessionId === EXTERNAL_WORK_SESSION ? null : snap.sessionId;
 		state.writeSection("workStatus", {
 			state: snap.state,
 			task: snap.task,
-			progress: snap.progress
+			progress: snap.progress,
+			sessionId
 		});
 	};
 	/** 停掉挂起的补写定时器（插件卸载时调用）。 */
@@ -9587,6 +11239,581 @@ function createWorkStatusBridge(deps) {
 }
 
 //#endregion
+//#region src/host/todo/policy.ts
+const MINUTE_MS = 60 * 1e3;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+/** 到期前的提醒档位：`[至少还剩多少毫秒, 提醒间隔]`，从宽到窄匹配。 */
+const AHEAD_STEPS = [
+	[3 * DAY_MS, DAY_MS],
+	[DAY_MS, 12 * HOUR_MS],
+	[6 * HOUR_MS, 4 * HOUR_MS],
+	[HOUR_MS, HOUR_MS],
+	[15 * MINUTE_MS, 20 * MINUTE_MS],
+	[0, 5 * MINUTE_MS]
+];
+/** 逾期后的提醒间隔：1 天内 30 分钟一次，一周内 6 小时一次，再久就不再打扰。 */
+const OVERDUE_FRESH_INTERVAL_MS = 30 * MINUTE_MS;
+const OVERDUE_OLD_INTERVAL_MS = 6 * HOUR_MS;
+/** 逾期超过这么久就不再提醒（待办仍留在清单里，等用户自己处理）。 */
+const OVERDUE_STOP_MS = 7 * DAY_MS;
+/** 距离到期还有这么久之前完全不提醒：一个月的远期事项不值得天天念。 */
+const AHEAD_START_MS = 7 * DAY_MS;
+/** 提醒文案里引用正文的长度上限（码点）：气泡放不下整条待办。 */
+const REMINDER_TEXT_MAX = 18;
+function reminderIntervalMs(remainingMs) {
+	if (remainingMs <= 0) {
+		const overdueBy = -remainingMs;
+		if (overdueBy >= OVERDUE_STOP_MS) return Number.POSITIVE_INFINITY;
+		return overdueBy >= DAY_MS ? OVERDUE_OLD_INTERVAL_MS : OVERDUE_FRESH_INTERVAL_MS;
+	}
+	if (remainingMs > AHEAD_START_MS) return Number.POSITIVE_INFINITY;
+	for (const [minRemaining, interval] of AHEAD_STEPS) if (remainingMs >= minRemaining) return interval;
+	return 5 * MINUTE_MS;
+}
+function nextReminderAt(todo, now) {
+	if (todo.done || todo.dueAt === null) return null;
+	const intervalNow = reminderIntervalMs(todo.dueAt - now);
+	if (!Number.isFinite(intervalNow)) return null;
+	if (todo.lastRemindedAt !== null) return todo.lastRemindedAt + intervalNow;
+	const remainingAtCreation = todo.dueAt - todo.createdAt;
+	if (remainingAtCreation > AHEAD_START_MS) return todo.createdAt + intervalNow;
+	const intervalAtCreation = reminderIntervalMs(remainingAtCreation);
+	const step = Math.min(Number.isFinite(intervalAtCreation) ? intervalAtCreation : 0, Math.max(0, remainingAtCreation));
+	return todo.createdAt + step;
+}
+function pickReminder(todos, now) {
+	let best = null;
+	for (const todo of todos) {
+		const at = nextReminderAt(todo, now);
+		if (at === null || at > now) continue;
+		if (best === null || at < best.at) {
+			best = {
+				todo,
+				at
+			};
+			continue;
+		}
+		if (at === best.at) {
+			const todoDue = todo.dueAt ?? Number.POSITIVE_INFINITY;
+			const bestDue = best.todo.dueAt ?? Number.POSITIVE_INFINITY;
+			if (todoDue < bestDue) best = {
+				todo,
+				at
+			};
+		}
+	}
+	return best;
+}
+function spanText(ms) {
+	const minutes = Math.max(1, Math.round(Math.abs(ms) / MINUTE_MS));
+	if (minutes < 60) return `${minutes}分钟`;
+	const hours = Math.max(1, Math.round(minutes / 60));
+	if (hours < 24) return `${hours}小时`;
+	return `${Math.max(1, Math.round(hours / 24))}天`;
+}
+function truncateTodoText(text, max) {
+	const chars = Array.from(text);
+	return chars.length <= max ? text : chars.slice(0, max).join("") + "…";
+}
+function reminderText(todo, now) {
+	const label = truncateTodoText(todo.text, REMINDER_TEXT_MAX);
+	const dueAt = todo.dueAt ?? now;
+	if (dueAt <= now) {
+		if (now - dueAt < MINUTE_MS) return `「${label}」到点啦，记得处理`;
+		return `「${label}」已经逾期${spanText(now - dueAt)}啦，记得处理`;
+	}
+	return `「${label}」还有${spanText(dueAt - now)}就到点啦`;
+}
+
+//#endregion
+//#region src/host/plugin/todo-reminders.ts
+/** 巡检查找间隔（ms）：比最短提醒间隔（5 分钟）小一档即可，不必更密。 */
+const TICK_MS = 60 * 1e3;
+/** 提醒气泡停留时长（ms）：比默认 10 秒久一点，欠着的事值得多看两眼。 */
+const BUBBLE_DURATION_MS = 15 * 1e3;
+function pickReminderSpeaker(pets, isLocked, isSleeping = () => false) {
+	let desktopOnly = null;
+	for (const pet of pets) {
+		const petId = String(pet.id ?? "");
+		if (petId === "") continue;
+		if (pet.display === "none") continue;
+		if (isLocked(petId)) continue;
+		if (isSleeping(petId)) continue;
+		if (pet.display === "web" || pet.display === "both") return petId;
+		desktopOnly ?? (desktopOnly = petId);
+	}
+	return desktopOnly;
+}
+async function tickTodoReminders(deps) {
+	if (deps.hasListener !== void 0 && !deps.hasListener()) return;
+	const now = deps.now?.() ?? Date.now();
+	const due = pickReminder(await deps.todos.list(), now);
+	if (due === null) return;
+	const pets = deps.effectivePetList();
+	const speaker = pickReminderSpeaker(pets, (petId) => deps.lock.locked(petId), (petId) => deps.isSleeping?.(petId) ?? false);
+	if (speaker === null) return;
+	const display = String(pets.find((pet) => String(pet.id ?? "") === speaker)?.display ?? "");
+	const voiceTo = deps.isVoiceTodoEnabled() ? pickVoiceSurface(display) : null;
+	deps.state.writePet(speaker, "say", {
+		text: reminderText(due.todo, now),
+		duration: BUBBLE_DURATION_MS,
+		...voiceTo ? { voiceTo } : {}
+	});
+	await deps.todos.markReminded(due.todo.id, now);
+	const remainingSec = due.todo.dueAt === null ? 0 : Math.round((due.todo.dueAt - now) / 1e3);
+	deps.log.info(`[dsh-zdd-pet] 待办提醒 todo=${due.todo.id} pet=${speaker} 剩余=${remainingSec}s`);
+}
+function registerTodoReminders(deps) {
+	const { ctx, effectivePetList, isVoiceTodoEnabled, lock, log, sleep, state, todos, waiterCount } = deps;
+	/** 一拍：失败只打日志，不让循环停摆。 */
+	const tick = async () => {
+		try {
+			await tickTodoReminders({
+				effectivePetList,
+				hasListener: () => waiterCount() > 0,
+				isSleeping: (petId) => sleep.sleeping(petId),
+				isVoiceTodoEnabled,
+				lock,
+				log,
+				state,
+				todos
+			});
+		} catch (error) {
+			log.warn("[dsh-zdd-pet] 待办提醒失败：" + (error instanceof Error ? error.message : String(error)));
+		}
+	};
+	ctx.effect(() => {
+		let disposed = false;
+		let timer = null;
+		/** 排下一拍；已卸载就不再排。 */
+		function arm() {
+			if (disposed) return;
+			timer = setTimeout(() => void run(), TICK_MS);
+		}
+		/** 跑一拍再排下一拍：启动即检查一次，不等第一个周期。 */
+		async function run() {
+			timer = null;
+			await tick();
+			arm();
+		}
+		run();
+		return () => {
+			disposed = true;
+			if (timer !== null) clearTimeout(timer);
+		};
+	}, "dsh-zdd-pet: todo reminders");
+}
+
+//#endregion
+//#region src/host/voice/cache.ts
+const CACHE_MAX_BYTES = 20 * 1024 * 1024;
+const CACHE_MAX_FILES = 200;
+function cachePath(userRoot, key) {
+	return join(userRoot, "voice-cache", `${key}.mp3`);
+}
+function cacheKey(source, voice, rate, text) {
+	return createHash("sha1").update(`${source}\n${voice}\n${rate}\n${text}`).digest("hex");
+}
+async function ensureCacheDir(userRoot) {
+	const dir = join(userRoot, "voice-cache");
+	await mkdir(dir, { recursive: true });
+	return dir;
+}
+async function pruneCache(dir, limits = {}) {
+	const maxBytes = limits.maxBytes ?? CACHE_MAX_BYTES;
+	const maxFiles = limits.maxFiles ?? CACHE_MAX_FILES;
+	let names;
+	try {
+		names = await readdir(dir);
+	} catch {
+		return 0;
+	}
+	const entries = [];
+	for (const name$1 of names) {
+		if (!name$1.endsWith(".mp3")) continue;
+		const file = join(dir, name$1);
+		try {
+			const info = await stat(file);
+			entries.push({
+				file,
+				size: info.size,
+				mtimeMs: info.mtimeMs
+			});
+		} catch {}
+	}
+	entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
+	let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+	let totalFiles = entries.length;
+	let removed = 0;
+	for (const entry of entries) {
+		if (totalBytes <= maxBytes && totalFiles <= maxFiles) break;
+		try {
+			await rm(entry.file, { force: true });
+			removed += 1;
+			totalBytes -= entry.size;
+			totalFiles -= 1;
+		} catch {}
+	}
+	return removed;
+}
+
+//#endregion
+//#region src/host/voice/edge.ts
+/** 单次合成超时（ms）：上游长时间无响应就判失败，不拖住串行队列。 */
+const SYNTHESIS_TIMEOUT_MS = 15e3;
+var VoiceSynthError = class extends Error {
+	constructor(message) {
+		super(message);
+		this.name = "VoiceSynthError";
+	}
+};
+async function synthesize({ signal, text, voice, rate, target }) {
+	const staging = `${target}.part`;
+	try {
+		const mod = await import("@andresaya/edge-tts");
+		const EdgeTTS = mod.EdgeTTS ?? mod.default?.EdgeTTS;
+		if (!EdgeTTS) throw new VoiceSynthError("依赖未导出 EdgeTTS");
+		const tts = new EdgeTTS();
+		const result = await tts.generate(text, voice, {
+			rate,
+			signal,
+			timeout: SYNTHESIS_TIMEOUT_MS
+		});
+		await writeFile(staging, result.audio);
+		await rename(staging, target);
+	} catch (error) {
+		await rm(staging, { force: true }).catch(() => void 0);
+		throw new VoiceSynthError(error instanceof Error ? error.message : String(error));
+	}
+}
+
+//#endregion
+//#region src/host/voice/speak.ts
+const MAX_TEXT_CHARS = 500;
+const MAX_QUEUE = 3;
+/** 语速表达式：`+N%` 或 `-N%`。 */
+const RATE_PATTERN = /^[+-]\d{1,3}%$/;
+/** 语速下界（百分比）。 */
+const RATE_MIN_PERCENT = -50;
+/** 语速上界（百分比）。 */
+const RATE_MAX_PERCENT = 100;
+/** 第三方实现的单次合成上限（ms）：与内置同口径，避免一句卡住串行队列。 */
+const PROVIDER_TIMEOUT_MS = 15e3;
+/** 内置 edge 合成的总时限（ms）：依赖自带的 15s 只是「静默」超时，每来一帧就重置，不能当总时限用。 */
+const BUILTIN_TIMEOUT_MS = 28e3;
+/** 排队超过这么久还没轮到就丢弃（ms）：等得比一次合成还久，客户端早已放弃，再合成只是白烧上游。 */
+const STALE_WAIT_MS = BUILTIN_TIMEOUT_MS;
+/** 校验请求体；只认 `text` / `voice` / `rate` 三个字段，其余忽略。 */
+function parseSpeakInput(raw) {
+	const body = raw && typeof raw === "object" ? raw : {};
+	const text = typeof body.text === "string" ? body.text.trim() : "";
+	if (!text) return {
+		ok: false,
+		message: "text is required"
+	};
+	if (text.length > MAX_TEXT_CHARS) return {
+		ok: false,
+		message: `text too long (max ${MAX_TEXT_CHARS} chars)`
+	};
+	const voice = body.voice === void 0 ? DEFAULT_VOICE : body.voice;
+	if (typeof voice !== "string" || !isKnownVoice(voice)) return {
+		ok: false,
+		message: `unknown voice; allowed: ${VOICES.map((item) => item.id).join(", ")}`
+	};
+	const rate = body.rate === void 0 ? "+0%" : body.rate;
+	if (typeof rate !== "string" || !RATE_PATTERN.test(rate)) return {
+		ok: false,
+		message: "rate must look like +0% or -10%"
+	};
+	const percent = Number(rate.slice(1, -1));
+	if (!Number.isFinite(percent) || percent < RATE_MIN_PERCENT || percent > RATE_MAX_PERCENT) return {
+		ok: false,
+		message: `rate out of range (${RATE_MIN_PERCENT}%..+${RATE_MAX_PERCENT}%)`
+	};
+	return {
+		ok: true,
+		value: {
+			text,
+			voice,
+			rate
+		}
+	};
+}
+/** 断言用：`SpeakResult` 的构造点都经过这里，避免各处手写同一句文案。 */
+function dropped() {
+	return {
+		ok: false,
+		reason: "voice-busy",
+		message: "queued too long, dropped"
+	};
+}
+function isQueueStale(queuedMs, nowMs, waitMs = STALE_WAIT_MS) {
+	return nowMs - queuedMs > waitMs;
+}
+function createVoiceService(options) {
+	const { userRoot, log } = options;
+	const synthesizeImpl = options.synthesize ?? synthesize;
+	const staleWaitMs = options.staleWaitMs ?? STALE_WAIT_MS;
+	/** 已占用的队列名额（含正在跑的那个）。 */
+	let queueUsed = 0;
+	/** 串行链：上一件事收尾（成功或失败）后才轮到下一件。 */
+	let chain = Promise.resolve();
+	/** 把一次合成排进串行链；无论成败都释放名额。 */
+	function enqueue(task) {
+		queueUsed += 1;
+		const run = chain.then(task, task);
+		chain = run.then(() => void 0, () => void 0);
+		return run.finally(() => {
+			queueUsed -= 1;
+		});
+	}
+	/** 缓存命中返回文件路径；不存在或空文件返回 undefined。 */
+	async function findCached(target) {
+		try {
+			const info = await stat(target);
+			return info.isFile() && info.size > 0 ? target : void 0;
+		} catch {
+			return void 0;
+		}
+	}
+	async function speak(raw) {
+		const parsed = parseSpeakInput(raw);
+		if (!parsed.ok) return {
+			ok: false,
+			reason: "bad-request",
+			message: parsed.message
+		};
+		const { text, voice, rate } = parsed.value;
+		const provider = activeVoiceProvider();
+		const source = provider ? provider.id : BUILTIN_VOICE_ID;
+		const target = cachePath(userRoot, cacheKey(source, provider ? "" : voice, rate, text));
+		const startedMs = Date.now();
+		const cached = await findCached(target);
+		if (cached) {
+			log?.info?.(`[dsh-zdd-pet] voice speak: cache=hit chars=${text.length} voice=${source}`);
+			return {
+				ok: true,
+				file: cached
+			};
+		}
+		if (queueUsed >= MAX_QUEUE) {
+			log?.warn?.(`[dsh-zdd-pet] voice speak: queue full (max ${MAX_QUEUE}) chars=${text.length} voice=${source}`);
+			return {
+				ok: false,
+				reason: "voice-busy",
+				message: "voice queue is full, retry later"
+			};
+		}
+		const queue = { dropped: false };
+		const queuedMs = Date.now();
+		try {
+			await enqueue(async () => {
+				if (isQueueStale(queuedMs, Date.now(), staleWaitMs)) {
+					queue.dropped = true;
+					return;
+				}
+				const dir = await ensureCacheDir(userRoot);
+				if (provider) await synthesizeWithProvider(provider, {
+					text,
+					voice,
+					rate,
+					target
+				});
+				else await synthesizeImpl({
+					signal: AbortSignal.timeout(BUILTIN_TIMEOUT_MS),
+					target,
+					text,
+					voice,
+					rate
+				});
+				await pruneCache(dir);
+			});
+		} catch (error) {
+			log?.warn?.(`[dsh-zdd-pet] voice speak: failed chars=${text.length} voice=${source} ms=${Date.now() - startedMs} reason=${error instanceof VoiceSynthError ? error.message : String(error)}`);
+			return {
+				ok: false,
+				reason: "generate-error",
+				message: "voice synthesis failed"
+			};
+		}
+		if (queue.dropped) {
+			log?.warn?.(`[dsh-zdd-pet] voice speak: dropped chars=${text.length} voice=${source} queued=${Date.now() - queuedMs}ms`);
+			return dropped();
+		}
+		log?.info?.(`[dsh-zdd-pet] voice speak: cache=miss chars=${text.length} voice=${source} ms=${Date.now() - startedMs}`);
+		return {
+			ok: true,
+			file: target
+		};
+	}
+	return {
+		listVoices: () => VOICES,
+		speak
+	};
+}
+/** 给一个 Promise 套超时；超时 reject，原 Promise 不被取消（provider 自己该处理放弃）。 */
+function withTimeout(task, timeoutMs) {
+	return new Promise((resolve$1, reject) => {
+		const timer = setTimeout(() => reject(new Error("voice provider timed out")), timeoutMs);
+		timer.unref?.();
+		task.then((value) => {
+			clearTimeout(timer);
+			resolve$1(value);
+		}, (error) => {
+			clearTimeout(timer);
+			reject(error);
+		});
+	});
+}
+/**
+* 用第三方实现合成并落盘。
+*
+* 空字节按失败处理：0 字节文件会被 {@link findCached} 的 `size > 0` 跳过，
+* 于是每次请求都重新合成、每次又得到空文件，白烧上游。
+*/
+async function synthesizeWithProvider(provider, input) {
+	let bytes;
+	try {
+		bytes = await withTimeout(provider.synthesize({
+			text: input.text,
+			rate: input.rate
+		}), PROVIDER_TIMEOUT_MS);
+	} catch (error) {
+		throw new VoiceSynthError(error instanceof Error ? error.message : String(error));
+	}
+	if (bytes.length === 0) throw new VoiceSynthError("voice provider returned empty audio");
+	await writeFile(input.target, bytes);
+}
+
+//#endregion
+//#region src/host/voice/hear.ts
+const MAX_AUDIO_BYTES = 768 * 1024;
+const TRANSCRIBE_TIMEOUT_MS = 3e4;
+/** base64 字面量：`Buffer.from` 解码很宽松，先按字母表与补齐规则挡掉脏数据。 */
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+/**
+* 校验请求体；只认 `audio` 与 `language` 两个字段，其余忽略。
+*
+* @param raw - 已解析的请求体。
+* @returns 已解码的音频字节；任何字段不合法时给出可直接回给调用方的说明。
+*/
+function parseHearInput(raw) {
+	const body = raw && typeof raw === "object" ? raw : {};
+	const encoded = typeof body.audio === "string" ? body.audio.trim() : "";
+	if (encoded === "") return {
+		ok: false,
+		message: "audio is required"
+	};
+	if (!BASE64_PATTERN.test(encoded) || encoded.replace(/=+$/, "").length % 4 === 1) return {
+		ok: false,
+		message: "audio must be base64"
+	};
+	const audio = new Uint8Array(Buffer.from(encoded, "base64"));
+	if (audio.byteLength === 0) return {
+		ok: false,
+		message: "audio is empty"
+	};
+	if (audio.byteLength > MAX_AUDIO_BYTES) return {
+		ok: false,
+		message: `audio too large (max ${MAX_AUDIO_BYTES} bytes)`
+	};
+	const language = body.language;
+	if (language !== void 0 && (typeof language !== "string" || language.trim() === "")) return {
+		ok: false,
+		message: "language must be a non-empty string"
+	};
+	return {
+		ok: true,
+		value: {
+			audio,
+			...language === void 0 ? {} : { language: language.trim() }
+		}
+	};
+}
+/**
+* 给一次识别套上超时与调用方中止，把结论收敛成「值或一句说明」。
+*
+* 两个来源（第三方、宿主）都只认一个 signal，所以在这里合并，调用方不必各写一遍。
+*
+* @param signal - 调用方中止信号（连接断开）。
+* @param timeoutMs - 超时上限。
+* @param task - 真正执行识别的函数。
+* @returns 成功给任务的值；超时或抛错给原始错误说明。
+*/
+async function withDeadline(signal, timeoutMs, task) {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	timer.unref();
+	const onAbort = () => controller.abort();
+	signal?.addEventListener("abort", onAbort, { once: true });
+	try {
+		return {
+			ok: true,
+			value: await task(controller.signal)
+		};
+	} catch (error) {
+		return {
+			ok: false,
+			message: error instanceof Error ? error.message : String(error)
+		};
+	} finally {
+		clearTimeout(timer);
+		signal?.removeEventListener("abort", onAbort);
+	}
+}
+function createHearService(options) {
+	const timeoutMs = options.timeoutMs ?? TRANSCRIBE_TIMEOUT_MS;
+	return { async hear(raw, signal) {
+		const parsed = parseHearInput(raw);
+		if (!parsed.ok) return {
+			ok: false,
+			reason: "bad-request",
+			message: parsed.message
+		};
+		const provider = activeSpeechProvider();
+		if (provider !== null) {
+			const run$1 = await withDeadline(signal, timeoutMs, (inner) => provider.transcribe(parsed.value, inner));
+			if (!run$1.ok) return {
+				ok: false,
+				reason: "generate-error",
+				message: run$1.message
+			};
+			if (typeof run$1.value !== "string") return {
+				ok: false,
+				reason: "generate-error",
+				message: "invalid transcript from provider"
+			};
+			return {
+				ok: true,
+				text: run$1.value
+			};
+		}
+		const speech = options.speechToText();
+		if (speech === void 0 || typeof speech.transcribe !== "function") return {
+			ok: false,
+			reason: "unsupported",
+			message: "host has no speech-to-text service"
+		};
+		if (speech.listProviders().length === 0) return {
+			ok: false,
+			reason: "unsupported",
+			message: "host has no speech provider enabled"
+		};
+		const run = await withDeadline(signal, timeoutMs, async (inner) => (await speech.transcribe(speech.resolve(parsed.value), inner)).text);
+		if (!run.ok) return {
+			ok: false,
+			reason: "generate-error",
+			message: run.message
+		};
+		return {
+			ok: true,
+			text: run.value
+		};
+	} };
+}
+
+//#endregion
 //#region src/host/index.ts
 const name = "pet";
 const inject = [
@@ -9599,7 +11826,7 @@ const inject = [
 ];
 function apply(ctx) {
 	const setup = createHostSetup(ctx);
-	const { userRoot, log, configPaths, thumbUserRoot, memeDirsFor, standaloneAiPolicy, state, playback, workStatus, EXTERNAL_WORK_SESSION, nextExternalWorkSeq } = setup;
+	const { userRoot, log, configPaths, thumbUserRoot, memeDirsFor, standaloneAiPolicy, standaloneAiBalance, state, playback, workStatus, EXTERNAL_WORK_SESSION, nextExternalWorkSeq } = setup;
 	const extras = createExtras({
 		configPaths,
 		memeDirsFor,
@@ -9607,7 +11834,8 @@ function apply(ctx) {
 	});
 	const workStatusBridge = createWorkStatusBridge({
 		state,
-		workStatus
+		workStatus,
+		EXTERNAL_WORK_SESSION
 	});
 	const { publishWorkStatus, stopWorkStatusFlush } = workStatusBridge;
 	const downloadReport = createDownloadReport({
@@ -9617,15 +11845,18 @@ function apply(ctx) {
 		workStatus
 	});
 	const { reportDownload, stopDownloadSlotTimer } = downloadReport;
-	const petLookup = createPetLookup({ state });
-	const { lock } = petLookup;
+	const petLookup = createPetLookup({
+		state,
+		configPaths
+	});
+	const { lock, sleep, sleepRefusalText } = petLookup;
 	const sessionNotify = createSessionNotify({
 		ctx,
 		publishWorkStatus,
 		state,
 		workStatus
 	});
-	const { pushNotifyFrame, turnFlags, terminalTimers, lastTodoText, toolsInFlight, cancelTerminalCleanup, scheduleTerminalCleanup, notifyActivityTimers, scheduleCompletionNotify } = sessionNotify;
+	const { pushNotifyFrame, turnFlags, terminalTimers, lastTodoText, lastReplyText, toolsInFlight, cancelTerminalCleanup, scheduleTerminalCleanup, notifyActivityTimers, scheduleCompletionNotify } = sessionNotify;
 	const memoryFacts = createMemoryFacts({
 		userRoot,
 		ctx,
@@ -9636,6 +11867,7 @@ function apply(ctx) {
 		configPaths,
 		log,
 		memeDirsFor,
+		playback,
 		state,
 		userRoot,
 		readFacts: memoryFacts.readFacts,
@@ -9643,7 +11875,7 @@ function apply(ctx) {
 		extractFacts: memoryFacts.extractFacts,
 		longMemoryEnabled: (conf) => readProactiveParams(conf.proactive).longMemory
 	});
-	const { lastWhisperAt, publishWhisper, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
+	const { lastWhisperAt, publishWhisper, publishSleepTalk, chatWithPet, getActivePetId, setActivePetId } = chatMemory;
 	const proactive = createProactive({
 		ctx,
 		configPaths,
@@ -9677,9 +11909,14 @@ function apply(ctx) {
 		getActivePetId,
 		log,
 		memeValid: extras.memeValid,
-		state
+		state,
+		standaloneAiBalance
 	});
 	const { effectivePetList, balancePeriodSec, whisperPeriodSec, refreshBalance, resolveActivePetId, petDisplayName } = balancePoll;
+	const todos = new TodoStore({
+		file: join(userRoot, TODO_FILE_NAME),
+		log
+	});
 	const desktopHelper = createDesktopHelper({
 		ctx,
 		configPaths,
@@ -9700,7 +11937,13 @@ function apply(ctx) {
 		...desktopHelper,
 		...sessionNotify,
 		ctx,
-		chatWithPet: chatWithPetTracked
+		chatWithPet: chatWithPetTracked,
+		todos,
+		voice: createVoiceService({
+			userRoot,
+			log
+		}),
+		speech: createHearService({ speechToText: () => setup.optionalService("speechToText") })
 	};
 	const httpRoute = createHttpRoute(deps);
 	registerHttpRoute(ctx, httpRoute.handlePetRoute);
@@ -9713,6 +11956,7 @@ function apply(ctx) {
 		deliverEasterEgg: extras.deliverEasterEgg,
 		lastTodoText,
 		log,
+		lastReplyText,
 		notifyActivityTimers,
 		publishWorkStatus,
 		pushNotifyFrame,
@@ -9725,7 +11969,10 @@ function apply(ctx) {
 	});
 	registerBalanceCommand({
 		ctx,
-		refreshBalance
+		effectivePetList,
+		refreshBalance,
+		sleep,
+		sleepRefusalText
 	});
 	registerLoops({
 		ctx,
@@ -9737,7 +11984,9 @@ function apply(ctx) {
 		log,
 		pickPetMeme: extras.pickPetMeme,
 		publishWhisper,
+		publishSleepTalk,
 		refreshBalance,
+		sleep,
 		standaloneAiPolicy,
 		whisperPeriodSec
 	});
@@ -9754,7 +12003,20 @@ function apply(ctx) {
 		chatWithPet: chatWithPetTracked,
 		log,
 		publishWhisper,
-		resolveActivePetId
+		resolveActivePetId,
+		sleep,
+		sleepRefusalText
+	});
+	registerTodoReminders({
+		ctx,
+		effectivePetList,
+		isVoiceTodoEnabled: () => readAllConfig(configPaths).main?.voiceTodoEnabled === true,
+		lock,
+		log,
+		sleep,
+		state,
+		todos,
+		waiterCount: () => state.waiterCount()
 	});
 	registerLifecycle({
 		ctx,

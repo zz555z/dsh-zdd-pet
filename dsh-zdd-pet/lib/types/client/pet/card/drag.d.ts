@@ -13,6 +13,8 @@ import type { RuntimePet } from '../types.ts';
 import type * as ReactNS from 'react';
 /** 注入的 react 能力。 */
 export interface CardDragRuntime {
+    /** 副作用；卸载时摘掉驱动的鼠标松开兜底监听。 */
+    useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
     /** 引用；拖拽驱动只造一次。 */
     useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
@@ -30,8 +32,6 @@ export interface CardDragInput {
     mood?: CardMood;
     /** 宠物根节点。 */
     root: () => HTMLDivElement | null;
-    /** 舞台节点：提示与命中的定位基准。 */
-    stage: () => HTMLDivElement | null;
     /** 等新首帧就位后再压 Q 弹。 */
     pendingSquash: ReactNS.MutableRefObject<boolean>;
     /** 归一化中心写入口。 */
@@ -42,8 +42,6 @@ export interface CardDragInput {
     setAnim: (anim: string) => void;
     /** 递增换源序号，强制重播。 */
     bumpSeq: () => void;
-    /** 拖拽态。 */
-    setDragging: (on: boolean) => void;
     /** 悬浮提示显隐。 */
     setTipOn: (on: boolean) => void;
     /** 点击台词：弹一句台词（由上层接到气泡单槽）。 */

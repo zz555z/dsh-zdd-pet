@@ -2,7 +2,8 @@
  * 本机 HTTP 的访问边界：回环 Host 校验、CSRF 校验与进程能力令牌。
  *
  * 负责判定请求能否进入路由，并清掉上游写出的宽 CORS 头；不处理业务语义。
- * 必须始终成立：只接受当前回环地址；令牌只出现在启动清单与请求头，绝不进日志或响应。
+ * 必须始终成立：只接受当前回环地址；令牌只出现在启动清单、请求头与 HttpOnly cookie，
+ * 绝不进日志或响应体。设置页首次带令牌访问后换一枚会话 cookie，刷新时地址栏里已没有令牌。
  * @module dsh-zdd-pet/src/standalone/request-security
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -25,17 +26,65 @@ export function rejectRequest(res: ServerResponse, status: number, error: string
   return false;
 }
 
+/** 插件路由段前缀：/dsh-zdd-pet-<端口>。 */
+const PLUGIN_ROUTE = /^\/dsh-zdd-pet-\d+\//;
+/** 插件路由里必须带令牌的子路径：碎碎念与对话。 */
+const PLUGIN_PRIVATE = /^\/dsh-zdd-pet-\d+\/(?:whisper|chat)(?:\/|$)/;
+
 /** 无需令牌的只读路径；写操作与敏感路径必须带令牌。 */
 function publicRead(req: IncomingMessage): boolean {
   // 插件在分发前会解码路径，鉴权必须用同一种拼写判断。
   const path = decodeURIComponent(new URL(req.url ?? '/', 'http://127.0.0.1').pathname);
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (['/standalone-ai/settings', '/shutdown'].includes(path)) return false;
-  if (/^\/dsh-zdd-pet-\d+\/(?:whisper|chat)(?:\/|$)/.test(path)) return false;
+  if (PLUGIN_PRIVATE.test(path)) return false;
   return (
-    ['/', '/health', '/standalone-ai/', '/standalone-ai/settings.js', '/standalone-ai/settings.css'].includes(path) ||
-    /^\/dsh-zdd-pet-\d+\//.test(path)
+    [
+      '/',
+      '/health',
+      '/standalone-ai/',
+      '/standalone-ai/settings.js',
+      '/standalone-ai/settings.css',
+      '/standalone-ai/chat-panel.js',
+      '/standalone-ai/icon.png',
+    ].includes(path) || PLUGIN_ROUTE.test(path)
   );
+}
+
+/** 设置页凭据 cookie：首次带令牌访问后下发，刷新时替代已从地址栏清掉的令牌。 */
+const TOKEN_COOKIE = 'dsh_pet_token';
+
+/** 令牌的固定形状：32 字节 base64url。形状校验先跑，定时安全比较才有等长前提。 */
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
+/** 从 Cookie 头里取出本服务的凭据；没有则返回空串。 */
+function readTokenCookie(req: IncomingMessage): string {
+  const raw = req.headers.cookie;
+  if (typeof raw !== 'string') return '';
+  for (const part of raw.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() !== TOKEN_COOKIE) continue;
+    return part.slice(separator + 1).trim();
+  }
+  return '';
+}
+
+/**
+ * 令牌头的名字。
+ *
+ * 插件自己的拼写是 x-dsh-zdd-pet-token；上游原来的拼写也一并认，
+ * 这样还没换到会话 cookie 的老脚本与旧页面不会一律 403。两个名字都要过形状校验与定时安全比较。
+ */
+const TOKEN_HEADER_PATTERN = /^x-dsh-(?:zdd-)?pet-token$/i;
+
+/** 从请求头里取本服务的令牌；没有或形状不对就返回空串。 */
+function readTokenHeader(req: IncomingMessage): string {
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (!TOKEN_HEADER_PATTERN.test(name)) continue;
+    if (typeof value === 'string' && TOKEN_SHAPE.test(value)) return value;
+  }
+  return '';
 }
 
 /** 创建请求安全门面。 */
@@ -63,7 +112,11 @@ export function createRequestSecurity(): RequestSecurity {
       }
       // 文件页渲染器也要带令牌：沙箱网页同样会发来 null 来源。
       // 同一渲染器加载媒体时可能完全不带 Origin，只有这种情况才放行。
-      const fileOrigin = allowFileOrigin && (req.headers.origin === 'null' || req.headers.origin === undefined);
+      // 字体这类强制 CORS 的子资源，Chromium 从 file:// 页面发出的是 `file://` 本身——
+      // 既不是 null 也不是省略，漏掉它会让打包应用的字体一律 403。
+      const fileOrigin =
+        allowFileOrigin &&
+        (req.headers.origin === 'null' || req.headers.origin === undefined || req.headers.origin === 'file://');
       if (
         !fileOrigin &&
         ((req.headers.origin !== undefined && req.headers.origin !== `http://${host}`) ||
@@ -76,14 +129,19 @@ export function createRequestSecurity(): RequestSecurity {
       } catch {
         return rejectRequest(res, 400, '请求地址无效');
       }
-      const supplied = req.headers['x-dsh-zdd-pet-token'];
+      // 页内请求走请求头；刷新后地址栏令牌已被清掉，改用首次访问换来的 HttpOnly cookie。
+      // 插件自己的头名与上游原名都认，见 TOKEN_HEADER_PATTERN。
+      const header = readTokenHeader(req);
+      const fromHeader = header !== '';
+      const supplied = fromHeader ? header : readTokenCookie(req);
       // 先按固定形状校验，再走定时安全比较，避免长度与内容泄漏。
-      if (
-        typeof supplied !== 'string' ||
-        !/^[A-Za-z0-9_-]{43}$/.test(supplied) ||
-        !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))
-      ) {
+      if (!TOKEN_SHAPE.test(supplied) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))) {
         return rejectRequest(res, 403, '请从桌宠菜单重新打开设置');
+      }
+      if (fromHeader && readTokenCookie(req) !== token) {
+        // 会话级 cookie：不设 Max-Age，关掉浏览器即失效，同一进程内刷新继续可用。
+        // Path 取根：对话面板要调 /dsh-zdd-pet-<n>/chat 这类插件路由，限定在 /standalone-ai/ 会让它拿不到凭据。
+        res.setHeader('set-cookie', `${TOKEN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`);
       }
       return true;
     },

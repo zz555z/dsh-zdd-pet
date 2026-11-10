@@ -37,5 +37,5 @@ export declare function urgentWindow(v: BalanceView): WindowUsage | undefined;
  * 四天及以上报「N.x 天」，不足四天报「N.x 小时」；已过重置点报「已重置」，时间未知返回空串。
  */
 export declare function resetInText(iso?: string): string;
-/** windows 形态的展示规则：百分比取三窗口最大，展开态逐窗口一行。 */
+/** windows 形态的展示规则：百分比取三窗口最大，展开态逐窗口一行，有用量时多一页。 */
 export declare const windowsHandler: ShapeHandler;

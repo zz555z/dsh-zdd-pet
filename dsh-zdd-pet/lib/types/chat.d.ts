@@ -17,6 +17,7 @@ export type ChatGenerateResult = {
     ok: true;
     text: string;
     image?: string;
+    action?: string;
 } | {
     ok: false;
     reason: 'provider-missing' | 'generate-error';
@@ -29,9 +30,12 @@ export interface ChatMemoryMessage {
     ts: number;
     /** 该轮用户上传的图片（附件引用，不含图片本体）；只存不送——历史回放不带图。 */
     image?: PetImageRef;
-    /** 该轮 AI 配的表情包名称（不是条目对象）；只存不送——不进上下文。 */
+    /** 该轮 AI 配的表情包名称（不是条目对象）；回放历史时以 `[图:名称]` 回填给模型（不带图本体）。 */
     meme?: string;
+    /** 该轮 AI 表演的动作名（animations.categories 内的名字）；回放历史时以 `[动作:名称]` 回填。 */
+    action?: string;
 }
+/** 动作指令与动作标记的解析都在 ./chat-action：它们只服务对话这条路径，与 /anim 的决策层分开。 */
 /** 一次对话生成的输入。 */
 export interface ChatGenerateInput {
     /** 宿主上下文（注入 agentDefaultModel / llm）。 */
@@ -52,6 +56,8 @@ export interface ChatGenerateInput {
     readonly userText: string;
     /** 表情包候选池；空 / 缺省 = 纯文本（指令与解析都不介入）。 */
     readonly pool?: readonly MemeEntry[];
+    /** 可表演的动作名单（对话联动开关开启时传，来自 animations.categories）；空 / 缺省 = 不注入也不解析。 */
+    readonly actions?: readonly string[];
     /** 条目单独指定的模型（chatModel）；缺省 / 留空 = 只用当前对话的模型。 */
     readonly preferred?: ModelRef;
     /** 本轮附带的图片；缺省 = 纯文本请求，数据路径与加入图片前一致。 */

@@ -80,11 +80,14 @@ export declare function todoViewFromTodo(event: {
         }>;
     };
 }): TodoView;
-/** 工作状态快照（/work-status 端点响应体）：state 为主状态；task/progress 为 todo 详情（可 null）。 */
+/** 工作状态快照（/work-status 端点响应体 = /state 里 sections.workStatus 的 data）：
+ *  state 为主状态；task/progress 为 todo 详情（可 null）；sessionId 为当前展示条目所属会话（可 null）。 */
 export interface WorkStatusSnapshot {
     state: HostWorkStatusState | null;
     task: string | null;
     progress: TaskProgress | null;
+    /** 当前展示条目所属会话；空闲或外部槽（`api`）时为 null，客户端据此决定气泡能不能点。 */
+    sessionId: string | null;
     ts: number;
 }
 /**
@@ -106,6 +109,8 @@ export interface SessionWorkEntry {
     task: string | null;
     /** 清单进度；null = 该会话没有清单。 */
     progress: TaskProgress | null;
+    /** 该条目所属会话；`pickDisplayed` 只遍历 values，所以带着它才能知道展示的是哪一条。 */
+    sessionId: string;
 }
 /** 展示优先级：waiting > error > working > thinking > result > success。
  *  result 高于 success：任何会话的进行中过渡态都不被别处已完成态压过，防中途庆祝；同档按最近更新优先。 */
@@ -113,12 +118,13 @@ export declare const WORK_STATUS_PRIORITY: Record<HostWorkStatusState, number>;
 /** 展示用条目：所有会话里优先级最高者（同优先级取 seq 更大者）；无会话返回 undefined。 */
 export declare function pickDisplayed(entries: Iterable<SessionWorkEntry>): SessionWorkEntry | undefined;
 /**
- * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task / progress，对外只暴露一个展示快照。
+ * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task / progress / sessionId，对外只暴露一个展示快照。
  *
  * task/progress 必须挂在会话条目上：挂成全局单值就没有独立于 todo/write 的生命周期，写过一次会跟着
  * 此后所有会话活动一直显示，连配置里的 workStatusTexts 档位文案也被永久屏蔽。挂进条目后文案与它的
  * 会话同生共死：条目被清、新一轮 turn/start、清单里再无进行中项，文案都会消失。展示时
- * state / task / progress 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案。
+ * state / task / progress / sessionId 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案，
+ * 气泡点击也不会跳错会话。
  */
 export declare class WorkStatusStore {
     private readonly sessions;
@@ -154,6 +160,6 @@ export declare class WorkStatusStore {
     clear(sessionId: string): boolean;
     /** 展示快照（对象引用稳定，供 /work-status 直接序列化）。 */
     snapshot(): WorkStatusSnapshot;
-    /** 重算展示：state / task / progress 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
+    /** 重算展示：state / task / progress / sessionId 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
     private refresh;
 }

@@ -4,19 +4,86 @@
  * 纯映射，不做取数与状态；时间的位置是唯一的约定：贴着这一轮最后一条消息。
  * @module dsh-zdd-pet/src/client/chat/view-message
  */
-import { attachmentUrl, LOGO_URL, memeUrl, type ChatMessageView } from './api.ts';
+import { attachmentUrl, avatarUrl, memeUrl, type ChatMessageView } from './api.ts';
 import type { ChatPanelRuntime } from './runtime.ts';
 import { formatStamp } from './stamp.ts';
+import { tipAttrs } from './tooltip.ts';
 import type { ChatPanelState } from './types.ts';
 
+/** 语音播报按钮：贴在时间右边，四种状态一眼可分——可播 / 生成中转圈 / 播放中高亮 / 失败可重试。 */
+function speakNode(
+  h: ChatPanelRuntime['h'],
+  t: ChatPanelRuntime['t'],
+  text: string,
+  ts: number,
+  state: ChatPanelState,
+): unknown {
+  const phase = state.speaking?.ts === ts ? state.speaking.phase : 'idle';
+  const label =
+    phase === 'loading'
+      ? t('speakGenerate')
+      : phase === 'playing'
+        ? t('speakPlaying')
+        : phase === 'failed'
+          ? t('speakFailed')
+          : t('speakPlay');
+  return h('button', {
+    type: 'button',
+    className: 'pet-chat-speak is-' + phase,
+    'aria-label': label,
+    ...tipAttrs(label),
+    onClick: (event: { stopPropagation: () => void }) => {
+      // 多选模式下整轮可点：这里必须拦一下，否则点喇叭会顺手切换选中
+      event.stopPropagation();
+      // 失败也允许再点一次：合成偶发失败时不必刷新面板
+      if (phase === 'idle' || phase === 'failed') state.speakRound(ts, text);
+    },
+    // 生成中由 CSS 的 ::before 画转圈，按钮本身不放字符；失败换成静音喇叭
+    children: phase === 'loading' ? null : phase === 'failed' ? '🔇' : '🔊',
+  });
+}
+
 /**
- * 头像：宠物用插件 logo，我是一只 Q 版小脸（圆脸 + 呆毛 + 腮红 + 星星）。
+ * 动作播放按钮：这一轮回答演出过动作时，贴在喇叭右边，悬浮显示动作名，点一下重演。
  *
- * 画成内联 SVG 而不是图片：能直接用主题 token（深浅色自动跟随），也不用多一个资源请求。
- * 造型对齐桌宠的二次元调性，不与插件 logo 抢风格。
+ * 悬浮气泡只显示动作名本身（不加「播放动作：」这类前缀）；读屏需要的语义放在 aria-label 上。
  */
-export function avatarNode(h: ChatPanelRuntime['h'], isMe: boolean): unknown {
-  if (!isMe) return h('img', { className: 'pet-chat-avatar', src: LOGO_URL, alt: '', loading: 'lazy' });
+function actionNode(
+  h: ChatPanelRuntime['h'],
+  t: ChatPanelRuntime['t'],
+  action: string,
+  state: ChatPanelState,
+): unknown {
+  return h('button', {
+    type: 'button',
+    className: 'pet-chat-action',
+    'aria-label': t('speakAction', { name: action }),
+    ...tipAttrs(action),
+    onClick: (event: { stopPropagation: () => void }) => {
+      // 多选模式下整轮可点：这里必须拦一下，否则点动作键会顺手切换选中
+      event.stopPropagation();
+      state.playAction(action);
+    },
+    children: h('svg', {
+      className: 'pet-chat-action-icon',
+      viewBox: '0 0 16 16',
+      'aria-hidden': 'true',
+      children: h('path', { d: 'M4.5 2.5v11l9-5.5z', fill: 'currentColor' }),
+    }),
+  });
+}
+
+/**
+ * 头像：宠物用自己在设置页上传的头像（没上传过时宿主回退插件 logo），我是一只 Q 版小脸
+ * （圆脸 + 呆毛 + 腮红 + 星星）。
+ *
+ * 我这一侧画成内联 SVG 而不是图片：能直接用主题 token（深浅色自动跟随），也不用多一个资源请求。
+ * 造型对齐桌宠的二次元调性，不与宠物头像抢风格。
+ */
+export function avatarNode(h: ChatPanelRuntime['h'], isMe: boolean, assetRoot: string, version: number): unknown {
+  if (!isMe) {
+    return h('img', { className: 'pet-chat-avatar', src: avatarUrl(assetRoot, version), alt: '', loading: 'lazy' });
+  }
   return h('svg', {
     className: 'pet-chat-avatar',
     viewBox: '0 0 32 32',
@@ -81,18 +148,25 @@ export function avatarNode(h: ChatPanelRuntime['h'], isMe: boolean): unknown {
   });
 }
 
+/** 一条消息的渲染输入；参数超过 4 个就收进对象，调用点不必靠位置记忆。 */
+export interface MessageNodeInput {
+  /** 消息正文与其附件引用。 */
+  readonly message: ChatMessageView;
+  /** true = 用户自己那一侧（内联小脸头像）。 */
+  readonly isMe: boolean;
+  /** 宠物所属素材根：头像与表情包都按它取图。 */
+  readonly assetRoot: string;
+  /** 头像地址的破缓存版本号。 */
+  readonly avatarVersion: number;
+  /** 点开大图；由轮节点传入，本模块不碰面板状态。 */
+  readonly onOpenImage: (url: string) => void;
+}
+
 /**
  * 一条消息：头像 + 气泡；图片排在文字之后，点一下放大。
- *
- * `onOpenImage` 由轮节点传入，本模块不直接碰面板状态。
  */
-export function messageNode(
-  h: ChatPanelRuntime['h'],
-  message: ChatMessageView,
-  isMe: boolean,
-  assetRoot: string,
-  onOpenImage: (url: string) => void,
-): unknown {
+export function messageNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], input: MessageNodeInput): unknown {
+  const { message, isMe, assetRoot, avatarVersion, onOpenImage } = input;
   const image =
     message.image !== undefined
       ? attachmentUrl(message.image)
@@ -102,7 +176,7 @@ export function messageNode(
   return h('div', {
     className: 'pet-chat-msg ' + (isMe ? 'is-me' : 'is-pet'),
     children: [
-      avatarNode(h, isMe),
+      avatarNode(h, isMe, assetRoot, avatarVersion),
       h('div', {
         className: 'pet-chat-bubble',
         children: [
@@ -112,9 +186,10 @@ export function messageNode(
             : h('button', {
                 type: 'button',
                 className: 'pet-chat-img-btn',
-                title: '点开看大图',
+                'aria-label': t('imageOpen'),
+                ...tipAttrs(t('imageOpen')),
                 onClick: () => onOpenImage(image),
-                children: h('img', { className: 'pet-chat-img', src: image, alt: '对话图片', loading: 'lazy' }),
+                children: h('img', { className: 'pet-chat-img', src: image, alt: t('imageAlt'), loading: 'lazy' }),
               }),
         ],
       }),
@@ -128,7 +203,7 @@ export function roundNode(
   state: ChatPanelState,
   round: ChatPanelState['rounds'][number],
 ): unknown {
-  const { h } = rt;
+  const { h, t } = rt;
   const selected = state.selected.includes(round.ts);
   // 多选模式下整轮是一张可点的卡片：选中给浅底，未选中透明（与豆包一致）
   const className = 'pet-chat-round' + (state.selecting ? ' is-selecting' : '') + (selected ? ' is-selected' : '');
@@ -148,13 +223,13 @@ export function roundNode(
       state.selecting
         ? h('label', {
             className: 'pet-chat-pick',
-            title: '选中这一轮（问 + 答一起删）',
+            title: t('selectRoundTitle'),
             children: [
               h('input', {
                 type: 'checkbox',
                 checked: selected,
                 onChange: () => state.toggleRound(round.ts),
-                'aria-label': '选中这一轮',
+                'aria-label': t('selectRound'),
               }),
             ],
           })
@@ -162,15 +237,35 @@ export function roundNode(
       h('div', {
         className: 'pet-chat-round-body',
         children: [
-          round.user === undefined ? null : messageNode(h, round.user, true, state.assetRoot, state.showImage),
+          round.user === undefined
+            ? null
+            : messageNode(h, t, {
+                message: round.user,
+                isMe: true,
+                assetRoot: state.assetRoot,
+                avatarVersion: state.avatarVersion,
+                onOpenImage: state.showImage,
+              }),
           round.assistant === undefined
             ? null
-            : messageNode(h, round.assistant, false, state.assetRoot, state.showImage),
+            : messageNode(h, t, {
+                message: round.assistant,
+                isMe: false,
+                assetRoot: state.assetRoot,
+                avatarVersion: state.avatarVersion,
+                onOpenImage: state.showImage,
+              }),
           // 时间跟着这一轮的最后一条消息走：有回答就贴在回答下方，否则贴在我的问题下方
           round.ts > 0
             ? h('div', {
                 className: 'pet-chat-time ' + (round.assistant === undefined ? 'is-me' : 'is-pet'),
-                children: formatStamp(round.ts, Date.now()),
+                children: [
+                  formatStamp(round.ts, Date.now(), t),
+                  // 只有回答那句能点播：用户自己的话没有语音
+                  round.assistant === undefined ? null : speakNode(h, t, round.assistant.text, round.ts, state),
+                  // 动作键贴在喇叭右边：这一轮没演动作时整块不出现
+                  round.assistant?.action === undefined ? null : actionNode(h, t, round.assistant.action, state),
+                ],
               })
             : null,
         ],

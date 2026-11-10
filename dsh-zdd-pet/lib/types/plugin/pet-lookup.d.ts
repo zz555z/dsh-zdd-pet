@@ -8,15 +8,19 @@
 import { LockStore } from '../lock.ts';
 import { PoseStore } from '../pose.ts';
 import { type RouteResult } from '../http.ts';
+import { SleepStore } from '../sleep.ts';
 import type { HostSetup } from './setup.ts';
 /** 宠物定位与访问守卫的输入：装配期对象与更早的工厂。 */
-export type PetLookupInput = {} & Pick<HostSetup, 'state'>;
+export type PetLookupInput = {} & Pick<HostSetup, 'state' | 'configPaths'>;
 /**
  * 创建宠物定位与访问守卫。
  */
 export declare function createPetLookup(deps: PetLookupInput): {
     lock: LockStore;
     pose: PoseStore;
+    sleep: SleepStore;
+    sleepBlocked: (petId: string) => RouteResult | null;
+    sleepRefusalText: (petId: string) => string | undefined;
     surfaceBlocked: (cfg: Record<string, Record<string, unknown>>, petId: string, params: URLSearchParams) => RouteResult | null;
     requirePet: (params: URLSearchParams, cfg: () => Record<string, Record<string, unknown>>, opts?: {
         surface?: boolean;

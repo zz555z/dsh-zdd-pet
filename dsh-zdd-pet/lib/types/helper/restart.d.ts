@@ -1,7 +1,7 @@
 /**
- * 重启策略：退避间隔、熔断条件与「跑稳了没有」的判定。
+ * 重启策略：退避间隔、熔断条件、「跑稳了没有」的判定，以及崩溃现场的可读化（退出码含义与处理建议）。
  *
- * 不启动也不停止进程，只给 ./child 提供纯计算的决策。
+ * 不启动也不停止进程，只给 ./child 提供纯计算的决策与文案。
  * 必须始终成立：退避单调不减，熔断后不再自动重试。
  * @module dsh-zdd-pet/src/host/helper/restart
  */
@@ -20,6 +20,51 @@ export declare function restartBackoffDelayMs(consecutiveFailures: number, baseM
 export declare function shouldCircuitBreak(consecutiveFailures: number, limit?: number): boolean;
 /** 稳定运行判定：距上次拉起 ≥ HELPER_STABLE_MS 视为一次「成功运行」，可清零计数。 */
 export declare function helperRunIsStable(elapsedMs: number): boolean;
+/**
+ * 拼一段「退出状态」日志片段：`code=3221225477 (0xC0000005 访问违例), signal=null`。
+ *
+ * 十六进制形态与含义只在这里出现一次，崩溃日志与熔断日志共用，避免两处各拼一份而漂移。
+ * @param code - 退出码；null 表示被信号终止。
+ * @param signal - 终止信号；正常退出为 null。
+ * @returns 可直接拼进日志的一行文本。
+ */
+export declare function describeExit(code: number | null, signal: NodeJS.Signals | null): string;
+/**
+ * 熔断时给用户的处理建议。
+ *
+ * Windows 与 Linux 的病因完全不同：Windows 上「配置 DISPLAY」是无效建议（曾误导过装了虚拟显示器的用户），
+ * 能起作用的只有换运行时或指向现成的可执行文件；Linux 才谈显示环境。
+ * @param platform - 进程平台；由调用方传入，本函数不读全局。
+ * @returns 一句面向用户的建议文本（含可复制的环境变量名）。
+ */
+export declare function crashLoopAdvice(platform: NodeJS.Platform): string;
+/**
+ * 是否值得改用 `--no-sandbox` 重试一次。
+ *
+ * 判定必须收紧，否则会把真正的崩溃吞成「换参数」：退出码 0x80000003、stdout/stderr 一行没有、
+ * 5s 内就退、只试一次、自定义 command 不猜。沙箱建不起来的机器是确定性失败，重试 12 次只会把同一行
+ * 日志刷 12 遍再熔断；真崩的（有输出 / 跑了一阵）照旧走退避与熔断，不会被掩盖。
+ * 宿主侧已对 GPU 进程沙箱做过一层窄开关，本条处理的是更早、连 JS 都没跑起来的那个阶段。
+ * @param input - 本次退出现场；`sandboxOptOut` 由调用方按环境给出，纯函数不读全局。
+ * @returns true 表示下一次 start() 应在参数最前面加 `--no-sandbox`。
+ */
+export declare function shouldFallbackToNoSandbox(input: {
+    code: number | null;
+    sawOutput: boolean;
+    ranMs: number;
+    alreadyApplied: boolean;
+    customCommand: boolean;
+    sandboxOptOut: boolean;
+}): boolean;
+/**
+ * 子进程输出是否算「进程真的跑起来了」：纯空白不算。
+ *
+ * Electron 在低完整性环境 abort 前会往 stdout 写 2 字节 `\r\n`；把它当输出会让
+ * {@link shouldFallbackToNoSandbox} 的秒退兜底永远不触发（#286）。
+ * @param chunk - 本次管道数据。
+ * @returns 去掉首尾空白后仍有内容时为 true。
+ */
+export declare function helperOutputIsMeaningful(chunk: string): boolean;
 /** 退避基值（ms）：默认 750 与旧版首延一致，DSH_PET_RESTART_BASE_MS 可调。 */
 export declare const RESTART_BASE_MS_DEFAULT = 750;
 /** 熔断阈值（连续崩溃次数）：默认 12，DSH_PET_RESTART_MAX_FAILURES 可调。 */

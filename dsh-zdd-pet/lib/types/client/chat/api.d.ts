@@ -24,6 +24,8 @@ export interface ChatMessageView {
     readonly image?: ChatImageRef;
     /** 该轮 AI 配的表情包名（`/pic/memes` 取回）；缺省 = 没配图。 */
     readonly meme?: string;
+    /** 该轮 AI 表演的动作名（重播按钮的入参）；缺省 = 没演动作。 */
+    readonly action?: string;
 }
 /** 一轮对话：一问一答共享同一个 ts，缺一侧（例如删过）也只占一轮。 */
 export interface ChatRound {
@@ -55,8 +57,18 @@ export declare function toChatMessages(body: unknown): ChatMessageView[];
  * @returns 按出现顺序排列的轮。
  */
 export declare function groupRounds(messages: readonly ChatMessageView[]): ChatRound[];
-/** 插件 logo 地址：对话面板拿它当宠物头像。 */
-export declare const LOGO_URL: string;
+/** 插件 logo 地址与按宠物的头像地址：拼装规则在 shared/avatar.ts，面板只做再导出。 */
+export { avatarUrl, LOGO_URL } from '../../shared/avatar.ts';
+/**
+ * 让宠物重演一次记忆里记下的动作（聊天窗口「播放动作」按钮）。
+ *
+ * 走 `/anim` 而不是直接改 state：白名单校验、占用锁与显示端门禁、播放回执都由宿主那一条链路负责。
+ *
+ * @param petId - 宠物 id。
+ * @param name - 记忆里记下的动作名（来自 `animations.categories`）。
+ * @returns 是否受理成功；失败只留日志，不弹错误条——它只是重播，不影响对话主流程。
+ */
+export declare function playAction(petId: string, name: string): Promise<boolean>;
 /** 附件引用 → 取图地址（宿主按内容哈希回字节）。 */
 export declare function attachmentUrl(ref: ChatImageRef): string;
 /**
@@ -66,19 +78,32 @@ export declare function attachmentUrl(ref: ChatImageRef): string;
  * @param assetRoot - 宠物所属条目（素材根）；空串时退回两段形式（取不到 pet 包独占的图）。
  */
 export declare function memeUrl(name: string, assetRoot: string): string;
-/** 面板需要的配置：宠物列表 + 每个条目保留的对话轮数。 */
+/** 面板需要的配置：宠物列表 + 每个条目保留的对话轮数 + 每只宠物的人设正文。 */
 export interface ChatConfig {
     readonly pets: Pet[];
     /** 条目（素材根）→ 该条目配置的 `chatMemoryRounds`；缺失的条目不出现在表里。 */
     readonly roundsByEntry: Readonly<Record<string, number>>;
+    /** 宠物 id → 实际在用的人设正文；取值口径见 {@link personaText}。 */
+    readonly personaByPet: Readonly<Record<string, string>>;
 }
 /**
- * 拉成品配置：拍平宠物列表，同时把每个条目的对话记忆轮数带出来。
+ * 一只宠物实际在用的人设正文。
+ *
+ * 两级：实例级非空白优先（**替换**所属条目那份，不是拼接），否则用条目顶层那份
+ * ——main 条目的条目顶层就是内置默认那句，所以正常配置下不会是空串。
+ *
+ * @param own - `pets[].whisperPrompt`；缺省或纯空白视为没写。
+ * @param entry - 所属条目顶层 `whisperPrompt`；非字符串按没写处理。
+ * @returns 实例级原文（保留排版，不 trim）或条目那份；两处都没有时是空串。
+ */
+export declare function personaText(own: unknown, entry: unknown): string;
+/**
+ * 拉成品配置：拍平宠物列表，同时把每个条目的对话记忆轮数与每只宠物的人设带出来。
  *
  * 设置页读的是同一份 `/config`（`merged.main.chatMemoryRounds`），这里按条目取，
  * 面板才能知道「最近几轮才算桌宠的记忆」——不额外发请求，也不在客户端抄一份默认值。
  *
- * @returns 宠物列表与条目轮数表。
+ * @returns 宠物列表、条目轮数表与宠物人设表。
  * @throws 配置请求失败或响应不是成品聚合时。
  */
 export declare function fetchChatConfig(): Promise<ChatConfig>;
@@ -90,6 +115,17 @@ export declare function fetchChatConfig(): Promise<ChatConfig>;
  * @returns 分界下标（线插在该下标之前）；全部都在记忆里、或没有记忆时返回 `null`（不画线）。
  */
 export declare function memoryBoundaryIndex(totalRounds: number, memoryRounds: number | undefined): number | null;
+/** 分界线节点的定位标记：工具栏的「记忆线」按它找元素，不依赖 class 名。 */
+export declare const MEMORY_LINE_ATTR = "data-pet-chat-memory";
+/**
+ * 让记忆分界线进入可视窗口所需的最少展示轮数。
+ *
+ * 线插在倒数第 `memoryRounds` 轮之前，窗口里至少要有它上面那一轮，线才画得出来。
+ *
+ * @param memoryRounds - 该条目保留的轮数。
+ * @returns 需要的展示轮数；`memoryRounds` 非法（`<= 0`）时返回 0（没有线，无需放轮）。
+ */
+export declare function roundsToRevealMemory(memoryRounds: number): number;
 /** 一次取满接口允许的轮数（宿主上限 200）：面板在本地按需展示，不做分页取数。 */
 export declare const HISTORY_ROUNDS = 200;
 /**

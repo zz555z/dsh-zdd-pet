@@ -162,11 +162,14 @@ export function todoViewFromTodo(event: { data?: { todos?: Array<{ status?: stri
   };
 }
 
-/** 工作状态快照（/work-status 端点响应体）：state 为主状态；task/progress 为 todo 详情（可 null）。 */
+/** 工作状态快照（/work-status 端点响应体 = /state 里 sections.workStatus 的 data）：
+ *  state 为主状态；task/progress 为 todo 详情（可 null）；sessionId 为当前展示条目所属会话（可 null）。 */
 export interface WorkStatusSnapshot {
   state: HostWorkStatusState | null; // null = 尚无会话活动（空闲）
   task: string | null; // 当前任务详情（todo/write 提供，可 null）
   progress: TaskProgress | null; // 清单进度 done/total（todo/write 提供，可 null）
+  /** 当前展示条目所属会话；空闲或外部槽（`api`）时为 null，客户端据此决定气泡能不能点。 */
+  sessionId: string | null;
   ts: number; // 最近一次变化的时间戳（轮询侧据此检测变化）
 }
 
@@ -189,6 +192,8 @@ export interface SessionWorkEntry {
   task: string | null;
   /** 清单进度；null = 该会话没有清单。 */
   progress: TaskProgress | null;
+  /** 该条目所属会话；`pickDisplayed` 只遍历 values，所以带着它才能知道展示的是哪一条。 */
+  sessionId: string;
 }
 
 /** 展示优先级：waiting > error > working > thinking > result > success。
@@ -224,12 +229,13 @@ function sameProgress(a: TaskProgress | null, b: TaskProgress | null): boolean {
 }
 
 /**
- * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task / progress，对外只暴露一个展示快照。
+ * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task / progress / sessionId，对外只暴露一个展示快照。
  *
  * task/progress 必须挂在会话条目上：挂成全局单值就没有独立于 todo/write 的生命周期，写过一次会跟着
  * 此后所有会话活动一直显示，连配置里的 workStatusTexts 档位文案也被永久屏蔽。挂进条目后文案与它的
  * 会话同生共死：条目被清、新一轮 turn/start、清单里再无进行中项，文案都会消失。展示时
- * state / task / progress 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案。
+ * state / task / progress / sessionId 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案，
+ * 气泡点击也不会跳错会话。
  */
 export class WorkStatusStore {
   // 类字段一律 declare + 构造器赋值：带初始化器的类字段在 target es2020 下要被降级，
@@ -240,7 +246,7 @@ export class WorkStatusStore {
 
   constructor() {
     this.sessions = new Map();
-    this.snap = { state: null, task: null, progress: null, ts: 0 };
+    this.snap = { state: null, task: null, progress: null, sessionId: null, ts: 0 };
   }
 
   /** 该会话当前是否有活动条目（决定 todo/write 是否还值得更新它的文案）。 */
@@ -267,7 +273,13 @@ export class WorkStatusStore {
   setState(sessionId: string, state: HostWorkStatusState, seq = 0): boolean {
     const prev = this.sessions.get(sessionId);
     if (prev?.state === state && prev.seq >= seq) return false;
-    this.sessions.set(sessionId, { state, seq, task: prev?.task ?? null, progress: prev?.progress ?? null });
+    this.sessions.set(sessionId, {
+      state,
+      seq,
+      task: prev?.task ?? null,
+      progress: prev?.progress ?? null,
+      sessionId,
+    });
     this.refresh();
     return true;
   }
@@ -323,22 +335,25 @@ export class WorkStatusStore {
     return this.snap;
   }
 
-  /** 重算展示：state / task / progress 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
+  /** 重算展示：state / task / progress / sessionId 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
   private refresh(): void {
     const best = pickDisplayed(this.sessions.values());
     const nextState = best?.state ?? null;
     const nextTask = best?.task ?? null;
     const nextProgress = best?.progress ?? null;
+    const nextSession = best?.sessionId ?? null;
     if (
       nextState === this.snap.state &&
       nextTask === this.snap.task &&
-      sameProgress(nextProgress, this.snap.progress)
+      sameProgress(nextProgress, this.snap.progress) &&
+      nextSession === this.snap.sessionId
     ) {
       return;
     }
     this.snap.state = nextState;
     this.snap.task = nextTask;
     this.snap.progress = nextProgress;
+    this.snap.sessionId = nextSession;
     this.snap.ts = Date.now();
   }
 }

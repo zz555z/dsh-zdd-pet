@@ -4,7 +4,7 @@
  * @module dsh-zdd-pet/src/shared/chat/styles
  */
 /** 弹窗样式。
- *  一条自适应输入框（无标题）+ 一行图标按钮（上传 / 截屏）+ 可选的图片预览；
+ *  一条自适应输入框（无标题）+ 一行图标按钮（上传 / 截屏 / 按住说话）+ 可选的图片预览；
  *  初始 160px，随输入增宽、封顶 340px 后折行增高；回车发送，Esc 或点外关闭。
  *  宽度由 JS 按文本测量覆盖根元素宽度。 */
 export declare const CHAT_CSS: string;

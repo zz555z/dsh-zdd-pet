@@ -6,7 +6,7 @@
  * @module dsh-zdd-pet/src/host/plugin/desktop/spawn
  */
 import { join } from 'node:path';
-import { ROUTE_PATH } from '../../../shared/constants.ts';
+import { ROUTE_SEGMENT } from '../../../shared/constants.ts';
 import { PACKAGE_ROOT } from '../../paths.ts';
 import type { DesktopHelperDeps } from './types.ts';
 import type { DesktopPets } from './pets.ts';
@@ -29,6 +29,23 @@ export type DesktopSpawnInput = Pick<
 
 /** 宿主是不是 DSH 桌面应用（Electron 宿主）。 */
 const isDesktopHost = (): boolean => Boolean(process.versions.electron);
+
+/** 菜单首项去向：desktop 唤起桌面应用，standalone 打开本机 AI 设置页，web 打开 DSH 站点。 */
+export type OpenTarget = 'desktop' | 'standalone' | 'web';
+
+/**
+ * 由宿主形态与已鉴权地址判定菜单首项去向。
+ *
+ * 独立模式与 web 宿主都不在 Electron 里，只能靠地址形状区分：独立模式的已鉴权地址固定落在本机
+ * 设置页，web 宿主指向站点根。判错会让菜单文案与实际打开的目标对不上。
+ * @param siteUrl - 交给浏览器的已鉴权地址（独立模式含本机设置页路径）。
+ * @param desktopHost - 宿主是否为 DSH 桌面应用。
+ * @returns 注入给 Helper 的形态值。
+ */
+export function resolveOpenTarget(siteUrl: string, desktopHost: boolean): OpenTarget {
+  if (desktopHost) return 'desktop';
+  return siteUrl.includes('/standalone-ai/') ? 'standalone' : 'web';
+}
 
 /**
  * 创建 Helper 进程的拉起与停止句柄：进程内宿主直接跳过，其余按需下载 Electron 后 spawn 并退避重试。
@@ -84,26 +101,34 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
       return;
     }
     portWaitAttempts = 0;
-    const origin = `http://127.0.0.1:${port}`;
-    // 右键「打开网站」交出去的是裸 origin：DSH 只在 `GET /` 接受本进程的启动令牌，换发绑定 authority
-    // 的签名 Cookie，其余请求一律 401（默认浏览器没有该 authority 的 Cookie 时必然打不开）。
-    // 令牌等价登录态：只经子进程环境变量递到 helper 内存，不落盘、不进日志；authority 必须保持
-    // 127.0.0.1（与 localhost 算两套 Cookie），故传 origin 而不是另拼地址。
+    // 用宿主自报的监听地址，不写死 loopback：DSH 拒绝通配地址，host 永远是某块具体网卡——只绑 LAN IP
+    // 时 127.0.0.1 并不监听，写死会让右键「打开网站」打开一个连不上的页面。getOrigin() 在绑定地址
+    // 无法表达成 URL（带 zone 的 IPv6）时抛，此时退回 loopback：菜单打不开，但不拖垮 Helper 拉起。
+    let origin = `http://127.0.0.1:${port}`;
+    try {
+      origin = ctx.webServer.getOrigin();
+    } catch {
+      /* 见上：保留 loopback 兜底 */
+    }
+    // 右键「打开网站」交出去的是裸 origin：DSH 只在 `GET /` 接受本进程的启动令牌，换发绑定该 authority
+    // 的签名 Cookie，其余请求一律 401，故传 origin 而不是另拼地址。令牌等价登录态：只经子进程环境变量
+    // 递到 helper 内存，不落盘、不进日志。
     const siteUrl = ctx.connection.authenticatedUrl(origin);
     // 桌面渲染端也从同一份 handlePetRoute 拿成品配置（每只宠物一个局部小窗口；经管道，不走 HTTP——
     // DSH Desktop 2.0.3+ 会拦插件自拉进程的裸 HTTP 请求，浏览器访问闸门只放行带令牌的请求）
-    const configUrl = `${origin}${ROUTE_PATH}/config`;
+    const configUrl = `${origin}${ROUTE_SEGMENT}/config`;
     helper = new HelperProcess(
       {
         electronPath,
         env: {
           DSH_PET_CONFIG_URL: configUrl,
-          // 已鉴权站点 URL（含本进程启动令牌）：只供 helper 的「打开网站」使用，任何日志都不许出现它
+          // 已鉴权站点 URL（含本进程启动令牌）：只供 helper 的「打开」首项使用，任何日志都不许出现它
           DSH_PET_SITE_URL: siteUrl,
-          // 宿主形态决定工具项「打开网站」的去向（同名菜单项，两端两种语义）：
-          //   desktop = 宿主是 DSH 桌面应用 → 唤起桌面应用主窗口（helper 走 dsh://open，见 main.js）
-          //   site    = dsh web / 独立模式 → 系统默认浏览器打开站点
-          DSH_PET_OPEN_TARGET: isDesktopHost() ? 'desktop' : 'site',
+          // 宿主形态决定菜单首项的去向与文案（同名「打开」项，三种形态三种语义）：
+          //   desktop    = DSH 桌面应用 → 唤起应用主窗口（helper 走 dsh://open）
+          //   standalone = 独立模式 → 本机 AI 设置页
+          //   web        = dsh web → DSH 站点
+          DSH_PET_OPEN_TARGET: resolveOpenTarget(siteUrl, isDesktopHost()),
           DSH_PET_SCALE: '1',
           // 打开 bridge 协议：main.js 注册 dsh-zdd-pet-bridge scheme，把渲染端请求经管道转给宿主
           DSH_PET_BRIDGE: '1',

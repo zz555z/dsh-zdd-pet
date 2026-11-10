@@ -77,7 +77,6 @@ export function makeGreetingCard(rt: SettingsRuntime): FunctionComponent<Greetin
                 onChange: (e: ChangeEvent<HTMLInputElement>) => props.onChange({ poolSize: Number(e.target.value) }),
               }),
               t('greetingPoolSizeHint'),
-              true,
             ),
           ],
         }),

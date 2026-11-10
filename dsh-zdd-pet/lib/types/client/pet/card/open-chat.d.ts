@@ -8,7 +8,7 @@ export interface OpenChatInput {
     readonly openChat: (image?: File) => void;
 }
 /**
- * 注册拖拽与快捷键。
+ * 注册拖拽、快捷键与粘贴。
  *
  * @param input - 舞台节点、悬停判定与打开动作。
  * @returns 解绑函数，交给调用方的 effect 清理。

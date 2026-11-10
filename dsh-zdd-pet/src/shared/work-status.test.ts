@@ -6,6 +6,7 @@
  *      保证老 host / 老快照与新渲染混搭不炸（向后兼容）。
  *   ② hasTask 判据：有文案或有进度即「有任务」，两端气泡槽位据此让位。
  *   ③ progressBar / progressText：total ≤ 10 一格一条、> 10 归一到 10 格；满格/全空端点精确。
+ *   ④ toWorkStatus 对 sessionId 的容错：合法会话 id 才采纳，外部槽 / 老宿主 / 哨兵值都归一成 null。
  *
  * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
  */
@@ -22,7 +23,7 @@ describe('toWorkStatus —— 快照解析（含 progress 向后兼容）', () =
 
   test('缺 progress 字段（老快照）→ null，其余字段照常', () => {
     const snap = toWorkStatus({ state: 'thinking', task: null });
-    assert.deepEqual(snap, { state: 'thinking', task: null, progress: null });
+    assert.deepEqual(snap, { state: 'thinking', task: null, progress: null, sessionId: null });
   });
 
   test('progress 非法（total<=0 / 非整数 / 负数 done / 非对象）→ null', () => {
@@ -72,5 +73,32 @@ describe('progressBar / progressText —— 方块进度条', () => {
   test('progressText = 方块 + 两空格 + 数字', () => {
     assert.equal(progressText({ progress: { done: 2, total: 5 } }), '▰▰▱▱▱  2/5');
     assert.equal(progressText({ progress: null }), null);
+  });
+
+  describe('toWorkStatus —— sessionId 解析', () => {
+    test('带 sessionId → 原样保留，供点气泡跳会话', () => {
+      const snap = toWorkStatus({ state: 'working', task: '改文件', sessionId: 'session-abc' });
+      assert.equal(snap?.sessionId, 'session-abc');
+    });
+
+    test('缺字段 / null（老宿主或外部槽）→ null，气泡因此不可点', () => {
+      assert.equal(toWorkStatus({ state: 'working', task: null })?.sessionId, null);
+      assert.equal(toWorkStatus({ state: 'working', task: null, sessionId: null })?.sessionId, null);
+    });
+
+    test('空串 / 哨兵 unknown / 非字符串 → null（不让气泡跳到不存在的地方）', () => {
+      for (const sessionId of ['', 'unknown', 42, {}, true]) {
+        assert.equal(toWorkStatus({ state: 'working', task: null, sessionId })?.sessionId, null);
+      }
+    });
+
+    test('空闲快照也带 sessionId: null', () => {
+      assert.deepEqual(toWorkStatus({ state: null, task: null }), {
+        state: null,
+        task: null,
+        progress: null,
+        sessionId: null,
+      });
+    });
   });
 });

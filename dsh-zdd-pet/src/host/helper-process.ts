@@ -14,6 +14,7 @@ export {
   ensureElectronDownload,
   hasGraphicalDisplay,
   packageRoot,
+  readElectronVersion,
   resolveElectronPath,
 } from './helper/electron.ts';
 export type { ElectronDownloadLog, EnsureElectronOptions } from './helper/electron.ts';
@@ -23,8 +24,11 @@ export {
   HELPER_STABLE_MS,
   HELPER_STOP_GRACE_MS,
   HELPER_STOP_TIMEOUT_MS,
+  crashLoopAdvice,
+  describeExit,
   helperRunIsStable,
   restartBackoffDelayMs,
   shouldCircuitBreak,
+  shouldFallbackToNoSandbox,
 } from './helper/restart.ts';
-export { HelperProcess, helperSpawnEnv } from './helper/child.ts';
+export { HelperProcess, helperLaunchArgs, helperSpawnEnv } from './helper/child.ts';

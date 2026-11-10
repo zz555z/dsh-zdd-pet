@@ -6,7 +6,7 @@
  * @module dsh-zdd-pet/src/host/plugin/http-route
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { ROUTE_PATH } from '../../shared/constants.ts';
+import { ROUTE_SEGMENT } from '../../shared/constants.ts';
 import { readBody, sendFile, sendJson, sendText, type RouteResult } from '../http.ts';
 import { failureBody } from '../routes/result.ts';
 import { createPetRouter } from '../routes/index.ts';
@@ -41,7 +41,7 @@ export function createHttpRoute(deps: PetRouteDeps): { handlePetRoute: HttpRoute
     signal?: AbortSignal,
   ): Promise<RouteResult> => {
     const url = new URL(rawUrl, 'http://localhost');
-    const rest = decodeURIComponent(url.pathname.slice(ROUTE_PATH.length + 1));
+    const rest = decodeURIComponent(url.pathname.slice(ROUTE_SEGMENT.length + 1));
     const run = (): Promise<RouteResult> => dispatchPetRoute(url, rest, method, body, signal);
     // 写配置的三条路径（PUT/POST /config、POST /pet-display、POST /pet-config）都是「读当前配置
     // → 白名单重建整段 pets → 写盘」，并发交错会互相覆盖，必须共用一条串行队列；
@@ -74,7 +74,7 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
     () =>
       ctx.webServer.register({
         kind: 'prefix',
-        path: ROUTE_PATH,
+        path: ROUTE_SEGMENT,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
           // 挂起等待（/playback?wait=）期间调用方可能提前断开：据此中止等待，
           // 否则那个等待者要一直留到超时才回收。'close' 在正常应答后也会触发，但那时监听已摘掉。
@@ -82,7 +82,9 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
           const onClose = (): void => abort.abort();
           res.on('close', onClose);
           try {
-            const body = req.method === 'PUT' || req.method === 'POST' ? await readBody(req) : undefined;
+            // PATCH 也带体（待办的部分更新）；GET / DELETE 不读，避免无谓地等一个不会来的结束事件。
+            const readsBody = req.method === 'PUT' || req.method === 'POST' || req.method === 'PATCH';
+            const body = readsBody ? await readBody(req) : undefined;
             const result = await handlePetRoute(req.url ?? '/', req.method ?? 'GET', body, abort.signal);
             res.off('close', onClose);
             if (result.kind === 'json') sendJson(res, result.status, result.obj, result.headers);
@@ -107,6 +109,6 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
           }
         },
       }),
-    'dsh-zdd-pet: /dsh-zdd-pet-7340 asset route',
+    `dsh-zdd-pet: ${ROUTE_SEGMENT} asset route`,
   );
 }

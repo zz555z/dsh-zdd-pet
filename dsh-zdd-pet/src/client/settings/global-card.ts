@@ -1,5 +1,5 @@
 /**
- * 全局开关卡：通知、点击音效、气泡表情包（总开关）、抛掷锁定、系统托盘。
+ * 全局开关卡：通知、点击音效、气泡表情包（总开关）、锁定在当前屏幕与系统托盘。
  * 切换只改本地状态，随「保存」整包写入——即时写盘会重启桌面 Helper、重建全部桌面宠物窗口。
  * 通知开关额外需要用户手势，开与关都要走外壳的同一个入口，因此卡里只回传键名与目标值。
  * @module dsh-zdd-pet/src/client/settings/global-card
@@ -25,12 +25,12 @@ export interface GlobalCardProps {
   onChange: (key: GlobalFlagKey, value: boolean) => void;
 }
 
-/** 开关的展示顺序与文案键；`end` 的用右对齐气泡（栅格右列）。 */
-const TOGGLES: Array<{ key: GlobalFlagKey; label: string; end?: boolean }> = [
+/** 开关的展示顺序与文案键。 */
+const TOGGLES: Array<{ key: GlobalFlagKey; label: string }> = [
   { key: 'notificationsEnabled', label: 'notifyToggle' },
   { key: 'clickSoundEnabled', label: 'clickSoundToggle' },
   { key: 'bubbleImageEnabled', label: 'bubbleImageToggle' },
-  { key: 'confineToScreen', label: 'confineToggle', end: true },
+  { key: 'confineToScreen', label: 'confineToggle' },
   { key: 'trayEnabled', label: 'trayToggle' },
 ];
 
@@ -52,12 +52,8 @@ export function makeGlobalCard(rt: SettingsRuntime): FunctionComponent<GlobalCar
         h('div', {
           className: 'dsh-zdd-pet-cfg__grid4',
           children: TOGGLES.map((toggle) =>
-            toggleCell(
-              toggle.label,
-              props.values[toggle.key],
-              props.busy,
-              (value) => props.onChange(toggle.key, value),
-              toggle.end,
+            toggleCell(toggle.label, props.values[toggle.key], props.busy, (value) =>
+              props.onChange(toggle.key, value),
             ),
           ),
         }),

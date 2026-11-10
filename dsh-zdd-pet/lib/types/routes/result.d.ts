@@ -11,7 +11,7 @@ import type { RouteResult } from '../http.ts';
  * 失败原因（wire 词汇）：域层各自的窄联合必须能赋值到这里。
  * 新增取值等同接口变更——消费方按 reason 分支，漏处理会拿到未命中的分支。
  */
-export type ResultReason = 'bad-request' | 'generate-error' | 'internal-error' | 'invalid-json' | 'invalid-label' | 'invalid-labels' | 'invalid-owner' | 'invalid-target' | 'lock-lost' | 'lock-required' | 'locked' | 'method-not-allowed' | 'payload-too-large' | 'pet-not-displayed' | 'pet-required' | 'pose-unavailable' | 'provider-missing' | 'too-many-items' | 'too-many-owners' | 'unknown-animation' | 'unknown-entry' | 'unknown-image' | 'unknown-owner' | 'unknown-pet' | 'unknown-playback' | 'unsupported' | 'user-config-unparsable';
+export type ResultReason = 'bad-request' | 'generate-error' | 'internal-error' | 'invalid-json' | 'invalid-label' | 'invalid-labels' | 'invalid-owner' | 'invalid-target' | 'lock-lost' | 'lock-required' | 'locked' | 'method-not-allowed' | 'no-sleep-animations' | 'payload-too-large' | 'pet-not-displayed' | 'pet-required' | 'pose-unavailable' | 'provider-missing' | 'sleeping' | 'todo-not-found' | 'too-many-items' | 'too-many-owners' | 'unknown-animation' | 'unknown-entry' | 'unknown-image' | 'unknown-owner' | 'unknown-pet' | 'unknown-playback' | 'unsupported' | 'user-config-unparsable' | 'voice-busy';
 /** 失败实体：状态码不参与判断，200 与 4xx 共用这个形状。 */
 export interface FailureEntity {
     readonly ok: false;

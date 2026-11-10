@@ -43,4 +43,8 @@ export interface CardHub {
     speak: Speak;
     /** 记一次活动（宠物作息唤醒：收到说话/工作状态变化时调）。 */
     pokeRest?: () => void;
+    /** 此刻是否在睡（含入睡/醒来两段过渡）：自动来源据此闭嘴，显式唤醒走菜单或点击。 */
+    sleeping(): boolean;
+    /** 此刻是否被占用锁冻结：锁的语义是「把控制权交给第三方」，睡觉闸门对它让路。 */
+    locked(): boolean;
 }

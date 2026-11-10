@@ -10,7 +10,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 /** 制造余额气泡组件（工厂），注入样式一次。
- *  内容来自 shared 的 balanceBubbleView / balanceDetailView；内置形态走行数据，
+ *  内容来自 shared 的 balancePageView（按页取行数据）；内置形态走行数据，
  *  custom 走第三方节点树。切页是淡出 → 换内容 → 淡入，显隐与 10s 计时归 pet.ts 管。
  */
 export declare function makeBalanceBubble(rt: {
@@ -20,7 +20,7 @@ export declare function makeBalanceBubble(rt: {
 }): (props: {
     state: BalanceState;
     on: boolean;
-    /** 目标页：0 为初始页；内置 windows 形态下 0 收起、1 展开。 */
+    /** 目标页：0 为初始页；内置 windows 形态下 0 收起、1 窗口明细、2 区间用量。 */
     index: number;
     /** 点击气泡：上层切到下一页并重置 10s 计时器。 */
     onCycle: () => void;
@@ -29,6 +29,7 @@ export declare function makeBalanceBubble(rt: {
  *  image 是池内名（按素材根拼路径），url 是第三方完整地址，两者互斥且由 host 判定层保证。
  *  有配图时渲染在文字上方，图片样式取自 shared 的 MEME_BUBBLE_CSS。
  *  progress 是任务进度角标（「▰▰▱▱▱  2/5」），有值时渲染在正文上方；工作气泡靠它显示清单进度。
+ *  voiceState 是语音播报状态角标；onClick 让工作气泡可点（跳到对应会话），缺省即不可点。
  */
 export declare function makeWhisperBubble(rt: {
     h: typeof jsx;
@@ -37,6 +38,10 @@ export declare function makeWhisperBubble(rt: {
     image?: string;
     url?: string;
     assetRoot?: string;
+    /** 任务进度角标文案；null = 无清单进度。 */
     progress?: string | null;
     on: boolean;
+    voiceState?: 'idle' | 'loading' | 'ready' | 'failed';
+    /** 可点时的回调；工作状态气泡用它跳会话，缺省即不可点。 */
+    onClick?: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
 }) => ReactNode;

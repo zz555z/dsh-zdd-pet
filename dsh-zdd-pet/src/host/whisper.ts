@@ -28,16 +28,20 @@ const TIMEOUT_MS = 30_000;
 /** 碎碎念指令：纯文本（没有配图时的原样请求）。 */
 const USER_TEXT = '随便说一句日常碎碎念，一句就好，20 字以内。';
 
+/** 梦话指令：睡觉期间嘟囔一句。与碎碎念指令同属「功能指令」，不进配置（配置里只有人设）。 */
+const SLEEP_TALK_TEXT = '你正在睡觉，随便嘟囔一句梦话，一句就好，20 字以内；含糊、半梦半醒，不要清醒地回应任何人。';
+
+/** 梦话指令的对外出口：调用方传进 generateWhisper 的 instruction，避免再抄一份文案。 */
+export const SLEEP_TALK_INSTRUCTION = SLEEP_TALK_TEXT;
+
 /**
- * 碎碎念指令：带表情包时要求模型配合作画说一句。
+ * 配图说明：告诉模型「这次会配一张表情包」，让正文与画面情绪契合。
  *
- * 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
- * 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
- * 交模型选只能盲选，还多一层幻觉风险。
+ * 单独抽出来是为了让「带配图的碎碎念」与「自定义指令 + 配图」共用同一段说明——
+ * 前者是上游的碎碎念配图，后者是 fork 的主动关心（自定义指令 + 配图）。
  */
-function userTextWithMeme(meme: { name: string; desc: string }): string {
+function memeGuide(meme: { name: string; desc: string }): string {
   return (
-    '随便说一句日常碎碎念，一句就好，20 字以内。\n' +
     '这次会配一张表情包一起显示，图的内容是：' +
     meme.name +
     '（' +
@@ -48,14 +52,61 @@ function userTextWithMeme(meme: { name: string; desc: string }): string {
 }
 
 /**
- * 用指定（或当前对话的）provider/model 生成一句碎碎念。
+ * 碎碎念指令：带表情包时要求模型配合作画说一句。
+ *
+ * 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
+ * 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
+ * 交模型选只能盲选，还多一层幻觉风险。
+ */
+function userTextWithMeme(meme: { name: string; desc: string }): string {
+  return USER_TEXT + '\n' + memeGuide(meme);
+}
+
+/** 一次生成请求：人设必填，其余可选。参数改对象是为了不再往函数签名上挂第 5 个参数。 */
+export interface WhisperRequest {
+  /** 人设 system 提示词（whisperPrompt）。 */
+  system: string;
+  /** 配图（开启配图时传入；缺省 = 纯文本碎碎念）。生成成功时原样带回，客户端据此展示图片。 */
+  meme?: { name: string; desc: string };
+  /** 条目单独指定的模型（whisperModel）；缺省 / 留空 = 只用当前对话的模型。 */
+  preferred?: ModelRef;
+  /** 功能指令（梦话传 SLEEP_TALK_INSTRUCTION）；缺省 = 碎碎念指令。 */
+  instruction?: string;
+}
+
+/**
+ * 拼出这一次的用户指令正文。
+ *
+ * 三条来源，按优先级：
+ * 1. 自定义指令（instruction）——梦话 / 主动关心 / 吉祥话池都走这里；
+ * 2. 带配图的碎碎念——「一句日常碎碎念 + 配图说明」；
+ * 3. 纯文本碎碎念。
+ *
+ * 自定义指令与配图同时存在时（fork 的主动关心）：指令为准，再补一段配图说明，
+ * 两边的诉求都保住——既说该说的话，又知道这张配图画的是什么。
+ */
+function buildUserText(request: WhisperRequest): string {
+  if (request.instruction) {
+    return request.meme ? request.instruction + '\n' + memeGuide(request.meme) : request.instruction;
+  }
+  return request.meme ? userTextWithMeme(request.meme) : USER_TEXT;
+}
+
+/**
+ * 用指定（或当前对话的）provider/model 生成一句话。
  * @param ctx - 宿主上下文（注入 agentDefaultModel / llm）。
- * @param system - 人设提示词（whisperPrompt）。
- * @param meme - 配图（开启配图时传入；缺省 = 纯文本碎碎念）。生成成功时原样带回，
- *             客户端据此展示图片（host 不判断模型是否真的贴合）。
- * @param preferred - 条目单独指定的模型（whisperModel）；缺省 / 留空 = 只用当前对话的模型。
- * @param userPrompt - 自定义用户指令（缺省 = 日常碎碎念；首次问候等场景传自己的指令）。
+ * @param request - 人设、可选配图、可选模型与指令。
  * @returns 生成的文本（+ 配图），或结构化失败（provider 缺失 / 生成错误）。
+ */
+export async function generateWhisper(
+  ctx: { agentDefaultModel: { currentSelection(): { provider: string; model: string } }; llm?: unknown },
+  request: WhisperRequest,
+): Promise<WhisperGenerateResult>;
+/**
+ * 旧的位置参数写法（fork 侧既有调用：system / meme / preferred / userPrompt）。
+ *
+ * 与上面的对象写法等价，保留是为了让 host 半侧「单文件加载、不引用包内 src 目录」的
+ * 约束下，greeting / proactive / memory-facts 等模块不必改调用形状。
  */
 export async function generateWhisper(
   ctx: { agentDefaultModel: { currentSelection(): { provider: string; model: string } }; llm?: unknown },
@@ -63,9 +114,21 @@ export async function generateWhisper(
   meme?: { name: string; desc: string },
   preferred?: ModelRef,
   userPrompt?: string,
+): Promise<WhisperGenerateResult>;
+export async function generateWhisper(
+  ctx: { agentDefaultModel: { currentSelection(): { provider: string; model: string } }; llm?: unknown },
+  requestOrSystem: WhisperRequest | string,
+  legacyMeme?: { name: string; desc: string },
+  legacyPreferred?: ModelRef,
+  legacyUserPrompt?: string,
 ): Promise<WhisperGenerateResult> {
+  // 两种调用形状归一成同一个请求对象：位置写法 = system + meme + preferred + 自定义指令。
+  const request: WhisperRequest =
+    typeof requestOrSystem === 'string'
+      ? { system: requestOrSystem, meme: legacyMeme, preferred: legacyPreferred, instruction: legacyUserPrompt }
+      : requestOrSystem;
   // 候选链：配置的模型优先 → 当前对话的模型兜底（whisperModel 留空时链上只有后者）
-  const candidates = modelCandidates(ctx, preferred);
+  const candidates = modelCandidates(ctx, request.preferred);
   if (candidates.length === 0) {
     return { ok: false, reason: 'provider-missing', message: '当前对话未配置模型' };
   }
@@ -79,7 +142,7 @@ export async function generateWhisper(
   // 兜底文案与失败分支同源，避免两处字面量漂移
   let last: WhisperGenerateResult = { ok: false, reason: 'generate-error', message: noTextReason(undefined) };
   for (const [i, sel] of candidates.entries()) {
-    const result = await generateWith(ctx, llm, sel, system, meme, userPrompt);
+    const result = await generateWith(ctx, llm, sel, request);
     if (result.ok) return result;
     last = result;
     // 回落要留痕：配的模型没生效时能在日志里看到原因（否则「我明明配了 A，怎么还是用 B」没法查）
@@ -98,9 +161,7 @@ async function generateWith(
   ctx: { llm?: unknown },
   llm: { stream(o: unknown): AsyncIterable<unknown> },
   sel: ModelRef,
-  system: string,
-  meme?: { name: string; desc: string },
-  userPrompt?: string,
+  request: WhisperRequest,
 ): Promise<WhisperGenerateResult> {
   const deadline = AbortSignal.timeout(TIMEOUT_MS);
   // 仅当模型声明支持 reasoning effort（含 "off"）时才传，否则省略：
@@ -114,11 +175,11 @@ async function generateWith(
     sessionId: PET_CALL_IDENTITY,
     messages: [
       createUserMessage({
-        content: [{ type: 'text', text: meme ? userTextWithMeme(meme) : (userPrompt ?? USER_TEXT) }],
+        content: [{ type: 'text', text: buildUserText(request) }],
         source: { kind: 'user' },
       }),
     ],
-    system,
+    system: request.system,
     // 不显式限 maxTokens：推理模型会把思考计入预算，显式小上限只会截断正文报「模型未返回文本」；
     // 不传由 dsh-llm 按适配器 defaultMaxTokens（默认 32768）兜底，碎碎念短指令输出仍短。
     temperature: 1,
@@ -146,5 +207,5 @@ async function generateWith(
     .join('')
     .trim();
   if (!text) return { ok: false, reason: 'generate-error', message: noTextReason(assembler.finish) };
-  return meme ? { ok: true, text, image: meme.name } : { ok: true, text };
+  return request.meme ? { ok: true, text, image: request.meme.name } : { ok: true, text };
 }

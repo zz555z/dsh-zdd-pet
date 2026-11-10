@@ -24,7 +24,9 @@ export declare function imageMediaTypeOf(file: File): PetImageMediaType | undefi
  */
 export declare function isImageFile(file: File): boolean;
 /** 这次拖拽是否带着文件（决定 dragover 要不要 preventDefault）。 */
-export declare function dragHasFiles(e: DragEvent): boolean;
+export declare function dragHasFiles(e: {
+    readonly dataTransfer: DataTransfer | null;
+}): boolean;
 /** 拖入的文件里第一张可发送的图片；没有返回 undefined。 */
 export declare function firstImageFile(dataTransfer: DataTransfer | null): File | undefined;
 /** 剪贴板数据的结构子集：只需要 files 与 items，测试可以喂假对象。 */
