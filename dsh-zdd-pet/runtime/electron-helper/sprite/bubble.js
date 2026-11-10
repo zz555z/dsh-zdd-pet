@@ -87,6 +87,10 @@ Object.assign(PetSprite.prototype, {
               : workOn
                 ? 'work'
                 : 'none';
+    // 记住当前槽位：点击处理在 input.js，必须知道「现在显示的是哪一种气泡」才能分清翻页与跳会话。
+    // 要在「隐藏」的早退之前记——否则气泡隐藏后仍留着上一帧的 'work'，
+    // 点击判定会把一个看不见的气泡当成可点的任务气泡。
+    this.bubbleSlot = slot;
     // 隐藏时必须先返回：不能在下面把影响字号的状态类（is-whisper / is-expanded）关掉再隐藏。
     // 否则气泡内容还在、只是随 opacity 淡出，那 0.25s 里字号会从碎碎念的小字号跳回基础大字号，
     // 表现就是「鼠标挪开的一瞬间字突然变大」。
@@ -101,7 +105,6 @@ Object.assign(PetSprite.prototype, {
     // 底部角气泡照旧在上方弹。方向写进 data-side 由 CSS 决定定位与尾巴朝向。
     const corner = this.pet.position.corner;
     this.bubble.dataset.side = corner === 'top-left' ? 'right' : corner === 'top-right' ? 'left' : 'up';
-    this.bubbleSlot = slot;
     // 配图两种形态二选一：url 用完整地址，image 按素材根拼表情包路径；样式/class 共用。
     const whisperImg =
       slot === 'whisper'

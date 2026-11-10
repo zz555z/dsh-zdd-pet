@@ -366,7 +366,8 @@ PetSprite.prototype.showWhisper = function showWhisper(
   if (duration === 0) return;
   this.whisperOn = true;
   this.whisperMessageId = messageId;
-  this.whisperHold = !!hold;
+  // 常驻气泡的类别记在 whisperHoldKind；whisperHold 是上游的「收起计划」对象，
+  // 只由 applyWhisperHold 维护，这里不能碰（碰了会把计划对象冲成布尔值）。
   this.whisperHoldKind = isComplete ? 'complete' : hold ? 'confirm' : null;
   // complete 气泡是否「鼠标移入即收」：缺省 true（老宿主/未传都按可收）。
   this.whisperDismissOnHover = isComplete ? dismissOnHover !== false : false;
@@ -382,13 +383,10 @@ PetSprite.prototype.showWhisper = function showWhisper(
   // （completion.holdUntilFocus 关掉自动收时）打架。
   if (isComplete) return;
   // 真常驻（等待确认）不设定时器：用户不确认就一直显示，直到宿主写 clear。
-  if (this.whisperHold) return;
-  // 普通气泡定时消失（与动画解耦，与余额同一语义；重复触发先清旧定时器）
-  this.whisperTimer = window.setTimeout(() => {
-    this.whisperOn = false;
-    this.renderBubble();
-  }, duration ?? BUBBLE_DURATION_MS);
-  // 收起时机交给收起计划：这句要念时，随后的语音开始事件会把它挂起（见 applyWhisperHold）。
+  if (this.whisperHoldKind) return;
+  // 普通气泡：收起时机交给收起计划（上游）——由它统一计时，语音播报期间会挂起、播完再留一段尾巴。
+  // 这里不再另起一个定时器，否则会有两个计时器抢同一个槽位（后写的覆盖前一个的句柄，
+  // 前一个再也 clear 不掉）。
   this.applyWhisperHold({ durationMs: duration ?? BUBBLE_DURATION_MS, kind: 'show' });
 };
 
