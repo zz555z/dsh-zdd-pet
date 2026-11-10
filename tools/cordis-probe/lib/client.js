@@ -3,20 +3,20 @@
  *
  * ## 它解决什么
  *
- * dsh-pet 给页面内第三方插件开了一个只读服务 `petApi7340`（`ctx.get('petApi7340').pose(id)`），
+ * dsh-pet 给页面内第三方插件开了一个只读服务 `petApiZdd`（`ctx.get('petApiZdd').pose(id)`），
  * 但它是 Cordis 服务、不是 HTTP 接口：跑在 DSH web 那一页的模块作用域里，另开标签页、
  * 另起进程、用 curl 都碰不到它。这个插件就是那个「第三方」：以普通客户端插件的身份
  * 装进同一个页面，用 `ctx.get()` 现场探测服务，把读到的东西画在屏幕上。
  *
  * 所以它是 tools/api-tester.html 的**另一半**：
  *   · api-tester.html  → 测 HTTP 接口（`/state`、`/anim`、`/pose` …），跨进程，走网络；
- *   · 本插件            → 测 Cordis 服务（`petApi7340` 以及以后每一个页面内服务），同页，零请求。
+ *   · 本插件            → 测 Cordis 服务（`petApiZdd` 以及以后每一个页面内服务），同页，零请求。
  *
  * ## 为什么不是「独立页面」
  *
  * 客户端插件注册不了浏览器路由：DSH 客户端只提供插槽（`shell.overlay`、
  * `settings.section` 之类），DSH web 本身是单页、没有前端路由。而服务是**页面实例**
- * 绑定的，换个 URL 就是换一个 window、换一个 Cordis 容器，`ctx.get('petApi7340')` 必然是
+ * 绑定的，换个 URL 就是换一个 window、换一个 Cordis 容器，`ctx.get('petApiZdd')` 必然是
  * 空。所以面板**直接常驻**在页面右下角：不挂路由、不用 hash 触发，装上刷新即可见。
  *
  * ## 为什么「dsh-pet 以后新增的服务」也自动测得了
@@ -24,7 +24,7 @@
  * 不写死服务名。`ctx.reflect.props` 里每个服务都能顺 `Impl.fiber.name` 反查提供者，
  * 只保留 dsh-pet（`name: 'pet'`）provide 的那些 —— 所以 dsh-pet 以后再加只读服务，
  * 面板刷新一下就自动出现，本插件不用改。成员的调用参数用逗号分隔、逐段 `JSON.parse`，
- * `petApi7340.pose("main")` 这种带参方法也能直接调。
+ * `petApiZdd.pose("main")` 这种带参方法也能直接调。
  *
  * 顺带把 DSH 平台那几十个服务（locale / connection / jobs …）挡在外面：它们是平台的，
  * 不是 dsh-pet 的，混在一起只会让面板没法看。
@@ -58,7 +58,7 @@
   const MEMORY_ROUTE = '/cordis-probe-memory';
 
   /** 探测不到服务归属时的兜底服务名（保持面板永远可用）。 */
-  const FALLBACK_SERVICES = ['petApi7340'];
+  const FALLBACK_SERVICES = ['petApiZdd'];
 
   /**
    * dsh-pet 客户端插件注册时用的 `name`（见 dsh-pet/src/client/app.ts 的 `const name = 'pet'`）。
@@ -140,7 +140,7 @@
   /**
    * 判断一个服务是不是 dsh-pet 提供的。
    *
-   * 服务名是裸词（`petApi7340`），没有命名空间，所以只能顺着 `Impl.fiber.name` 反查提供者。
+   * 服务名是裸词（`petApiZdd`），没有命名空间，所以只能顺着 `Impl.fiber.name` 反查提供者。
    * `_getImpl` 是 cordis 的内部方法（reflect.js:766），拿不到 fiber 名时退化为固定清单
    * ——宁可少列，也不把 DSH 平台的服务混进来。
    *
@@ -490,7 +490,7 @@
         render();
 
         // 服务是别的插件在**它自己的 apply 里** provide 的，加载顺序不保证：探针先 apply
-        // 时 petApi7340 还不存在，那一刻扫出来必然是「未提供」。所以服务一上线就重扫。
+        // 时 petApiZdd 还不存在，那一刻扫出来必然是「未提供」。所以服务一上线就重扫。
         let off;
         try {
           off = ctx.on('internal/service', () => render());

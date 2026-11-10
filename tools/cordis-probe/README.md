@@ -28,7 +28,7 @@ DSH 设置 →「添加插件」→ 填本目录绝对路径，重启 `dsh web`�
 
 面板头部的「语音：关/开」按钮控制一个 mock 语音实现，**默认关闭**：
 
-- 打开 → 调 `petApi7340.voice.register` 注册 `mock-tone`，此后 `POST /voice/speak` 改走它，返回一段提示音；
+- 打开 → 调 `petApiZdd.voice.register` 注册 `mock-tone`，此后 `POST /voice/speak` 改走它，返回一段提示音；
 - 关闭 → 调注册返回的 disposer 注销，合成回到内置实现；
 - 插件卸载时会自动注销，不会把 mock 语音留在宿主里。
 
@@ -36,7 +36,7 @@ DSH 设置 →「添加插件」→ 填本目录绝对路径，重启 `dsh web`�
 
 面板头部的「识别：关/开」按钮控制一个 mock 识别实现，**默认关闭**：
 
-- 打开 → 调 `petApi7340.speech.register` 注册 `mock-asr`，此后 `POST /voice/hear` 改走它，回来一段带字节数的假文字；
+- 打开 → 调 `petApiZdd.speech.register` 注册 `mock-asr`，此后 `POST /voice/hear` 改走它，回来一段带字节数的假文字；
 - 关闭 → 调注册返回的 disposer 注销，识别回到宿主自带能力（DSH 的 `speechToText`）；
 - 插件卸载时会自动注销，不会把 mock 识别留在宿主里。
 

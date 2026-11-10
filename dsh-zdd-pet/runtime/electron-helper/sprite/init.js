@@ -121,7 +121,6 @@ Object.assign(PetSprite.prototype, {
     this.chatMount = null;
     this.chatOpen = false;
     // 对话输入是否占用气泡容器（借用气泡显示输入框，而不是另开浮层）
-    this.chatOn = false;
     // 快捷键「按住 M 说话」：按下开录、松手收尾。状态机在 shared（自动重复与失焦都要拦），
     // 本实例只负责把两个键盘事件原样送进去，动作落到 menu 的 startHearChat / stopHearChat。
     // 闸门两条：鼠标在宠物身上，或光标还在宠物自己的弹窗里——弹窗一开焦点就在输入框，
